@@ -180,19 +180,18 @@ ZF, CF, OF & Апаратні прапорці нуля, переносу та �
 \clearpage
 \begin{landscape}
 \thispagestyle{empty}
-\subsection{Структурна схема тракту даних}
+\subsection{Концептуальна схема тракту даних}
 \begin{center}
 \begin{tikzpicture}[
     x=1cm, y=1cm,
     >=Stealth,
     font=\sffamily\scriptsize,
-    % Component Styles
     regnode/.style={
-        draw=black!85, rectangle, rounded corners=3pt, minimum width=1.1cm, minimum height=0.75cm, 
+        draw=black!85, rectangle, rounded corners=3pt, minimum width=1.1cm, minimum height=0.75cm,
         line width=1.1pt, fill=white, font=\bfseries\scriptsize, align=center
     },
     block/.style={
-        draw=black!85, rectangle, rounded corners=3pt, line width=1.1pt, fill=white, 
+        draw=black!85, rectangle, rounded corners=3pt, line width=1.1pt, fill=white,
         font=\bfseries\scriptsize, align=center
     },
     ctrlbox/.style={
@@ -203,7 +202,6 @@ ZF, CF, OF & Апаратні прапорці нуля, переносу та �
         draw=cyan!75!black, rectangle, rounded corners=6pt, line width=1.3pt,
         fill=cyan!6, align=center
     },
-    % Wire Styles
     databus/.style={->, line width=1.3pt, draw=black!90},
     databus_line/.style={line width=1.3pt, draw=black!90},
     ctrlbus/.style={->, line width=1.0pt, draw=red!80!black, dashed},
@@ -211,9 +209,6 @@ ZF, CF, OF & Апаратні прапорці нуля, переносу та �
     bidir/.style={<->, line width=1.2pt, draw=teal!80!black}
 ]
 
-    % ========================================================
-    % 1. РЕГИСТРЫ R0 - R7 (16-BIT GPR) (Y = 12.0)
-    % ========================================================
     \foreach \i/\x in {0/0.6, 1/2.0, 2/3.4, 3/4.8, 4/6.2, 5/7.6, 6/9.0, 7/10.4} {
         \node[regnode] (R\i) at (\x, 12.0) {\textbf{R\i}};
         \coordinate (R\i_in) at (\x - 0.25, 12.38);
@@ -221,198 +216,142 @@ ZF, CF, OF & Апаратні прапорці нуля, переносу та �
         \coordinate (R\i_out) at (\x, 11.62);
     }
 
-    % ========================================================
-    % 2. MUX 1 (REG MUX) (Y = 9.7 .. 10.6, Center X = 5.5)
-    % ========================================================
-    \draw[fill=gray!12, draw=black!85, line width=1.2pt] 
-        (-0.2, 10.6) -- (11.2, 10.6) -- (7.9, 9.7) -- (3.1, 9.7) -- cycle;
+    \draw[fill=gray!12, draw=black!85, line width=1.2pt]
+        (-0.2, 10.6) -- (11.2, 10.6) -- (10, 9.7) -- (1.1, 9.7) -- cycle;
     \node[align=center] at (5.5, 10.15) {\textbf{\normalsize MUX 1}};
 
-    % Спуски от каждого регистра в MUX 1
     \foreach \i in {0,...,7} {
         \draw[databus] (R\i_out) -- (R\i_out |- 0, 10.6);
     }
 
-    % ========================================================
-    % 3. ЛЕВАЯ КОЛОНКА: DEST-DMUX, ACCA, ACCB, ALU (16-BIT)
-    % ========================================================
-    % DEST-DMUX (Center X = 2.2, Y = 5.9 .. 6.9)
-    \draw[fill=gray!12, draw=black!85, line width=1.1pt] 
+    \draw[fill=gray!12, draw=black!85, line width=1.1pt]
         (1.3, 6.9) -- (3.1, 6.9) -- (3.6, 5.9) -- (0.8, 5.9) -- cycle;
     \node[align=center] at (2.2, 6.4) {\textbf{\scriptsize DEST-DMUX}};
 
-    % Аккумуляторы ACCA и ACCB (Y = 4.9)
-    \node[regnode, fill=blue!6, draw=blue!75!black, minimum width=1.2cm, minimum height=0.8cm] 
+    \node[regnode, fill=blue!6, draw=blue!75!black, minimum width=1.2cm, minimum height=0.8cm]
         (ACCA) at (1.3, 4.9) {\textbf{ACCA}};
-    \node[regnode, fill=blue!6, draw=blue!75!black, minimum width=1.2cm, minimum height=0.8cm] 
+    \node[regnode, fill=blue!6, draw=blue!75!black, minimum width=1.2cm, minimum height=0.8cm]
         (ACCB) at (3.1, 4.9) {\textbf{ACCB}};
 
-    % Связи от DMUX к аккумуляторам
     \draw[databus] (1.3, 5.9) -- (ACCA.north);
     \draw[databus] (3.1, 5.9) -- (ACCB.north);
     \node[font=\tiny\bfseries, fill=white, inner sep=1pt] at (1.05, 5.55) {[0]};
     \node[font=\tiny\bfseries, fill=white, inner sep=1pt] at (3.35, 5.55) {[1]};
 
-    % ALU (Center X = 2.2, Y = 2.0 .. 3.6)
     \draw[fill=blue!8, draw=blue!85!black, line width=1.3pt]
         (0.5, 3.6) -- (1.8, 3.6) -- (2.2, 3.2) -- (2.6, 3.6) -- (3.9, 3.6) -- (3.2, 2.0) -- (1.2, 2.0) -- cycle;
     \node[align=center, text=blue!90!black] at (2.2, 2.7) {\textbf{\large ALU}};
 
-    % Входы в ALU от аккумуляторов
     \draw[databus] (ACCA.south) -- (1.3, 3.6);
     \draw[databus] (ACCB.south) -- (3.1, 3.6);
     \node[font=\tiny\bfseries, left] at (1.3, 4.1) {A [15:0]};
     \node[font=\tiny\bfseries, right] at (3.1, 4.1) {B [15:0]};
 
-    % ========================================================
-    % 4. ЦЕНТРАЛЬНАЯ КОЛОНКА: MUX 2 (MEM MUX) И FLAG REG
-    % ========================================================
-    % MUX 2: ПЕРЕВЕРНУТ! (Узкий верх Y = 5.8, широкий низ Y = 4.4, Center X = 6.4)
     \draw[fill=yellow!18, draw=orange!80!black, line width=1.3pt]
         (5.6, 5.8) -- (7.2, 5.8) -- (7.8, 4.4) -- (5.0, 4.4) -- cycle;
     \node[align=center, text=orange!90!black] at (6.4, 5.25) {\textbf{\normalsize MUX 2}};
 
-    % Бейджи входов MUX 2 ВНУТРИ трапеции по нижнему краю
-    \node[font=\tiny\bfseries, fill=white, draw=orange!80!black, rounded corners=1pt, inner sep=1.2pt] at (5.6, 4.68) {[0] ALU};
-    \node[font=\tiny\bfseries, fill=white, draw=orange!80!black, rounded corners=1pt, inner sep=1.2pt] at (6.4, 4.68) {[1] REG};
-    \node[font=\tiny\bfseries, fill=white, draw=orange!80!black, rounded corners=1pt, inner sep=1.2pt] at (7.2, 4.68) {[2] CTRL};
+    \node[font=\tiny\bfseries, fill=white, draw=orange!80!black, rounded corners=1pt, inner sep=1.2pt] at (5.6, 4.68) {ALU};
+    \node[font=\tiny\bfseries, fill=white, draw=orange!80!black, rounded corners=1pt, inner sep=1.2pt] at (6.4, 4.68) {REG};
+    \node[font=\tiny\bfseries, fill=white, draw=orange!80!black, rounded corners=1pt, inner sep=1.2pt] at (7.2, 4.68) {MEM};
 
-    % Флаговый регистр (Center X = 6.4, Y = 1.2, W = 3.0cm, H = 0.8cm)
-    \node[block, minimum width=3.0cm, minimum height=0.8cm, fill=teal!6, draw=teal!80!black] 
-        (FLAGS) at (6.4, 1.2) {\textbf{FLAGS}\\[1pt]\scriptsize$[$ Z, C, N, V $]$};
+    \node[block, minimum width=3.0cm, minimum height=0.8cm, fill=teal!6, draw=teal!80!black]
+        (FLAGS) at (6.4, 1.2) {\textbf{FREG [15:0]}\\[1pt]\scriptsize ZF, CF, OF, EM, \ldots};
 
-    % ========================================================
-    % 5. ПРАВАЯ КОЛОНКА: КОНТРОЛЛЕР И ПАМЯТЬ
-    % ========================================================
-    % Контроллер (X = 11.4 .. 16.8, Y = 4.2 .. 9.2, Center X = 14.1)
-    \node[ctrlbox, minimum width=5.4cm, minimum height=5.0cm] 
+    \node[ctrlbox, minimum width=5.4cm, minimum height=5.0cm]
         (CTRL) at (14.1, 6.7) {};
-    
-    % Заголовок контроллера
+
     \node[font=\bfseries\normalsize, text=red!90!black] at (14.1, 8.7) {CONTROL UNIT};
 
-    % Порты на левой стенке Контроллера (X = 11.4)
-    \node[draw=red!40!black, fill=white, rounded corners=2pt, font=\tiny\bfseries, inner sep=2pt, right] 
+    \node[draw=red!40!black, fill=white, rounded corners=2pt, font=\tiny\bfseries, inner sep=2pt, right]
         at (11.5, 8.3) {IR [15:0]};
-    \node[draw=red!70!black, fill=white, rounded corners=2pt, font=\tiny\bfseries, inner sep=2pt, text=red!80!black, right] 
+    \node[draw=red!70!black, fill=white, rounded corners=2pt, font=\tiny\bfseries, inner sep=2pt, text=red!80!black, right]
         at (11.5, 7.3) {CTRL ALU/ACC};
-    \node[draw=red!70!black, fill=white, rounded corners=2pt, font=\tiny\bfseries, inner sep=2pt, text=red!80!black, right] 
+    \node[draw=red!70!black, fill=white, rounded corners=2pt, font=\tiny\bfseries, inner sep=2pt, text=red!80!black, right]
         at (11.5, 6.2) {SEL\_WB [1:0]};
-    \node[draw=teal!70!black, fill=white, rounded corners=2pt, font=\tiny\bfseries, inner sep=2pt, text=teal!90!black, right] 
+    \node[draw=teal!70!black, fill=white, rounded corners=2pt, font=\tiny\bfseries, inner sep=2pt, text=teal!90!black, right]
         at (11.5, 5.2) {FLAGS};
-    \node[draw=orange!80!black, fill=white, rounded corners=2pt, font=\tiny\bfseries, inner sep=2pt, text=orange!90!black, right] 
+    \node[draw=orange!80!black, fill=white, rounded corners=2pt, font=\tiny\bfseries, inner sep=2pt, text=orange!90!black, right]
         at (11.5, 4.5) {MEM/IMM};
 
-    % Память системы (X = 11.4 .. 16.8, Y = 0.8 .. 3.4, Center X = 14.1)
-    \node[membox, minimum width=5.4cm, minimum height=2.6cm] 
-        (MEM) at (14.1, 2.1) {\textbf{\normalsize MEMORY (64 KB)}\\[3pt]\tiny ADDR [15:0] • DATA [15:0] • RD/WR};
+    \node[membox, minimum width=5.4cm, minimum height=2.6cm]
+        (MEM) at (14.1, 2.1) {\textbf{\normalsize MEMORY}\\[3pt]\tiny RAM / ROM / DEVICES / ELSE};
 
-    % Прямые вертикальные шины между Контроллером и Памятью
     \draw[databus, draw=blue!80!black] (12.6, 4.2) -- (12.6, 3.4) node[midway, fill=white, inner sep=1pt, font=\tiny\bfseries, text=blue!80!black] {ADDR};
     \draw[databus] (14.1, 4.2) -- (14.1, 3.4) node[midway, fill=white, inner sep=1pt, font=\tiny\bfseries] {WR\_DATA};
     \draw[bidir, draw=red!80!black] (15.6, 3.4) -- (15.6, 4.2) node[midway, fill=white, inner sep=1pt, font=\tiny\bfseries, text=red!80!black] {RD / WR};
 
-    % ========================================================
-    % 6. РАЗВОДКА ШИН ДАННЫХ (DATA PATH 16-BIT)
-    % ========================================================
-    % Спуск от MUX 1: до распределительной линии Y = 8.3
     \draw[databus_line] (5.5, 9.7) -- (5.5, 8.3);
     \filldraw (5.5, 8.3) circle (2pt);
 
-    % Ветвь A: MUX 1 -> DEST-DMUX
     \draw[databus] (5.5, 8.3) -| (2.2, 6.9) node[pos=0.25, above, font=\tiny\bfseries] {[15:0]};
 
-    % Ветвь C: MUX 1 -> Контроллер (порт IR)
     \draw[databus] (5.5, 8.3) -- (11.4, 8.3) node[pos=0.45, above, font=\tiny\bfseries] {REG\_DATA [15:0]};
 
-    % Ветвь B: MUX 1 -> MUX 2 (Вход [1] REG - входит СНИЗУ)
     \filldraw (4.6, 8.3) circle (1.8pt);
     \draw[databus_line] (4.6, 8.3) -- (4.6, 3.6);
-    % Горизонталь по Y = 3.6: мост над шиной ALU (X = 5.6) и вход снизу в [1] (6.4, 4.4)
     \draw[databus_line] (4.6, 3.6) -- (5.4, 3.6);
     \draw[databus_line] (5.4, 3.6) arc[start angle=180, end angle=0, radius=0.2] -- (6.4, 3.6);
     \draw[databus] (6.4, 3.6) -- (6.4, 4.4);
     \node[font=\tiny\bfseries, fill=white, inner sep=1.2pt, below] at (5.0, 3.55) {[15:0]};
 
-    % ALU -> MUX 2 (Вход [0] ALU - входит СНИЗУ)
-    \draw[databus] (3.2, 2.5) -- (5.6, 2.5) -- (5.6, 4.4);
-    \node[font=\tiny\bfseries, fill=white, inner sep=1pt] at (3.9, 2.75) {ALU\_RES [15:0]};
+    \draw[databus] (3.4, 2.5) -- (5.6, 2.5) -- (5.6, 4.4);
+    \node[font=\tiny\bfseries, fill=white, inner sep=1pt] at (4.5, 2.75) {ALU\_RES [15:0]};
 
-    % CONTROLLER -> MUX 2 (Вход [2] CTRL)
     \draw[databus_line] (11.4, 4.5) -- (10.3, 4.5) -- (10.3, 3.6) -- (9.8, 3.6);
     \draw[databus_line] (9.8, 3.6) arc[start angle=0, end angle=180, radius=0.2] -- (7.2, 3.6);
     \draw[databus] (7.2, 3.6) -- (7.2, 4.4);
     \node[font=\tiny\bfseries, fill=white, inner sep=1pt] at (10.8, 4.7) {MEM/IMM [15:0]};
 
-    % ALU -> FLAG REG
     \draw[->, line width=1.1pt, draw=teal!80!black] (2.2, 2.0) |- (FLAGS.west);
     \node[font=\tiny\bfseries, fill=white, inner sep=1pt, text=teal!90!black] at (3.5, 1.2) {FLAGS};
 
-    % ========================================================
-    % 7. FLAG REG <-> КОНТРОЛЛЕР (ДВУСТОРОННЯЯ СВЯЗЬ)
-    % ========================================================
     \draw[bidir] (7.9, 1.2) -- (9.6, 1.2) -- (9.6, 5.2) -- (11.4, 5.2);
     \node[font=\tiny\bfseries, fill=white, inner sep=1pt, text=teal!90!black] at (10.4, 5.45) {FLAGS};
 
-    % ========================================================
-    % 8. ШИНА ОБРАТНОЙ ЗАПИСИ (ВЫХОД СВЕРХУ MUX 2 -> РЕГИСТРЫ)
-    % ========================================================
-    \draw[databus_line] (6.4, 5.8) -- (6.4, 9.0) -- (5.7, 9.0) 
-                        arc[start angle=0, end angle=180, radius=0.2] 
+    \draw[databus_line] (6.4, 5.8) -- (6.4, 9.0) -- (5.7, 9.0)
+                        arc[start angle=0, end angle=180, radius=0.2]
                         -- (-0.8, 9.0) -- (-0.8, 13.5) -- (10.9, 13.5);
-    \node[font=\tiny\bfseries, fill=black!85, text=white, inner sep=2.5pt, rounded corners=2pt] 
+    \node[font=\tiny\bfseries, fill=black!85, text=white, inner sep=2.5pt, rounded corners=2pt]
         at (2.2, 9.0) {WB\_DATA [15:0]};
-    
+
     \foreach \i in {0,...,7} {
         \draw[databus] (R\i_in |- 0, 13.5) -- (R\i_in);
         \filldraw (R\i_in |- 0, 13.5) circle (1.8pt);
     }
 
-    % ========================================================
-    % 9. СИГНАЛЫ УПРАВЛЕНИЯ
-    % ========================================================
-    % 1. К MUX 1: SEL_REG [2:0]
-    \draw[ctrlbus] (12.8, 9.2) |- (7.9, 10.15);
+    \draw[ctrlbus] (12.8, 9.2) |- (10.6 , 10.15);
     \node[font=\tiny\bfseries, text=red!80!black, fill=white, inner sep=1pt] at (12.8, 9.7) {SEL\_REG [2:0]};
 
-    % 2. К MUX 2: SEL_WB [1:0]
     \draw[ctrlbus] (11.4, 6.2) -| (8.5, 5.3) -- (7.4, 5.3);
     \node[font=\tiny\bfseries, text=red!80!black, fill=white, inner sep=1pt] at (9.8, 6.2) {SEL\_WB [1:0]};
 
-    % 3. К DEST-DMUX, ACCA, ACCB, ALU: магистраль выходит из порта (11.4, 7.3)
     \draw[ctrlbus_line] (11.4, 7.3) -- (6.6, 7.3)
                         arc[start angle=0, end angle=180, radius=0.2]
                         -- (4.8, 7.3)
                         arc[start angle=0, end angle=180, radius=0.2]
                         -- (4.1, 7.3);
-    
-    % Вертикальный спуск к DEST-DMUX и ACCB по линии X = 4.1
+
     \draw[ctrlbus_line] (4.1, 7.3) -- (4.1, 4.9);
     \filldraw[red!80!black] (4.1, 7.3) circle (1.4pt);
 
-    % Отвод к DEST-DMUX (SEL_ACC)
     \draw[ctrlbus] (4.1, 6.4) -- (3.35, 6.4);
     \filldraw[red!80!black] (4.1, 6.4) circle (1.4pt);
-    \node[font=\tiny\bfseries, text=red!80!black, fill=white, inner sep=1pt, above] at (3.72, 6.45) {SEL\_ACC};
+    \node[font=\tiny\bfseries, text=red!80!black, fill=white, inner sep=1pt, above] at (4.1, 6.45) {SEL\_ACC};
 
-    % Отвод к ACCB (LD_B)
     \draw[ctrlbus] (4.1, 4.9) -- (ACCB.east);
-    \node[font=\tiny\bfseries, text=red!80!black, fill=white, inner sep=1pt, above] at (3.9, 4.95) {LD\_B};
+    \node[font=\tiny\bfseries, text=red!80!black, fill=white, inner sep=1pt, above] at (4.15, 5.1) {LD\_B};
 
-    % Магистраль продолжается влево над DEST-DMUX к ACCA и ALU:
     \draw[ctrlbus_line] (4.1, 7.3) -- (2.4, 7.3)
                         arc[start angle=0, end angle=180, radius=0.2]
                         -- (0.3, 7.3);
 
-    % Отвод к ACCA (LD_A)
-    \draw[ctrlbus] (0.3, 7.3) -- (0.3, 4.9) -- (ACCA.west);
-    \node[font=\tiny\bfseries, text=red!80!black, fill=white, inner sep=1pt, left] at (0.25, 5.0) {LD\_A};
+    \draw[ctrlbus] (0.2, 7.3) -- (0.2, 4.9) -- (ACCA.west);
+    \node[font=\tiny\bfseries, text=red!80!black, fill=white, inner sep=1pt, left] at (0.4, 5.2) {LD\_A};
 
-    % Отвод к ALU (ALU_OP [3:0])
-    \draw[ctrlbus] (0.3, 4.9) -- (0.3, 2.8) -- (0.8, 2.8);
-    \node[font=\tiny\bfseries, text=red!80!black, fill=white, inner sep=1pt, left] at (0.25, 3.2) {ALU\_OP [3:0]};
+    \draw[ctrlbus] (0.2, 4.9) -- (0.2, 2.8) -- (0.8, 2.8);
+    \node[font=\tiny\bfseries, text=red!80!black, fill=white, inner sep=1pt, left] at (0.5, 3.3) {ALU\_OP [3:0]};
 
-    % 4. К регистрам R0..R7: REG_WE [7:0]
     \draw[ctrlbus_line] (15.2, 9.2) -- (15.2, 12.8) -- (-0.2, 12.8);
     \node[font=\tiny\bfseries, text=red!80!black, fill=white, inner sep=1pt] at (13.0, 12.8) {REG\_WE [7:0]};
     \foreach \i in {0,...,7} {
@@ -456,10 +395,10 @@ FREG & 16 бітів & Регістр стану та керування (Proces
 9    & MIE  & Master Interrupt Enable: дозвіл зовнішніх апаратних переривань. \\
 10   & DWR  & Disable Wait for Ready: форсований обмін без очікування сигналу готовності шини. \\
 11   & M24  & 24-bit Mode Enable: активація розширеного 24-бітного лінійного адресного простору. \\
-12   & DBIT & Discarded Bit: буфер останнього біта, висунутого при зсувах BSL/BSR. \\
-13   & SMOD & Shift Mode: вибір режиму заповнення при виконанні зсувів. \\
-14   & SBIT & Shift Bit Value: значення біта підстановки при зсувах з SMOD=1. \\
-15   & AIP  & Auto-Increment PTREG: дозвіл апаратного автоінкременту покажчика \reg{PTREG}. \\
+12   & AIP  & Auto-Increment PTREG: дозвіл апаратного автоінкременту покажчика \reg{PTREG}. \\
+13   & DBIT & Displaced Bit: буфер витісненого біта зсувного вузла. \\
+14   & SMOD & Shift Mode: керування циклічним режимом зсуву (0: заповнення нулями, 1: прохід через DBIT). \\
+15   & INTR & In Interrupt: прапорець перебування у перериванні (при 1 нові переривання апаратно заблоковані). \\
 \bottomrule
 \end{tabularx}
 
@@ -579,8 +518,8 @@ SREG <- SREG - 2%
 dst <- stack \\
 SREG <- SREG + 2%
 }{Ціль: регістри R0--R7 або регістри стану.}{Арифметичні прапорці не змінюються.}{Симетричне відновлення контексту переривань.}
-\InstructionPage{BSL}{11000}{Зсуви}{Барельний зсув ліворуч}{dst <- src << amount}{Величина зсуву: константа або динамічне значення регістра.}{Висунутий старший біт фіксується в FREG.DBIT.}{Швидке масштабування та вирівнювання бітових полів.}
-\InstructionPage{BSR}{11001}{Зсуви}{Барельний зсув праворуч}{dst <- src >> amount}{Логічний або арифметичний зсув за полем \field{cfg}.}{Висунутий молодший біт заноситься в DBIT.}{Ділення на степені двійки.}
+\InstructionPage{BSL}{11000}{Зсуви}{Барельний зсув ліворуч}{dst <- src << amount}{Величина зсуву: константа або динамічне значення регістра.}{Витіснений старший біт фіксується в FREG.DBIT (біт 13). При SMOD=1 у молодший біт подається попередній DBIT; при SMOD=0 заповнюється нулями.}{Швидке циклічне та потокове масштабування бітових масивів.}
+\InstructionPage{BSR}{11001}{Зсуви}{Барельний зсув праворуч}{dst <- src >> amount}{Логічний або арифметичний зсув за полем \field{cfg}.}{Витіснений молодший біт заноситься в DBIT (біт 13). При SMOD=1 у старший біт подається попередній DBIT; при SMOD=0 заповнюється нулями.}{Потокова фільтрація та ділення на степені двійки.}
 \InstructionPage{CSRM}{11010}{Система}{Керування службовими регістрами}{special\_reg <- src OR dst <- special\_reg}{Доступ до \reg{FREG}, \reg{PTREG}, \reg{SREG}.}{Прапорці оновлюються при модифікації FREG.}{Привілейована зміна контексту ядра.}
 \InstructionPage{RSV27}{11011}{Резерв}{Апаратне розширення}{reserved}{Зарезервовано для майбутніх версій архітектури.}{Не визначено.}{Зарезервовано.}
 \InstructionPage{RSV28}{11100}{Резерв}{Апаратне розширення}{reserved}{Зарезервовано для майбутніх версій архітектури.}{Не визначено.}{Зарезервовано.}
@@ -602,7 +541,7 @@ SREG <- SREG + 2%
 \node[font=\bfseries\Large,text=limblue,rotate=-90] at (\chipW/2,-\chipH/2) {LIM M2};
 \foreach \i/\sigL/\sigR in {
   1/A0/D0, 2/A1/D1, 3/A2/D2, 4/A3/D3, 5/A4/D4, 6/A5/D5, 7/A6/D6, 8/A7/D7,
-  9/A8/D8, 10/A9/VCC, 11/A10/GND, 12/A11/RD, 13/A12/WD, 14/A13/RF, 15/A14/AL, 16/A15/RDI, 17/CLK1/CLK2
+  9/A8/IA, 10/A9/VCC, 11/A10/GND, 12/A11/RD, 13/A12/WD, 14/A13/RF, 15/A14/AL, 16/A15/RDI, 17/CLK1/CLK2
 } {
   \pgfmathsetmacro{\y}{-\i * 0.55}
   \pgfmathtruncatemacro{\pinR}{35 - \i}
@@ -627,8 +566,106 @@ RD, WD     & Вихід             & Строби зчитування (Read) �
 AL         & Вихід             & Address Latch: строб фіксації адреси в зовнішньому регістрі. \\
 RF         & Вхід              & Ready Flag: апаратне підтвердження готовності веденого пристрою. \\
 RDI        & Вхід              & Raw Direct Interrupt: пріоритетний вхід апаратного переривання. \\
+IA         & Вихід             & Interruption Accepted / Interrupt Acknowledge: строб підтвердження прийому переривання; процесор переходить до зчитування номера вектора з шини даних. \\
 \bottomrule
 \end{tabularx}
+
+\clearpage
+\section{Підсистема переривань та векторна обробка}
+
+Підсистема переривань процесора LIM~M2 спроєктована для забезпечення мінімальної латентності реакції на події реального часу, строгого детермінізму та повного захисту від шинних конфліктів. Архітектура об'єднує апаратні зовнішні запити та програмні виключення в єдину 16-векторну ієрархію з надійним апаратним квітуванням на фізичному рівні.
+
+\subsection{Єдиний простір 16 векторів переривань}
+Процесор підтримує рівно 16 системних векторів (номери 0--15), які є ортогональними та спільними як для зовнішньої периферії, так і для внутрішніх подій процесорного ядра:
+
+\begin{table}[h]
+\centering
+\caption{Єдина таблиця 16 векторів переривань LIM M2}
+\label{tab:vectors}
+\begin{tabularx}{\textwidth}{>{\bfseries}c >{\ttfamily}c p{32mm}X}
+\toprule
+Вектор & Код & Джерело / Тип & Функціональне призначення \\
+\midrule
+VEC 0  & 0x00 & Апаратний / Скидання & Power-on Reset: початкова ініціалізація процесора та регістрів. \\
+VEC 1  & 0x01 & Апаратний (NMI)      & Немасковане переривання: збій живлення, критична апаратна аварія. \\
+VEC 2  & 0x02 & Програмна пастка     & Арифметичне виключення (ділення на нуль, прапорець \reg{FREG.EM}). \\
+VEC 3  & 0x03 & Програмна пастка     & Системний виклик ядра (System Call / Trap диспетчера ОС). \\
+VEC 4  & 0x04 & Апаратний / Периферія & Системний таймер інтервалів / Квантувач планувальника. \\
+VEC 5  & 0x05 & Апаратний / Периферія & Контролер послідовного інтерфейсу (UART RX/TX). \\
+VEC 6  & 0x06 & Апаратний / Периферія & Контролер прямого доступу до пам'яті (DMA Ready). \\
+VEC 7  & 0x07 & Апаратний / Периферія & Зовнішній контролер переривань / Шинний міст. \\
+VEC 8--15 & 0x08--0x0F & Спільні (HW / SW) & Користувацькі апаратні лінії та програмні вектори. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Апаратний протокол квітування (RDI $\to$ IA $\to$ D0--D7)}
+Для надійної взаємодії із зовнішніми контролерами реалізовано 4-фазний цикл апаратного рукостискання (handshake), що повністю виключає необхідність постійного опитування регістрів (polling):
+
+\begin{enumerate}
+  \item \textbf{Фаза запиту (RDI):} Периферійний пристрій встановлює активний високий рівень на вході \texttt{RDI} (\textit{Raw Direct Interrupt}). Лінія опитується ядром на атомарних межах мікрокоманд.
+  \item \textbf{Фаза перевірки маски (Арбітраж):} Якщо глобальне маскування переривань дозволено (біт \reg{FREG.MIE} = 1), процесор фіксує запит і завершує поточну неподільну мікрооперацію тракту даних.
+  \item \textbf{Фаза підтвердження (Строб IA):} Ядро генерує активний строб на виході \texttt{IA} (\textit{Interruption Accepted / Interrupt Acknowledge}, вивід~26). Цей строб сповіщає всі зовнішні пристрої на шині про готовність ядра прийняти номер вектора.
+  \item \textbf{Фаза передачі вектора (Шина D0--D7):} Одночасно з видачею \texttt{IA} зовнішня шина даних \texttt{D0--D7} перемикається ядром у режим приймання (вхід), а лінія зчитування \texttt{RD} активується. Пристрій, що надіслав запит, утримує на лініях \texttt{D0--D7} 8-бітний ідентифікатор вектора (молодші 4 біти адресують вектори 0--15).
+  \item \textbf{Фаза фіксації та перехід:} Процесор фіксує дані з шини \texttt{D0--D7}, знімає сигнал \texttt{IA} та переходить до процедури збереження контексту.
+\end{enumerate}
+
+\begin{center}
+\begin{tikzpicture}[x=1.3cm,y=0.65cm,>=Stealth,font=\sffamily\scriptsize]
+  \foreach \t in {0,...,6} {
+    \draw[dotted,gray!50] (\t, 0.5) -- (\t, 5.5);
+    \node[above,gray!70,font=\tiny] at (\t+0.5, 5.5) {T\t};
+  }
+  
+  \node[left,font=\bfseries] at (0, 5) {CLK};
+  \draw[thick,blue!80!black] (0, 4.7) 
+    \foreach \t in {0,...,5} { -- ++(0.5, 0.6) -- ++(0.5, 0) -- ++(0, -0.6) -- ++(0, 0) };
+
+  \node[left,font=\bfseries] at (0, 4) {RDI};
+  \draw[thick,red!80!black] (0, 3.8) -- (1.0, 3.8) -- (1.2, 4.4) -- (4.8, 4.4) -- (5.0, 3.8) -- (6.0, 3.8);
+  \node[above,red!80!black,font=\tiny] at (2.0, 4.4) {Запит пристрою};
+
+  \node[left,font=\bfseries] at (0, 3) {IA};
+  \draw[thick,teal!80!black] (0, 2.8) -- (2.0, 2.8) -- (2.2, 3.4) -- (4.2, 3.4) -- (4.4, 2.8) -- (6.0, 2.8);
+  \node[above,teal!80!black,font=\tiny] at (3.2, 3.4) {Строб IA (Ack)};
+
+  \node[left,font=\bfseries] at (0, 2) {D0--D7};
+  \draw[thick,gray!60] (0, 1.8) -- (2.2, 1.8);
+  \draw[thick,black] (2.2, 1.8) -- (2.4, 2.2) -- (4.0, 2.2) -- (4.2, 1.8) -- (6.0, 1.8);
+  \draw[thick,black] (2.2, 1.8) -- (2.4, 1.4) -- (4.0, 1.4) -- (4.2, 1.8);
+  \node[font=\bfseries\tiny] at (3.2, 1.8) {Вектор [3:0]};
+
+  \node[left,font=\bfseries] at (0, 1) {ЯДРО};
+  \draw[thick,cyan!80!black] (0, 0.8) -- (2.0, 0.8) -- (2.2, 1.2) -- (4.2, 1.2) -- (4.4, 0.8) -- (6.0, 0.8);
+  \node[above,cyan!80!black,font=\tiny] at (1.0, 0.8) {Мікрокод};
+  \node[above,cyan!80!black,font=\tiny] at (3.2, 1.2) {Прийом вектора};
+  \node[above,cyan!80!black,font=\tiny] at (5.2, 0.8) {Стек (PC, FREG)};
+\end{tikzpicture}
+\end{center}
+
+\subsection{Збереження контексту у 24-бітному стеку та вхід в обробник}
+Прийняття переривання дозволено виключно за умови, що процесор не перебуває в стані обробки іншого переривання (\reg{FREG.INTR} = 0) і переривання глобально дозволені (\reg{FREG.MIE} = 1). Якщо \reg{FREG.INTR} = 1, будь-які повторні апаратні переривання апаратно заблоковані.
+
+Під час фіксації переривання ядро виконує таку послідовність захисту стану:
+\begin{enumerate}
+  \item \textbf{Збереження лічильника команд (PC):} Поточне значення \texttt{PC} зберігається на вершині системного стека за 24-бітним вказівником \reg{SREG}:
+  $$\reg{SREG} \leftarrow \reg{SREG} - 2, \quad \text{Memory}[\reg{SREG}] \leftarrow \text{PC}_{15:0}$$
+  \item \textbf{Збереження прапорців та статусу (FREG):} Поточний стан регістра \reg{FREG} (з початковим значенням \reg{FREG.INTR}=0) розміщується у стеку:
+  $$\reg{SREG} \leftarrow \reg{SREG} - 2, \quad \text{Memory}[\reg{SREG}] \leftarrow \reg{FREG}$$
+  \item \textbf{Апаратне блокування вкладених переривань:} Ядро виставляє прапорець активності переривання \reg{FREG.INTR} $\leftarrow$ \texttt{1} (біт 15) та скидає маску \reg{FREG.MIE} $\leftarrow$ \texttt{0}, унеможливлюючи каскадні повторні входи.
+  \item \textbf{Перехід за вектором:} Адреса обробника обчислюється на основі прийнятого номера вектора та завантажується в \texttt{PC}.
+\end{enumerate}
+
+\subsection{Повернення з переривання}
+Вихід з процедури обробки переривання здійснюється відновленням збереженого контексту зі стека:
+\begin{enumerate}
+  \item Зі стека зчитується та відновлюється початковий стан регістра статусу:
+  $$\reg{FREG} \leftarrow \text{Memory}[\reg{SREG}], \quad \reg{SREG} \leftarrow \reg{SREG} + 2$$
+  (При цьому біт \reg{FREG.INTR} автоматично повертається в \texttt{0}, знімаючи блокування, а біт \reg{FREG.MIE} відновлює свій попередній стан).
+  \item Зі стека відновлюється лічильник команд:
+  $$\text{PC} \leftarrow \text{Memory}[\reg{SREG}], \quad \reg{SREG} \leftarrow \reg{SREG} + 2$$
+  \item Процесор продовжує виконання перерваного потоку інструкцій без жодних втрат даних.
+\end{enumerate}
 
 \section{Висновки}
 Архітектура \textbf{LIM M2} гармонійно поєднує перевірену надійність мікропрограмного керування та сучасну ефективність активного мультиплексорного тракту без третього стану. Завдяки усуненню шинних колізій та ємнісного розмивання фронтів процесор забезпечує виняткову цілісність сигналів і відкриває безпрецедентний частотний діапазон від 200~МГц до фізичних меж сучасного кремнію.

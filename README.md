@@ -67,10 +67,10 @@ Pre-compiled, ready-to-print comprehensive technical reference datasheets are lo
 ### Flag and Control Register (`FREG`) Bit Layout
 
 ```text
- 15   14   13   12   11   10    9    8    7    6    5    4    3    2    1    0
-+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
-|AIP |SBIT|SMOD|DBIT|M24 |DWR |MIE |PIE |CLK1|CLK0|CMP1|CMP0| EM | OF | CF | ZF |
-+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
+ 15    14    13    12   11   10    9    8    7    6    5    4    3    2    1    0
++-----+-----+-----+----+----+----+----+----+----+----+----+----+----+----+----+----+
+|INTR |SMOD |DBIT |AIP |M24 |DWR |MIE |PIE |CLK1|CLK0|CMP1|CMP0| EM | OF | CF | ZF |
++-----+-----+-----+----+----+----+----+----+----+----+----+----+----+----+----+----+
 ```
 
 * **`ZF` (0):** Zero Flag (result is zero).
@@ -83,10 +83,10 @@ Pre-compiled, ready-to-print comprehensive technical reference datasheets are lo
 * **`MIE` (9):** Master Interrupt Enable.
 * **`DWR` (10):** Disable Wait for Ready (forced non-blocking bus transfer).
 * **`M24` (11):** 24-bit Extended Addressing Enable.
-* **`DBIT` (12):** Discarded Shift Bit buffer.
-* **`SMOD` (13):** Shift Mode modifier.
-* **`SBIT` (14):** Shift Bit value for serial injection.
-* **`AIP` (15):** Auto-Increment Pointer on memory operations.
+* **`AIP` (12):** Auto-Increment Pointer on memory operations.
+* **`DBIT` (13):** Displaced Bit buffer (retains bit ejected during shift).
+* **`SMOD` (14):** Shift Mode selector (`0`: zero-fill, `1`: cyclic rotate through `DBIT`).
+* **`INTR` (15):** In-Interrupt execution flag (`1`: CPU is servicing an interrupt; subsequent interrupts locked out).
 
 ---
 
@@ -118,14 +118,82 @@ Pre-compiled, ready-to-print comprehensive technical reference datasheets are lo
 | **10101** | `0x15` | **`DEC`** | Arithmetic | Atomic decrement by 1 |
 | **10110** | `0x16` | **`PUSH`** | Stack | Push 16-bit word onto 24-bit stack (`SREG <- SREG - 2`) |
 | **10111** | `0x17` | **`POP`** | Stack | Pop 16-bit word from 24-bit stack (`SREG <- SREG + 2`) |
-| **11000** | `0x18` | **`BSL`** | Shift | Barrel Shift Left with `FREG.DBIT` capture |
-| **11001** | `0x19` | **`BSR`** | Shift | Barrel Shift Right with `FREG.DBIT` capture |
+| **11000** | `0x18` | **`BSL`** | Shift | Barrel Shift Left (zero-fill or cyclic rotate via `DBIT` if `SMOD=1`) |
+| **11001** | `0x19` | **`BSR`** | Shift | Barrel Shift Right (zero-fill or cyclic rotate via `DBIT` if `SMOD=1`) |
 | **11010** | `0x1A` | **`CSRM`** | System | Control and Status Register Access (`FREG`, `PTREG`, `SREG`) |
 | **11011** | `0x1B` | **`RSV27`** | Reserved | Vector / SIMD hardware extensions slot |
 | **11100** | `0x1C` | **`RSV28`** | Reserved | Extended addressing coprocessor slot |
 | **11101** | `0x1D` | **`RSV29`** | Reserved | Floating-Point Unit (FPU) slot |
 | **11110** | `0x1E` | **`RSV30`** | Reserved | Hardware cryptography accelerator slot |
 | **11111** | `0x1F` | **`RSV31`** | Reserved | Future architecture expansion slot |
+
+---
+
+## 🔌 Physical Interface & 34-Pin Package
+
+The LIM M2 processor is packaged in an industry-standard 34-pin dual-row footprint engineered for signal integrity, noise immunity, and deterministic timing:
+
+| Pin | Name | Direction | Description |
+| :---: | :--- | :---: | :--- |
+| **1–8** | `A0`–`A7` | Output | Multiplexed lower 8 bits of 16-bit physical address bus |
+| **9–16** | `A8`–`A15` | Output | Multiplexed upper 8 bits of 16-bit physical address bus |
+| **17** | `CLK1` | Input | Phase 1 system clock input |
+| **18** | `CLK2` | Input | Phase 2 system clock input (non-overlapping) |
+| **19** | `RDI` | Input | Raw Direct Interrupt: priority hardware interrupt request line |
+| **20** | `AL` | Output | Address Latch strobe for external transparent latch / buffer |
+| **21** | `RF` | Input | Ready Flag: slave device handshake ready acknowledge |
+| **22** | `WD` | Output | Bus Write Enable strobe |
+| **23** | `RD` | Output | Bus Read Enable strobe |
+| **24** | `GND` | Power | System ground reference (0 V) |
+| **25** | `VCC` | Power | Primary core and I/O power supply (+5 V nominal) |
+| **26** | **`IA`** | **Output** | **Interruption Accepted / Interrupt Acknowledge: informs peripherals that the request is accepted; core shifts `D0–D7` to input to sample vector ID** |
+| **27–34** | `D7`–`D0` | Bidirectional | 8-bit bidirectional data bus for memory and peripheral transfers |
+
+---
+
+## ⚡ Interrupt Architecture & Vector Processing Subsystem (16 Vectors)
+
+The LIM M2 interrupt subsystem is designed for hard real-time determinism, sub-cycle arbitration, and complete protection against bus contention. It seamlessly unifies external hardware interrupts and internal traps into an orthogonal 16-vector hierarchy:
+
+### 1. Unified 16-Vector System Space
+
+| Vector | Hex Code | Source / Trigger | Architectural Role |
+| :---: | :---: | :--- | :--- |
+| **`VEC 0`** | `0x00` | Hardware / Reset | Power-on Reset: cold initialization of CPU registers & pipeline |
+| **`VEC 1`** | `0x01` | Hardware (NMI) | Non-Maskable Interrupt: power fail, hardware fault alert |
+| **`VEC 2`** | `0x02` | Software Trap | Arithmetic Exception (division by zero, `FREG.EM` flag) |
+| **`VEC 3`** | `0x03` | Software Trap | OS System Call dispatcher (`Syscall / Trap` handler) |
+| **`VEC 4`** | `0x04` | Hardware / Device | System Interval Timer tick |
+| **`VEC 5`** | `0x05` | Hardware / Device | UART Serial communications interface (RX/TX ready) |
+| **`VEC 6`** | `0x06` | Hardware / Device | DMA Controller transfer complete |
+| **`VEC 7`** | `0x07` | Hardware / Device | External Interrupt Controller / System bridge |
+| **`VEC 8–15`** | `0x08–0x0F` | Shared (HW / SW) | User peripheral interrupts and software vector handlers |
+
+### 2. Cycle-Accurate Hardware Handshake (`RDI` $\to$ `IA` $\to$ `D0–D7`)
+
+External interrupt servicing follows a deterministic 5-step hardware sequence:
+1. **Request Phase (`RDI`):** Peripheral asserts active-high level on the `RDI` pin. The core samples `RDI` at atomic micro-op boundaries.
+2. **Mask & Lockout Evaluation:** If interrupts are enabled (`FREG.MIE == 1`) and the CPU is not already in an interrupt handler (`FREG.INTR == 0`), the CPU commits its current datapath micro-operation. If `INTR == 1`, new interrupts are locked out.
+3. **Acknowledge Strobe (`IA`):** The core asserts active-high `IA` (Pin 26), signaling to the bus that the request is granted.
+4. **Vector Ingestion (`D0–D7`):** The core turns `D0–D7` into high-impedance input mode and asserts read strobe `RD`. The peripheral drives its 8-bit vector ID (lower 4 bits address vectors 0–15).
+5. **Latch & Vector Dispatch:** The CPU latches the vector, deasserts `IA`, and advances to context preservation.
+
+### 3. Context Preservation on 24-Bit Stack (`SREG`)
+
+Upon accepting an interrupt:
+1. **Save Return PC:** Program counter is pushed onto the 24-bit stack:
+   $$\text{SREG} \leftarrow \text{SREG} - 2, \quad \text{Memory}[\text{SREG}] \leftarrow \text{PC}_{15:0}$$
+2. **Save Flags & Status (`FREG`):** Pushed with original $\text{INTR} = 0$:
+   $$\text{SREG} \leftarrow \text{SREG} - 2, \quad \text{Memory}[\text{SREG}] \leftarrow \text{FREG}$$
+3. **Hardware Lockout:** `FREG.INTR` is set to `1` (bit 15) and `FREG.MIE` is cleared to `0`, locking out nested re-entrancy.
+4. **Dispatch:** The vector handler address is indexed from the vector table and loaded into `PC`.
+
+### 4. Return from Interrupt
+
+Exiting the handler pops the saved architectural context:
+1. $\text{FREG} \leftarrow \text{Memory}[\text{SREG}], \quad \text{SREG} \leftarrow \text{SREG} + 2$ (automatically clearing `INTR` back to `0` and restoring `MIE`).
+2. $\text{PC} \leftarrow \text{Memory}[\text{SREG}], \quad \text{SREG} \leftarrow \text{SREG} + 2$.
+Execution resumes instantly on the subsequent cycle with zero state contamination.
 
 ---
 

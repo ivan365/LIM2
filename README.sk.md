@@ -67,10 +67,10 @@
 ### Bitová mapa príznakového registra (`FREG`)
 
 ```text
- 15   14   13   12   11   10    9    8    7    6    5    4    3    2    1    0
-+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
-|AIP |SBIT|SMOD|DBIT|M24 |DWR |MIE |PIE |CLK1|CLK0|CMP1|CMP0| EM | OF | CF | ZF |
-+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+----+
+ 15    14    13    12   11   10    9    8    7    6    5    4    3    2    1    0
++-----+-----+-----+----+----+----+----+----+----+----+----+----+----+----+----+----+
+|INTR |SMOD |DBIT |AIP |M24 |DWR |MIE |PIE |CLK1|CLK0|CMP1|CMP0| EM | OF | CF | ZF |
++-----+-----+-----+----+----+----+----+----+----+----+----+----+----+----+----+----+
 ```
 
 * **`ZF` (0):** Príznak nuly (Zero Flag).
@@ -83,9 +83,10 @@
 * **`MIE` (9):** Povolenie maskovateľných prerušení.
 * **`DWR` (10):** Vynútený prenos bez čakania na zbernicu.
 * **`M24` (11):** Povolenie 24-bitového rozšíreného adresného režimu.
-* **`DBIT` (12):** Vyrovnávacia pamäť posledného vysunutého bitu.
-* **`SMOD` / `SBIT` (13–14):** Konfigurácia vkladania bitov pri posunoch.
-* **`AIP` (15):** Autoincrement ukazovateľa `PTREG` pri prístupe k pamäti.
+* **`AIP` (12):** Autoincrement ukazovateľa `PTREG` pri prístupe k pamäti.
+* **`DBIT` (13):** Záchytný register pre bit vysunutý pri posune.
+* **`SMOD` (14):** Režim posunu (`0`: nulovanie; `1`: cyklický priechod cez `DBIT`).
+* **`INTR` (15):** Príznak vykonávania prerušenia (`1`: procesor obsluhuje prerušenie; ďalšie prerušenia zablokované).
 
 ---
 
@@ -117,14 +118,82 @@
 | **10101** | `0x15` | **`DEC`** | Aritmetika | Hardvérová dekrementácia o 1 |
 | **10110** | `0x16` | **`PUSH`** | Zásobník | Uloženie slova do 24-bitového zásobníka (`SREG <- SREG - 2`) |
 | **10111** | `0x17` | **`POP`** | Zásobník | Výber slova z 24-bitového zásobníka (`SREG <- SREG + 2`) |
-| **11000** | `0x18` | **`BSL`** | Posuny | Barelový posun doľava s ukladaním do `FREG.DBIT` |
-| **11001** | `0x19` | **`BSR`** | Posuny | Barelový posun doprava s ukladaním do `FREG.DBIT` |
+| **11000** | `0x18` | **`BSL`** | Posuny | Barelový posun doľava (nulovanie alebo cyklická rotácia cez `DBIT` pri `SMOD=1`) |
+| **11001** | `0x19` | **`BSR`** | Posuny | Barelový posun doprava (nulovanie alebo cyklická rotácia cez `DBIT` pri `SMOD=1`) |
 | **11010** | `0x1A` | **`CSRM`** | Systém | Prístup k systémovým registrom (`FREG`, `PTREG`, `SREG`) |
 | **11011** | `0x1B` | **`RSV27`** | Rezerva | Slot pre vektorové inštrukcie (SIMD) |
 | **11100** | `0x1C` | **`RSV28`** | Rezerva | Slot pre rozšírené adresovanie |
 | **11101** | `0x1D` | **`RSV29`** | Rezerva | Slot koprocesora s pohyblivou rádovou čiarkou (FPU) |
 | **11110** | `0x1E` | **`RSV30`** | Rezerva | Slot pre kryptografický akcelerátor |
 | **11111** | `0x1F` | **`RSV31`** | Rezerva | Slot pre budúce rozšírenia architektúry |
+
+---
+
+## 🔌 Fyzické rozhranie a 34-pinové zapuzdrenie
+
+Procesor LIM M2 je zapuzdrený v štandardnom 34-pinovom dvojradovom puzdre, ktoré je navrhnuté pre maximálnu integritu signálov, odolnosť proti šumu a deterministické časovanie:
+
+| Pin | Označenie | Smer | Funkčný popis |
+| :---: | :--- | :---: | :--- |
+| **1–8** | `A0`–`A7` | Výstup | Spodných 8 bitov 16-bitovej multiplexovanej adresovej zbernice |
+| **9–16** | `A8`–`A15` | Výstup | Horných 8 bitov 16-bitovej multiplexovanej adresovej zbernice |
+| **17** | `CLK1` | Vstup | Fáza 1 systémových hodín |
+| **18** | `CLK2` | Vstup | Fáza 2 systémových hodín (bez vzájomného prekrytia) |
+| **19** | `RDI` | Vstup | Raw Direct Interrupt: prioritná linka žiadosti o hardvérové prerušenie |
+| **20** | `AL` | Výstup | Address Latch: riadiaci impulz záchytu adresy v externom registri |
+| **21** | `RF` | Vstup | Ready Flag: potvrdenie pripravenosti podriadeného pamäťového/periférneho obvodu |
+| **22** | `WD` | Výstup | Riadiaci impulz zápisu na zbernici (Write Enable) |
+| **23** | `RD` | Výstup | Riadiaci impulz čítania zo zbernice (Read Enable) |
+| **24** | `GND` | Napájanie | Spoločné systémové uzemnenie (0 V) |
+| **25** | `VCC` | Napájanie | Napájacie napätie logiky jadra a vstupov/výstupov (+5 V nominálne) |
+| **26** | **`IA`** | **Výstup** | **Interruption Accepted / Interrupt Acknowledge: potvrdenie prijatia prerušenia; jadro prepne `D0–D7` na vstup a očakáva číslo vektora** |
+| **27–34** | `D7`–`D0` | Obojsmerný | 8-bitová obojsmerná zbernica pre prenos dát s pamäťou a perifériami |
+
+---
+
+## ⚡ Architektúra podsystému prerušení a vektorové spracovanie (16 vektorov)
+
+Podsystém prerušení procesora LIM M2 zabezpečuje minimálnu latenciu odozvy reálneho času, subcyklovú arbitráciu a absolútnu ochranu pred zbernicovými kolíziami. Architektúra integruje externé požiadavky a interné softvérové pasce do jednotnej 16-vektorovej hierarchie:
+
+### 1. Zjednotený 16-vektorový systémový priestor
+
+| Vektor | Kód | Zdroj / Spúšťač | Architektonická úloha |
+| :---: | :---: | :--- | :--- |
+| **`VEC 0`** | `0x00` | Hardvérový / Reset | Power-on Reset: studená inicializácia registrov a zreťazenia jadra |
+| **`VEC 1`** | `0x01` | Hardvérový (NMI) | Nemaskovateľné prerušenie: výpadok napájania, kritická hardvérová chyba |
+| **`VEC 2`** | `0x02` | Softvérová pasca | Aritmetická výnimka (delenie nulou, príznak `FREG.EM`) |
+| **`VEC 3`** | `0x03` | Softvérová pasca | Systémové volanie jadra OS (dispečer `Syscall / Trap`) |
+| **`VEC 4`** | `0x04` | Hardvérový / Periféria | Takt systémového intervalového časovača |
+| **`VEC 5`** | `0x05` | Hardvérový / Periféria | Sériové rozhranie UART (pripravenosť RX/TX) |
+| **`VEC 6`** | `0x06` | Hardvérový / Periféria | Radič DMA (dokončenie blokového prenosu dát) |
+| **`VEC 7`** | `0x07` | Hardvérový / Periféria | Externý radič prerušení / Zbernicový most |
+| **`VEC 8–15`** | `0x08–0x0F` | Zdieľané (HW / SW) | Používateľské linky periférií a programové obslužné rutiny |
+
+### 2. Cyklovo presný hardvérový handshake (`RDI` $\to$ `IA` $\to$ `D0–D7`)
+
+Spracovanie externého prerušenia prebieha v deterministickom 5-krokovom hardvérovom cykle:
+1. **Fáza žiadosti (`RDI`):** Periférne zariadenie nastaví aktívnu úroveň logickej 1 na vstupe `RDI`. Jadro testuje linku na hraniciach mikroinštrukcií.
+2. **Vyhodnotenie masky a blokovania:** Pri povolených prerušeniach (`FREG.MIE == 1`) a ak procesor ešte nespracúva iné prerušenie (`FREG.INTR == 0`), procesor požiadavku potvrdí a dokončí aktuálnu mikrooperáciu. Ak `INTR == 1`, nové prerušenia sú zablokované.
+3. **Strob potvrdenia (`IA`):** Jadro vygeneruje logickú 1 na vývode `IA` (pin 26), čím signalizuje perifériám pripravenosť prijať identifikátor vektora.
+4. **Načítanie vektora (`D0–D7`):** Jadro prepne zbernicu `D0–D7` do stavu vysokej impedancie (vstup) a aktivuje signál `RD`. Zariadenie vystaví 8-bitový identifikátor vektora (spodné 4 bity adresujú vektory 0–15).
+5. **Záchyt a prechod na vektor:** Procesor zachytí číslo vektora, deaktivuje `IA` a prejde k uloženiu kontextu.
+
+### 3. Uloženie kontextu v 24-bitovom zásobníku (`SREG`)
+
+Pri vstupe do obslužnej rutiny prerušenia:
+1. **Uloženie návratového čítača (PC):**
+   $$\text{SREG} \leftarrow \text{SREG} - 2, \quad \text{Memory}[\text{SREG}] \leftarrow \text{PC}_{15:0}$$
+2. **Uloženie registra stavu a príznakov (`FREG`):** Uloží sa s pôvodným $\text{INTR} = 0$:
+   $$\text{SREG} \leftarrow \text{SREG} - 2, \quad \text{Memory}[\text{SREG}] \leftarrow \text{FREG}$$
+3. **Hardvérové blokovanie:** Nastaví sa `FREG.INTR` na `1` (bit 15) a `FREG.MIE` sa vynuluje na `0` pre zamedzenie kolízií vnorených prerušení.
+4. **Skok:** Bázová adresa vektora sa zapíše do čítača inštrukcií `PC`.
+
+### 4. Návrat z prerušenia
+
+Ukončenie obsluhy obnoví pôvodný kontext procesora zo zásobníka:
+1. $\text{FREG} \leftarrow \text{Memory}[\text{SREG}], \quad \text{SREG} \leftarrow \text{SREG} + 2$ (automaticky vynuluje `INTR` späť na `0` a obnoví `MIE`).
+2. $\text{PC} \leftarrow \text{Memory}[\text{SREG}], \quad \text{SREG} \leftarrow \text{SREG} + 2$.
+Vykonávanie prerušeného toku inštrukcií plynule pokračuje v nasledujúcom takte bez akejkoľvek straty údajov.
 
 ---
 

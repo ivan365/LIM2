@@ -52,7 +52,10 @@ class LIM2CPU(BaseCPU):
             ("MIE", "MasterInt", 9),
             ("DWR", "NoWait", 10),
             ("M24", "24-bit Mode", 11),
-            ("AIP", "AutoInc", 15),
+            ("AIP", "AutoInc", 12),
+            ("DBIT", "DisplacedBit", 13),
+            ("SMOD", "ShiftMode", 14),
+            ("INTR", "InInterrupt", 15),
         ]
         self.reg("freg", bits=16, default=0, title="FREG", is_flag=True, flag_layout=flag_layout, block="STATUS")
 
