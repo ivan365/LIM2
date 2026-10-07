@@ -1,0 +1,636 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[slovak,english]{babel}
+\usepackage{geometry,xcolor,array,booktabs,longtable,tabularx,tikz,fancyhdr,titlesec,enumitem,hyperref,lastpage,microtype}
+\usepackage[sfdefault]{noto}
+\usepackage[most]{tcolorbox}
+\usepackage{pdflscape}
+\usetikzlibrary{arrows.meta,calc,positioning,shapes.geometric,babel}
+
+\geometry{left=18mm,right=18mm,top=21mm,bottom=20mm,headheight=20pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
+\setlength{\emergencystretch}{2em}
+\setlist{nosep,leftmargin=*}
+\definecolor{limblue}{HTML}{102A43}
+\definecolor{limcyan}{HTML}{00A6A6}
+\definecolor{limaccent}{HTML}{FF6B4A}
+\definecolor{limmint}{HTML}{DFF7F5}
+\definecolor{limlight}{HTML}{F1F5F8}
+\definecolor{limpaper}{HTML}{FAFCFD}
+\definecolor{limgray}{HTML}{627D98}
+\hypersetup{colorlinks=true,linkcolor=limcyan,urlcolor=limcyan,pdftitle={LIM M2 --- Architektonická špecifikácia procesora}}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\colorbox{limblue}{\textcolor{white}{\strut\hspace{2mm}\textbf{LIM M2}\hspace{2mm}}}}
+\fancyhead[R]{\small\textcolor{limgray}{PROCESSOR REFERENCE MANUAL / REVISION 0.2}}
+\fancyfoot[L]{\small Architektonická príručka LIM M2 --- Revízia 0.2 (Október 2026)}
+\fancyfoot[R]{\small \thepage/\pageref{LastPage}}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+\titleformat{\section}{\Large\bfseries\color{limblue}}
+  {\colorbox{limcyan}{\textcolor{white}{\strut\thesection}}}{0.75em}{}
+\titleformat{\subsection}{\large\bfseries\color{limblue}}{\thesubsection}{0.7em}{}
+\titlespacing*{\section}{0pt}{16pt}{8pt}
+
+\newcommand{\TBD}{\textcolor{limcyan}{\textbf{TBD}}}
+\newcommand{\reg}[1]{\texttt{#1}}
+\newcommand{\bits}[1]{\texttt{#1}}
+\newcommand{\field}[1]{\textsf{#1}}
+\newcommand{\opcodebox}[1]{\tikz[baseline=(n.base)]\node[fill=limblue,text=white,rounded corners=2pt,inner xsep=7pt,inner ysep=3pt,font=\ttfamily\bfseries] (n) {#1};}
+\newtcolorbox{limnote}[1]{
+  enhanced,breakable,colback=limlight,colframe=limcyan,boxrule=0pt,
+  borderline west={3pt}{0pt}{limcyan},arc=1mm,left=4mm,right=4mm,
+  top=3mm,bottom=3mm,title={#1},fonttitle=\bfseries\color{limblue},
+  coltitle=limblue,attach title to upper={\par\smallskip}}
+\newtcolorbox{specbox}{
+  enhanced,colback=limpaper,colframe=limlight,boxrule=0.8pt,arc=2mm,
+  left=3mm,right=3mm,top=2mm,bottom=2mm}
+
+\newcommand{\InstructionPage}[8]{%
+  \clearpage
+  \phantomsection\addcontentsline{toc}{subsection}{#1 --- #4}
+  \begin{tcolorbox}[enhanced,colback=limblue,colframe=limblue,arc=3mm,
+    left=5mm,right=5mm,top=4mm,bottom=4mm]
+  \begin{minipage}[t]{0.68\textwidth}
+    {\fontsize{30}{34}\selectfont\bfseries\color{white}#1}\par\vspace{1mm}
+    {\large\color{white}#4}
+  \end{minipage}\hfill
+  \begin{minipage}[t]{0.25\textwidth}\raggedleft
+    \tikz[baseline=(n.base)]\node[fill=limcyan,text=white,rounded corners=2pt,
+      inner xsep=8pt,inner ysep=4pt,font=\ttfamily\bfseries] (n) {#2};
+    \par\smallskip{\small\color{white}#3}
+  \end{minipage}
+  \end{tcolorbox}
+  \vspace{3mm}
+  \begin{specbox}
+  \begin{tabularx}{\dimexpr\textwidth-8mm\relax}{>{\bfseries\color{limblue}}p{31mm}X}
+    \toprule
+    Mnemonic & \texttt{#1} \\
+    Opcode & \bits{#2} (Horných 5 bitov inštrukčného slova) \\
+    Formát inštrukcie & 5-bitový opcode, 3-bitové pole \field{cfg} a dynamické argumenty (pri špecializovaných príkazoch argumenty priamo za opkódom) \\
+    Trieda operácie & #3 \\
+    Stav ratifikácie & Základná špecifikácia schválená; rozvrhnutie bitových polí argumentov vo fáze finalizácie \\
+    \bottomrule
+  \end{tabularx}
+  \end{specbox}
+  \subsection*{Účel inštrukcie} #4.
+  \subsection*{Architektonická sémantika}
+  \begin{tcolorbox}[colback=limmint,colframe=limmint,arc=2mm,boxrule=0pt,left=4mm]
+    \ttfamily #5
+  \end{tcolorbox}
+  \subsection*{Konfigurácia a operandy} #6
+  \subsection*{Vplyv na príznakový register (FREG)} #7
+  \subsection*{Mikrooperácie dátovej cesty}
+  \begin{enumerate}
+    \item Multiplexorový výber zdrojových operandov z registrového poľa alebo priamej zbernice.
+    \item Odoslanie operácie do vyhradenej funkčnej jednotky (ALU / pamäť / riadenie).
+    \item Smerovanie výsledku cez selektor spätného zápisu (MUX 2) do cieľového registra.
+    \item Synchrónna aktualizácia stavových príznakov \reg{FREG} a registrových ukazovateľov (\reg{PTREG}, \reg{SREG}).
+  \end{enumerate}
+  Presné cyklické časovanie a riadiace impulzy: \TBD.
+  \subsection*{Poznámky k implementácii} #8
+  \vfill{\footnotesize\color{limgray}Polia s označením TBD špecifikujú konfigurovateľné hardvérové voľby.}
+}
+
+\begin{document}
+\begin{titlepage}
+  \pagecolor{limpaper}\color{limblue}
+  \begin{tikzpicture}[remember picture,overlay]
+    \fill[limblue] (current page.north west) rectangle
+      ([xshift=58mm]current page.south west);
+    \fill[limcyan] ([xshift=58mm]current page.north west) rectangle
+      ([xshift=63mm]current page.south west);
+    \draw[limlight,line width=0.7pt] ([xshift=77mm,yshift=-37mm]current page.north west)
+      -- ([xshift=-16mm,yshift=-37mm]current page.north east);
+  \end{tikzpicture}
+  \vspace*{18mm}
+  \hspace*{-7mm}\begin{minipage}{50mm}\centering
+    {\color{white}\bfseries\large HIGH-PERFORMANCE}\par\smallskip
+    {\color{limcyan}\bfseries\small 16-BIT ARCHITECTURE}
+  \end{minipage}\par
+  \vspace{31mm}
+  \hspace*{68mm}\begin{minipage}{100mm}\raggedright
+    {\fontsize{38}{42}\selectfont\bfseries LIM\par M2}\par
+    \vspace{7mm}
+    {\Large\bfseries\color{limcyan}Architektonická príručka procesora}\par
+    \vspace{9mm}
+    {\large Vysoko deterministická 16-bitová mikroprogramová architektúra s čistou multiplexorovou dátovou cestou a rozšíreným 24-bitovým adresovaním.}\par
+    \vspace{18mm}
+    \begin{tikzpicture}[node distance=5mm]
+      \foreach \x/\n in {0/R0,1.25/R1,2.5/R2,3.75/R3,5/R4,6.25/R5,7.5/R6,8.75/R7}
+        \node[draw=limblue,rounded corners=1.5pt,minimum width=10mm,minimum height=8mm,
+          fill=white,font=\bfseries\scriptsize] (r\n) at (\x,0) {\n};
+      \draw[limcyan,line width=2pt,-{Latex[length=2mm]}] (0,-0.8) -- (8.75,-0.8);
+      \draw[limblue,line width=1.2pt,-{Latex[length=2mm]}] (8.75,-1.25) -- (0,-1.25);
+      \node[anchor=west,font=\small\bfseries,text=limgray] at (0,-1.85)
+        {POINT-TO-POINT DATA ROUTING \enspace·\enspace ZERO BUS CONTENTION};
+    \end{tikzpicture}
+  \end{minipage}
+  \vfill
+  \hspace*{68mm}\begin{minipage}{100mm}\raggedright
+    {\bfseries\color{limaccent}OFFICIAL REFERENCE SPECIFICATION}\par\smallskip
+    {\large Revízia 0.2 --- Október 2026}\par\medskip
+    {\small\color{limgray}Špecifikácia jadra LIM M2. Všetky práva vyhradené.}
+  \end{minipage}
+  \vspace*{10mm}
+\end{titlepage}
+\nopagecolor
+
+\tableofcontents
+\clearpage
+
+\section{Rozsah dokumentu a architektonická filozofia}
+Tento dokument predstavuje oficiálnu technickú špecifikáciu a architektonický štandard mikroprocesora \textbf{LIM M2}. 
+Architektúra bola navrhnutá s dôrazom na maximálnu spoľahlivosť, matematickú exaktnosť a vysokú taktovaciu frekvenciu.
+
+Základným kameňom dátovej cesty LIM M2 je \textbf{úplné vylúčenie vnútorných zberníc tretieho stavu (Tri-State / Hi-Z)}. Nahradením zdieľaných kapacitných liniek aktívne budenými stromami multiplexorov (Point-to-Point MUX Routing) sa úplne zamedzuje vzniku skratových prúdov, zbernicových konfliktov (bus contention) a parazitných kapacitných oneskorení.
+
+\begin{limnote}{Číslovanie inštrukčného súboru}
+Inštrukčná sada LIM M2 využíva súvislý 5-bitový priestor primárnych kódov: 
+\texttt{NOP}=0, \texttt{ADD}=1, \ldots, \texttt{CSRM}=26. Kódy 27--31 sú vyhradené pre hardvérové rozšírenia novej generácie.
+\end{limnote}
+
+\subsection{Dohodnuté označenia}
+\begin{tabularx}{\textwidth}{>{\ttfamily}p{28mm}X}
+\toprule
+Označenie & Architektonický význam \\
+\midrule
+dst & Cieľový register pre zápis výsledku operácie \\
+src, srcA, srcB & Zdrojové registre vstupných operandov \\
+imm & Priama skalárna konštanta v tele inštrukcie \\
+addr & Efektívna adresa pamäte (16-bitová základná alebo 24-bitová rozšírená) \\
+cfg & 3-bitové konfiguračné pole modifikátora operácie \\
+ZF, CF, OF & Hardvérové príznaky nuly, prenosu a pretečenia v registri \reg{FREG} \\
+\bottomrule
+\end{tabularx}
+
+\section{Architektonický prehľad procesora LIM M2}
+\textbf{LIM M2} je všestranný, vysoko výkonný 16-bitový procesor s mikroprogramovým riadením, optimalizovaný na celočíselné výpočty. Medzi kľúčové architektonické prednosti patria:
+
+\begin{itemize}
+  \item \textbf{Čisté multiplexorové smerovanie dát:} Vnútorná dátová cesta je kompletne zbavená tretieho stavu. Prenos dát je riadený aktívnymi budičmi cez kaskádu selektorov \textbf{MUX 1}, \textbf{DEST-DMUX} a \textbf{MUX 2}. Architektúra je optimálne prispôsobená moderným technológiám ASIC a rýchlym FPGA.
+  \item \textbf{Dvojitý akumulátorový uzol (Dual Accumulator Staging):} Registre \reg{ACCA} a \reg{ACCB} stabilne fixujú operandy pred ALU, čím izolujú prechodové javy výpočtu od hlavného registrového poľa.
+  \item \textbf{Hardvérové reťazenie dlhej aritmetiky (ALU Auto-Chaining):} Blok ALU integruje vnútorný zvyškový register (\reg{ALU\_RESIDUAL}). V prípade prenosu ($+1$ pri súčte $>2^{16}-1$), výpožičky ($-1$ pri rozdiele $<0$) alebo vyšších bitov násobenia/delenia sa zvyšok zachytáva hardvérovo a automaticky pripočíta či odpočíta v nasledujúcej matematickej operácii. Tým sa zabezpečuje priebežná viacbajtová aritmetika (32, 48, 64+ bitov) bez samostatných inštrukcií ADC/SBB. Vyprázdnenie reťazca sa vykonáva inštrukciou \texttt{NOP}.
+  \item \textbf{Priamy premosťovací kanál (Reg-to-Reg Bypass):} Obchádzková vetva z MUX 1 priamo do MUX 2 umožňuje bleskové kopírovanie medzi registrami bez blokovania aritmetickej jednotky.
+  \item \textbf{Lineárne 24-bitové adresovanie pamäte (až 16 MB):} Špecializované 24-bitové registre \reg{PTREG} (ukazovateľ údajov s autoincrementom) a \reg{SREG} (zásobníkový ukazovateľ) umožňujú lineárny prístup k rozsiahlym dátovým blokom a zásobníku až do 16~MB bez segmentačných bariér.
+  \item \textbf{Vysoký frekvenčný potenciál:} Odstránenie kapacitného zaťaženia distribuovaných zberníc umožňuje jadru dosahovať základnú taktovaciu frekvenciu \textbf{200~MHz}, pričom v optimalizovanej kremíkovej implementácii škáluje na \textbf{700~MHz a viac}.
+\end{itemize}
+
+\clearpage
+\begin{landscape}
+\thispagestyle{empty}
+\subsection{Principiálna schéma dátovej cesty (Datapath)}
+\begin{center}
+\begin{tikzpicture}[
+    x=1cm, y=1cm,
+    >=Stealth,
+    font=\sffamily\scriptsize,
+    % Component Styles
+    regnode/.style={
+        draw=black!85, rectangle, rounded corners=3pt, minimum width=1.1cm, minimum height=0.75cm, 
+        line width=1.1pt, fill=white, font=\bfseries\scriptsize, align=center
+    },
+    block/.style={
+        draw=black!85, rectangle, rounded corners=3pt, line width=1.1pt, fill=white, 
+        font=\bfseries\scriptsize, align=center
+    },
+    ctrlbox/.style={
+        draw=red!80!black, rectangle, rounded corners=7pt, line width=1.4pt,
+        fill=red!5, align=center
+    },
+    membox/.style={
+        draw=cyan!75!black, rectangle, rounded corners=6pt, line width=1.3pt,
+        fill=cyan!6, align=center
+    },
+    % Wire Styles
+    databus/.style={->, line width=1.3pt, draw=black!90},
+    databus_line/.style={line width=1.3pt, draw=black!90},
+    ctrlbus/.style={->, line width=1.0pt, draw=red!80!black, dashed},
+    ctrlbus_line/.style={line width=1.0pt, draw=red!80!black, dashed},
+    bidir/.style={<->, line width=1.2pt, draw=teal!80!black}
+]
+
+    % ========================================================
+    % 1. РЕГИСТРЫ R0 - R7 (16-BIT GPR) (Y = 12.0)
+    % ========================================================
+    \foreach \i/\x in {0/0.6, 1/2.0, 2/3.4, 3/4.8, 4/6.2, 5/7.6, 6/9.0, 7/10.4} {
+        \node[regnode] (R\i) at (\x, 12.0) {\textbf{R\i}};
+        \coordinate (R\i_in) at (\x - 0.25, 12.38);
+        \coordinate (R\i_we) at (\x + 0.25, 12.38);
+        \coordinate (R\i_out) at (\x, 11.62);
+    }
+
+    % ========================================================
+    % 2. MUX 1 (REG MUX) (Y = 9.7 .. 10.6, Center X = 5.5)
+    % ========================================================
+    \draw[fill=gray!12, draw=black!85, line width=1.2pt] 
+        (-0.2, 10.6) -- (11.2, 10.6) -- (7.9, 9.7) -- (3.1, 9.7) -- cycle;
+    \node[align=center] at (5.5, 10.15) {\textbf{\normalsize MUX 1}};
+
+    % Спуски от каждого регистра в MUX 1
+    \foreach \i in {0,...,7} {
+        \draw[databus] (R\i_out) -- (R\i_out |- 0, 10.6);
+    }
+
+    % ========================================================
+    % 3. ЛЕВАЯ КОЛОНКА: DEST-DMUX, ACCA, ACCB, ALU (16-BIT)
+    % ========================================================
+    % DEST-DMUX (Center X = 2.2, Y = 5.9 .. 6.9)
+    \draw[fill=gray!12, draw=black!85, line width=1.1pt] 
+        (1.3, 6.9) -- (3.1, 6.9) -- (3.6, 5.9) -- (0.8, 5.9) -- cycle;
+    \node[align=center] at (2.2, 6.4) {\textbf{\scriptsize DEST-DMUX}};
+
+    % Аккумуляторы ACCA и ACCB (Y = 4.9)
+    \node[regnode, fill=blue!6, draw=blue!75!black, minimum width=1.2cm, minimum height=0.8cm] 
+        (ACCA) at (1.3, 4.9) {\textbf{ACCA}};
+    \node[regnode, fill=blue!6, draw=blue!75!black, minimum width=1.2cm, minimum height=0.8cm] 
+        (ACCB) at (3.1, 4.9) {\textbf{ACCB}};
+
+    % Связи от DMUX к аккумуляторам
+    \draw[databus] (1.3, 5.9) -- (ACCA.north);
+    \draw[databus] (3.1, 5.9) -- (ACCB.north);
+    \node[font=\tiny\bfseries, fill=white, inner sep=1pt] at (1.05, 5.55) {[0]};
+    \node[font=\tiny\bfseries, fill=white, inner sep=1pt] at (3.35, 5.55) {[1]};
+
+    % ALU (Center X = 2.2, Y = 2.0 .. 3.6)
+    \draw[fill=blue!8, draw=blue!85!black, line width=1.3pt]
+        (0.5, 3.6) -- (1.8, 3.6) -- (2.2, 3.2) -- (2.6, 3.6) -- (3.9, 3.6) -- (3.2, 2.0) -- (1.2, 2.0) -- cycle;
+    \node[align=center, text=blue!90!black] at (2.2, 2.7) {\textbf{\large ALU}};
+
+    % Входы в ALU от аккумуляторов
+    \draw[databus] (ACCA.south) -- (1.3, 3.6);
+    \draw[databus] (ACCB.south) -- (3.1, 3.6);
+    \node[font=\tiny\bfseries, left] at (1.3, 4.1) {A [15:0]};
+    \node[font=\tiny\bfseries, right] at (3.1, 4.1) {B [15:0]};
+
+    % ========================================================
+    % 4. ЦЕНТРАЛЬНАЯ КОЛОНКА: MUX 2 (MEM MUX) И FLAG REG
+    % ========================================================
+    % MUX 2: ПЕРЕВЕРНУТ! (Узкий верх Y = 5.8, широкий низ Y = 4.4, Center X = 6.4)
+    \draw[fill=yellow!18, draw=orange!80!black, line width=1.3pt]
+        (5.6, 5.8) -- (7.2, 5.8) -- (7.8, 4.4) -- (5.0, 4.4) -- cycle;
+    \node[align=center, text=orange!90!black] at (6.4, 5.25) {\textbf{\normalsize MUX 2}};
+
+    % Бейджи входов MUX 2 ВНУТРИ трапеции по нижнему краю
+    \node[font=\tiny\bfseries, fill=white, draw=orange!80!black, rounded corners=1pt, inner sep=1.2pt] at (5.6, 4.68) {[0] ALU};
+    \node[font=\tiny\bfseries, fill=white, draw=orange!80!black, rounded corners=1pt, inner sep=1.2pt] at (6.4, 4.68) {[1] REG};
+    \node[font=\tiny\bfseries, fill=white, draw=orange!80!black, rounded corners=1pt, inner sep=1.2pt] at (7.2, 4.68) {[2] CTRL};
+
+    % Флаговый регистр (Center X = 6.4, Y = 1.2, W = 3.0cm, H = 0.8cm)
+    \node[block, minimum width=3.0cm, minimum height=0.8cm, fill=teal!6, draw=teal!80!black] 
+        (FLAGS) at (6.4, 1.2) {\textbf{FLAGS}\\[1pt]\scriptsize$[$ Z, C, N, V $]$};
+
+    % ========================================================
+    % 5. ПРАВАЯ КОЛОНКА: КОНТРОЛЛЕР И ПАМЯТЬ
+    % ========================================================
+    % Контроллер (X = 11.4 .. 16.8, Y = 4.2 .. 9.2, Center X = 14.1)
+    \node[ctrlbox, minimum width=5.4cm, minimum height=5.0cm] 
+        (CTRL) at (14.1, 6.7) {};
+    
+    % Заголовок контроллера
+    \node[font=\bfseries\normalsize, text=red!90!black] at (14.1, 8.7) {CONTROL UNIT};
+
+    % Порты на левой стенке Контроллера (X = 11.4)
+    \node[draw=red!40!black, fill=white, rounded corners=2pt, font=\tiny\bfseries, inner sep=2pt, right] 
+        at (11.5, 8.3) {IR [15:0]};
+    \node[draw=red!70!black, fill=white, rounded corners=2pt, font=\tiny\bfseries, inner sep=2pt, text=red!80!black, right] 
+        at (11.5, 7.3) {CTRL ALU/ACC};
+    \node[draw=red!70!black, fill=white, rounded corners=2pt, font=\tiny\bfseries, inner sep=2pt, text=red!80!black, right] 
+        at (11.5, 6.2) {SEL\_WB [1:0]};
+    \node[draw=teal!70!black, fill=white, rounded corners=2pt, font=\tiny\bfseries, inner sep=2pt, text=teal!90!black, right] 
+        at (11.5, 5.2) {FLAGS};
+    \node[draw=orange!80!black, fill=white, rounded corners=2pt, font=\tiny\bfseries, inner sep=2pt, text=orange!90!black, right] 
+        at (11.5, 4.5) {MEM/IMM};
+
+    % Память системы (X = 11.4 .. 16.8, Y = 0.8 .. 3.4, Center X = 14.1)
+    \node[membox, minimum width=5.4cm, minimum height=2.6cm] 
+        (MEM) at (14.1, 2.1) {\textbf{\normalsize MEMORY (64 KB)}\\[3pt]\tiny ADDR [15:0] • DATA [15:0] • RD/WR};
+
+    % Прямые вертикальные шины между Контроллером и Памятью
+    \draw[databus, draw=blue!80!black] (12.6, 4.2) -- (12.6, 3.4) node[midway, fill=white, inner sep=1pt, font=\tiny\bfseries, text=blue!80!black] {ADDR};
+    \draw[databus] (14.1, 4.2) -- (14.1, 3.4) node[midway, fill=white, inner sep=1pt, font=\tiny\bfseries] {WR\_DATA};
+    \draw[bidir, draw=red!80!black] (15.6, 3.4) -- (15.6, 4.2) node[midway, fill=white, inner sep=1pt, font=\tiny\bfseries, text=red!80!black] {RD / WR};
+
+    % ========================================================
+    % 6. РАЗВОДКА ШИН ДАННЫХ (DATA PATH 16-BIT)
+    % ========================================================
+    % Спуск от MUX 1: до распределительной линии Y = 8.3
+    \draw[databus_line] (5.5, 9.7) -- (5.5, 8.3);
+    \filldraw (5.5, 8.3) circle (2pt);
+
+    % Ветвь A: MUX 1 -> DEST-DMUX
+    \draw[databus] (5.5, 8.3) -| (2.2, 6.9) node[pos=0.25, above, font=\tiny\bfseries] {[15:0]};
+
+    % Ветвь C: MUX 1 -> Контроллер (порт IR)
+    \draw[databus] (5.5, 8.3) -- (11.4, 8.3) node[pos=0.45, above, font=\tiny\bfseries] {REG\_DATA [15:0]};
+
+    % Ветвь B: MUX 1 -> MUX 2 (Вход [1] REG - входит СНИЗУ)
+    \filldraw (4.6, 8.3) circle (1.8pt);
+    \draw[databus_line] (4.6, 8.3) -- (4.6, 3.6);
+    % Горизонталь по Y = 3.6: мост над шиной ALU (X = 5.6) и вход снизу в [1] (6.4, 4.4)
+    \draw[databus_line] (4.6, 3.6) -- (5.4, 3.6);
+    \draw[databus_line] (5.4, 3.6) arc[start angle=180, end angle=0, radius=0.2] -- (6.4, 3.6);
+    \draw[databus] (6.4, 3.6) -- (6.4, 4.4);
+    \node[font=\tiny\bfseries, fill=white, inner sep=1.2pt, below] at (5.0, 3.55) {[15:0]};
+
+    % ALU -> MUX 2 (Вход [0] ALU - входит СНИЗУ)
+    \draw[databus] (3.2, 2.5) -- (5.6, 2.5) -- (5.6, 4.4);
+    \node[font=\tiny\bfseries, fill=white, inner sep=1pt] at (3.9, 2.75) {ALU\_RES [15:0]};
+
+    % CONTROLLER -> MUX 2 (Вход [2] CTRL)
+    \draw[databus_line] (11.4, 4.5) -- (10.3, 4.5) -- (10.3, 3.6) -- (9.8, 3.6);
+    \draw[databus_line] (9.8, 3.6) arc[start angle=0, end angle=180, radius=0.2] -- (7.2, 3.6);
+    \draw[databus] (7.2, 3.6) -- (7.2, 4.4);
+    \node[font=\tiny\bfseries, fill=white, inner sep=1pt] at (10.8, 4.7) {MEM/IMM [15:0]};
+
+    % ALU -> FLAG REG
+    \draw[->, line width=1.1pt, draw=teal!80!black] (2.2, 2.0) |- (FLAGS.west);
+    \node[font=\tiny\bfseries, fill=white, inner sep=1pt, text=teal!90!black] at (3.5, 1.2) {FLAGS};
+
+    % ========================================================
+    % 7. FLAG REG <-> КОНТРОЛЛЕР (ДВУСТОРОННЯЯ СВЯЗЬ)
+    % ========================================================
+    \draw[bidir] (7.9, 1.2) -- (9.6, 1.2) -- (9.6, 5.2) -- (11.4, 5.2);
+    \node[font=\tiny\bfseries, fill=white, inner sep=1pt, text=teal!90!black] at (10.4, 5.45) {FLAGS};
+
+    % ========================================================
+    % 8. ШИНА ОБРАТНОЙ ЗАПИСИ (ВЫХОД СВЕРХУ MUX 2 -> РЕГИСТРЫ)
+    % ========================================================
+    \draw[databus_line] (6.4, 5.8) -- (6.4, 9.0) -- (5.7, 9.0) 
+                        arc[start angle=0, end angle=180, radius=0.2] 
+                        -- (-0.8, 9.0) -- (-0.8, 13.5) -- (10.9, 13.5);
+    \node[font=\tiny\bfseries, fill=black!85, text=white, inner sep=2.5pt, rounded corners=2pt] 
+        at (2.2, 9.0) {WB\_DATA [15:0]};
+    
+    \foreach \i in {0,...,7} {
+        \draw[databus] (R\i_in |- 0, 13.5) -- (R\i_in);
+        \filldraw (R\i_in |- 0, 13.5) circle (1.8pt);
+    }
+
+    % ========================================================
+    % 9. СИГНАЛЫ УПРАВЛЕНИЯ
+    % ========================================================
+    % 1. К MUX 1: SEL_REG [2:0]
+    \draw[ctrlbus] (12.8, 9.2) |- (7.9, 10.15);
+    \node[font=\tiny\bfseries, text=red!80!black, fill=white, inner sep=1pt] at (12.8, 9.7) {SEL\_REG [2:0]};
+
+    % 2. К MUX 2: SEL_WB [1:0]
+    \draw[ctrlbus] (11.4, 6.2) -| (8.5, 5.3) -- (7.4, 5.3);
+    \node[font=\tiny\bfseries, text=red!80!black, fill=white, inner sep=1pt] at (9.8, 6.2) {SEL\_WB [1:0]};
+
+    % 3. К DEST-DMUX, ACCA, ACCB, ALU: магистраль выходит из порта (11.4, 7.3)
+    \draw[ctrlbus_line] (11.4, 7.3) -- (6.6, 7.3)
+                        arc[start angle=0, end angle=180, radius=0.2]
+                        -- (4.8, 7.3)
+                        arc[start angle=0, end angle=180, radius=0.2]
+                        -- (4.1, 7.3);
+    
+    % Вертикальный спуск к DEST-DMUX и ACCB по линии X = 4.1
+    \draw[ctrlbus_line] (4.1, 7.3) -- (4.1, 4.9);
+    \filldraw[red!80!black] (4.1, 7.3) circle (1.4pt);
+
+    % Отвод к DEST-DMUX (SEL_ACC)
+    \draw[ctrlbus] (4.1, 6.4) -- (3.35, 6.4);
+    \filldraw[red!80!black] (4.1, 6.4) circle (1.4pt);
+    \node[font=\tiny\bfseries, text=red!80!black, fill=white, inner sep=1pt, above] at (3.72, 6.45) {SEL\_ACC};
+
+    % Отвод к ACCB (LD_B)
+    \draw[ctrlbus] (4.1, 4.9) -- (ACCB.east);
+    \node[font=\tiny\bfseries, text=red!80!black, fill=white, inner sep=1pt, above] at (3.9, 4.95) {LD\_B};
+
+    % Магистраль продолжается влево над DEST-DMUX к ACCA и ALU:
+    \draw[ctrlbus_line] (4.1, 7.3) -- (2.4, 7.3)
+                        arc[start angle=0, end angle=180, radius=0.2]
+                        -- (0.3, 7.3);
+
+    % Отвод к ACCA (LD_A)
+    \draw[ctrlbus] (0.3, 7.3) -- (0.3, 4.9) -- (ACCA.west);
+    \node[font=\tiny\bfseries, text=red!80!black, fill=white, inner sep=1pt, left] at (0.25, 5.0) {LD\_A};
+
+    % Отвод к ALU (ALU_OP [3:0])
+    \draw[ctrlbus] (0.3, 4.9) -- (0.3, 2.8) -- (0.8, 2.8);
+    \node[font=\tiny\bfseries, text=red!80!black, fill=white, inner sep=1pt, left] at (0.25, 3.2) {ALU\_OP [3:0]};
+
+    % 4. К регистрам R0..R7: REG_WE [7:0]
+    \draw[ctrlbus_line] (15.2, 9.2) -- (15.2, 12.8) -- (-0.2, 12.8);
+    \node[font=\tiny\bfseries, text=red!80!black, fill=white, inner sep=1pt] at (13.0, 12.8) {REG\_WE [7:0]};
+    \foreach \i in {0,...,7} {
+        \draw[ctrlbus] (R\i_we |- 0, 12.8) -- (R\i_we);
+        \filldraw[red!80!black] (R\i_we |- 0, 12.8) circle (1.4pt);
+    }
+
+\end{tikzpicture}
+\end{center}
+\end{landscape}
+\clearpage
+
+\section{Programovo viditeľné registre a stav procesora}
+Architektonický stav procesora LIM M2 zahŕňa ortogonálnu sadu funkčných registrov:
+
+\begin{longtable}{>{\ttfamily\bfseries}p{25mm}p{28mm}p{93mm}}
+\toprule
+Register & Šírka & Architektonický účel a vlastnosti \\
+\midrule\endhead
+R0--R7 & 16 bitov & Registre všeobecného určenia (GPR). Selektor MUX 1 zabezpečuje bleskové čítanie; zápis prebieha synchronizovane cez zbernicu WB\_DATA pod kontrolou REG\_WE. \\
+SREG & 24 bitov & Systémový zásobníkový register (Stack Register). Hardvérová podpora volaní podprogramov a lokálnych rámcov s 24-bitovým adresovaním zásobníka (až 16~MB). \\
+PTREG & 24 bitov & Presný ukazovateľový register (Pointer Register). Zabezpečuje lineárne adresovanie pamäte až do 16~MB s voliteľným hardvérovým autoincrementom. \\
+FREG & 16 bitov & Stavový a riadiaci register (Status \& Control Register). Konsoliduje aritmetické príznaky ALU a konfiguračné bity jadra. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Topológia príznakového a riadiaceho registra (FREG)}
+Register \reg{FREG} koordinuje činnosť výpočtových a systémových uzlov procesora:
+
+\begin{tabularx}{\textwidth}{>{\bfseries}p{14mm}>{\ttfamily}p{23mm}X}
+\toprule
+Bit & Mnemonic & Funkčný popis \\
+\midrule
+0    & ZF   & Zero Flag: nastavený pri nulovom výsledku operácie. \\
+1    & CF   & Carry Flag: príznak aritmetického prenosu alebo výpožičky. \\
+2    & OF   & Overflow Flag: indikátor znamienkového pretečenia v doplnkovom kóde. \\
+3    & EM   & Error Math: indikátor matematických výnimiek (delenie nulou). \\
+4--5 & CMP  & Compare Result: stav 2-bitového hardvérového komparátora ($<$, $=$, $>$). \\
+6--7 & CLK  & Clock Mode: voľba deliča systémovej frekvencie jadra. \\
+8    & PIE  & Program Interrupt Enable: globálne povolenie softvérových prerušení. \\
+9    & MIE  & Master Interrupt Enable: povolenie externých hardvérových prerušení. \\
+10   & DWR  & Disable Wait for Ready: nútený zbernicový cyklus bez čakania na potvrdzovací signál. \\
+11   & M24  & 24-bit Mode Enable: aktivácia rozšíreného 24-bitového lineárneho adresovania. \\
+12   & DBIT & Discarded Bit: záchytný register pre bit vysunutý pri posunoch BSL/BSR. \\
+13   & SMOD & Shift Mode: voľba vkladania bitov pri vykonávaní posunov. \\
+14   & SBIT & Shift Bit Value: hodnota vkladaného bitu pri SMOD=1. \\
+15   & AIP  & Auto-Increment PTREG: povolenie hardvérového autoincrementu ukazovateľa \reg{PTREG}. \\
+\bottomrule
+\end{tabularx}
+
+\section{Formát strojových inštrukcií}
+Inštrukčný súbor LIM M2 je navrhnutý pre rýchle a deterministické dekódovanie. 
+Horných 5 bitov je vyhradených pre primárny operačný kód:
+
+\begin{center}
+\begin{tikzpicture}[x=0.9cm,y=0.72cm]
+  \draw[thick,fill=limblue] (0,0) rectangle (5,1.25);
+  \draw[thick,fill=limcyan] (5,0) rectangle (8,1.25);
+  \draw[thick,fill=limlight] (8,0) rectangle (17,1.25);
+  \node[text=white,font=\bfseries,align=center] at (2.5,0.62) {OPCODE\\5 bitov};
+  \node[text=white,font=\bfseries,align=center] at (6.5,0.62) {CFG\\3 bity};
+  \node[font=\bfseries,align=center] at (12.5,0.62) {Operandy a argumenty\\dynamická dĺžka};
+  \node[anchor=south west,font=\small] at (0,1.32) {$W-1$};
+  \node[anchor=south] at (5,1.32) {$W-6$};
+  \node[anchor=south] at (8,1.32) {$W-9$};
+  \node[anchor=south east,font=\small] at (17,1.32) {0};
+\end{tikzpicture}
+\end{center}
+
+Pole \field{cfg} (3 bity) selektuje až 8 ortogonálnych režimov inštrukcie, čím poskytuje vysokú flexibilitu bez nežiaduceho rozširovania počtu opkódov.
+
+\section{Prehľadná tabuľka inštrukcií jadra LIM M2}
+\small
+\begin{longtable}{r>{\ttfamily}p{13mm}>{\ttfamily}p{19mm}p{28mm}p{75mm}}
+\toprule
+Č. & Kód & Mnemonic & Trieda & Funkčný účel \\
+\midrule\endhead
+0  & 00000 & NOP  & Riadenie   & Prázdna operácia a vyprázdnenie zvyškového registra ALU \\
+1  & 00001 & ADD  & Aritmetika & Súčet s automatickým reťazením prenosu cez zvyšok ALU \\
+2  & 00010 & SUB  & Aritmetika & Odčítanie s automatickým reťazením výpožičky cez zvyšok ALU \\
+3  & 00011 & MUL  & Aritmetika & Násobenie so zachytením vyšších bitov vo zvyšku ALU \\
+4  & 00100 & DIV  & Aritmetika & Delenie s uložením zvyšku do vnútorného registra ALU \\
+5  & 00101 & LMR  & Pamäť      & Načítanie slova z pamäte do cieľového registra \\
+6  & 00110 & LRM  & Pamäť      & Zápis hodnoty registra do systémovej pamäte \\
+7  & 00111 & LRR  & Presun     & Priame kopírovanie medzi registrami cez obchádzkový MUX \\
+8  & 01000 & CMP  & Porovnanie & Hardvérové porovnanie operandov bez zmeny dát \\
+9  & 01001 & JMP  & Skok       & Nepodmienený skok (priamy, nepriamy, 24-bitový) \\
+10 & 01010 & JCR  & Skok       & Podmienený skok pri nastavenom príznaku prenosu CF \\
+11 & 01011 & JNZ  & Skok       & Podmienený skok pri nenulovom výsledku (ZF = 0) \\
+12 & 01100 & JZ   & Skok       & Podmienený skok pri nulovom výsledku (ZF = 1) \\
+13 & 01101 & AND  & Logika     & Bitový logický súčin (AND) \\
+14 & 01110 & OR   & Logika     & Bitový logický súčet (OR) \\
+15 & 01111 & NAND & Logika     & Bitová negácia logického súčinu (NAND) \\
+16 & 10000 & NOR  & Logika     & Bitová negácia logického súčtu (NOR) \\
+17 & 10001 & NOT  & Logika     & Bitová inverzia operandu (jednotkový doplnok) \\
+18 & 10010 & XOR  & Logika     & Bitová neverzia (XOR) \\
+19 & 10011 & XNOR & Logika     & Bitová ekvivalencia \\
+20 & 10100 & INC  & Aritmetika & Hardvérová inkrementácia operandu o 1 \\
+21 & 10101 & DEC  & Aritmetika & Hardvérová dekrementácia operandu o 1 \\
+22 & 10110 & PUSH & Zásobník   & Uloženie slova na vrchol zásobníka \\
+23 & 10111 & POP  & Zásobník   & Výber slova z vrcholu zásobníka do registra \\
+24 & 11000 & BSL  & Posuny     & Barelový posun doľava s konfigurovateľným vstupom \\
+25 & 11001 & BSR  & Posuny     & Barelový posun doprava s ukladaním do DBIT \\
+26 & 11010 & CSRM & Systém     & Prístup k systémovým registrom (FREG/PTREG/SREG) \\
+27 & 11011 & RSV27 & Rezerva   & Rezervované pre vektorové inštrukcie \\
+28 & 11100 & RSV28 & Rezerva   & Rezervované pre rozšírené adresovanie \\
+29 & 11101 & RSV29 & Rezerva   & Rezervované pre koprocesor s pohyblivou rádovou čiarkou \\
+30 & 11110 & RSV30 & Rezerva   & Rezervované pre kryptografické inštrukcie \\
+31 & 11111 & RSV31 & Rezerva   & Rezervované pre budúce rozšírenia architektúry \\
+\bottomrule
+\end{longtable}
+\normalsize
+
+\section{Detailná špecifikácia inštrukčného súboru}
+Nasledujúce strany obsahujú úplné architektonické profily všetkých 32 operačných kódov procesora LIM M2.
+
+\InstructionPage{NOP}{00000}{Riadenie}{Hardvérová prázdna operácia a vyprázdnenie aritmetickej reťaze}{%
+PC <- PC + instruction\_length \\
+ALU\_RESIDUAL <- 0 \\
+FREG.CF <- 0 \\
+FREG.OF <- 0%
+}{Bez operandov; pole \field{cfg} rezervované na kalibráciu časovania.}{Vynuluje príznaky prenosu (CF), pretečenia (OF) a výpožičky; ostatné príznaky zachováva.}{Slúži na synchronizáciu taktov a hardvérové vyprázdnenie (Flush) vnútorného zvyškového registra ALU, čím prerušuje reťazenie pred novými nezávislými výpočtami.}
+\InstructionPage{ADD}{00001}{Aritmetika}{Sčítanie s automatickým reťazením prenosu}{%
+sum\_full <- srcA + srcB + ALU\_RESIDUAL \\
+dst <- sum\_full[15:0] \\
+ALU\_RESIDUAL <- (sum\_full > 0xFFFF ? 1 : 0)%
+}{Registre R0--R7, akumulátory ACCA/ACCB alebo priame konštanty.}{Nastavuje príznak prenosu CF a pretečenia OF pri prekročení $2^{16}-1$; aktualizuje ZF podľa dst.}{Podporuje priebežnú viacbajtovú aritmetiku (32, 48, 64+ bitov). Ak súčet prekročí 16 bitov ($>2^{16}-1$), prenos (+1) sa zachová vo vnútornom registri ALU a automaticky sa pripočíta pri nasledujúcej operácii ADD bez nutnosti inštrukcie ADC. Spodných 16 bitov sa deterministicky zapíše do dst. Reťazenie sa preruší inštrukciou NOP alebo novou matematickou operáciou.}
+\InstructionPage{SUB}{00010}{Aritmetika}{Odčítanie s automatickým reťazením výpožičky}{%
+diff\_full <- srcA - srcB - ALU\_RESIDUAL \\
+dst <- diff\_full[15:0] \\
+ALU\_RESIDUAL <- (diff\_full < 0 ? 1 : 0)%
+}{Registre R0--R7, konštanty alebo akumulátory ACCA/ACCB.}{Pri zápornom rozdiele ($< 0$) nastavuje príznak výpožičky (Borrow / CF) a OF; aktualizuje ZF.}{Umožňuje kontinuálne viacbajtové odčítanie. Pri zápornom rozdiele ($< 0$) sa výpožička ($-1$) uloží do vnútorného registra ALU a pri ďalšej inštrukcii SUB sa automaticky odpočíta 1 od vyššieho slova. Výsledok spodného slova sa deterministicky uloží do dst. Na začatie nového nezávislého odčítania sa reťazenie preruší pomocou NOP.}
+\InstructionPage{MUL}{00011}{Aritmetika}{Celočíselné násobenie so zachovaním hornej časti v registri ALU}{%
+prod <- srcA * srcB \\
+dst <- prod[15:0] \\
+ALU\_RESIDUAL <- prod[31:16]%
+}{Registre R0--R7, akumulátory ACCA/ACCB.}{Aktualizuje ZF; nastavuje OF/CF, ak je horných 16 bitov súčinu (prod[31:16]) nenulových.}{Pri 32-bitovom súčine smeruje spodných 16 bitov do cieľového registra dst, kým horných 16 bitov sa uloží do vnútorného zvyškového registra ALU (ALU Residual). Pri nasledujúcom sčítaní sa tento zvyšok automaticky pripočíta (podpora MAC a viacbajtových čísiel). Hornú polovicu možno získať aj sčítaním registra so sebou samým po vynulovaní. Inštrukcia NOP register vyčistí.}
+\InstructionPage{DIV}{00100}{Aritmetika}{Celočíselné delenie so zachovaním zvyšku vo vnútornom registri ALU}{%
+dst <- srcA / srcB \\
+ALU\_RESIDUAL <- srcA \% srcB%
+}{Registre R0--R7, akumulátory ACCA/ACCB.}{Pri delení nulou sa nastavuje príznak chyby EM (Error Math) bez zablokovania procesora; aktualizuje ZF.}{Podiel sa zapíše do cieľového registra dst, pričom zvyšok po delení (modulo) sa zachová vo vnútornom registri ALU pre ďalšie operácie alebo vymazanie inštrukciou NOP.}
+\InstructionPage{LMR}{00101}{Pamäť}{Načítanie slova z pamäte do registra}{dst\_reg <- MEM[address]}{Adresovanie: priame, nepriame cez \reg{PTREG}, alebo s posunom.}{Všetky príznaky zostávajú zachované.}{Podpora hardvérového autoincrementu ukazovateľa pri aktívnom AIP.}
+\InstructionPage{LRM}{00110}{Pamäť}{Zápis registra do systémovej pamäte}{MEM[address] <- src\_reg}{Režim adresovania volený poľom \field{cfg} a registrom \reg{PTREG}.}{Všetky príznaky zostávajú zachované.}{Priamy prenos z registrového poľa na systémovú zbernicu.}
+\InstructionPage{LRR}{00111}{Presun}{Bleskové kopírovanie medzi registrami}{dst\_reg <- src\_reg}{Argumenty určujú zdrojový a cieľový register.}{Všetky príznaky zostávajú zachované.}{Smerované cez priamy premosťovací kanál MUX 1 $\to$ MUX 2 bez blokovania ALU.}
+\InstructionPage{CMP}{01000}{Porovnanie}{Hardvérové porovnanie operandov}{FREG.CMP <- compare(srcA, srcB)}{Režim porovnania s registrom alebo konštantou.}{Aktualizuje 2-bitové pole FREG.CMP a príznaky ZF, CF, OF bez zmeny registrov.}{Umožňuje rýchle podmienené vetvenie.}
+\InstructionPage{JMP}{01001}{Skok}{Nepodmienený skok}{PC <- target}{Podporuje 16-bitový lokálny alebo plný 24-bitový skok cez \reg{PTREG}.}{Príznaky zostávajú nezmenené.}{Atomické načítanie Program Counter v minimálnom počte cyklov.}
+\InstructionPage{JCR}{01010}{Skok}{Podmienený skok pri prenose}{if FREG.CF == 1 then PC <- target}{Cieľová adresa určená posunom alebo absolútne.}{Príznaky sú iba čítané.}{Základný stavebný prvok viacnásobnej presnej aritmetiky.}
+\InstructionPage{JNZ}{01011}{Skok}{Podmienený skok pri nenulovom stave}{if FREG.ZF == 0 then PC <- target}{Vysoko efektívny skok pre programové slučky a počítadlá.}{Príznaky zostávajú nezmenené.}{Rýchle vyhodnotenie podmienky v mikroprograme.}
+\InstructionPage{JZ}{01100}{Skok}{Podmienený skok pri nulovom stave}{if FREG.ZF == 1 then PC <- target}{Vyhodnocuje rovnosť alebo ukončovacie podmienky.}{Príznaky zostávajú nezmenené.}{Optimalizované pre reťazcové a vyhľadávacie operácie.}
+\InstructionPage{AND}{01101}{Logika}{Bitový logický súčin (AND)}{dst <- srcA AND srcB}{Registrové a maskovacie konštantné operandy.}{Nastavuje príznak nuly ZF; pretečenie vynulované.}{Kľúčová inštrukcia pre bitové maskovanie.}
+\InstructionPage{OR}{01110}{Logika}{Bitový logický súčet (OR)}{dst <- srcA OR srcB}{Registrové operandy a spájanie bitových polí.}{Nastavuje ZF; prenosy sú deterministicky vynulované.}{Rýchle zlučovanie riadiacich príznakov.}
+\InstructionPage{NAND}{01111}{Logika}{Bitový logický zápor súčinu (NAND)}{dst <- NOT (srcA AND srcB)}{Univerzálna logická báza.}{Nastavuje príznak ZF.}{Umožňuje kompaktnú realizáciu zákazníckych logických funkcií.}
+\InstructionPage{NOR}{10000}{Logika}{Bitový logický zápor súčtu (NOR)}{dst <- NOT (srcA OR srcB)}{Invertovaná logická funkcia.}{Nastavuje príznak ZF.}{Rozširuje množinu rýchlych bitových transformácií.}
+\InstructionPage{NOT}{10001}{Logika}{Bitová inverzia (jednotkový doplnok)}{dst <- NOT src}{Rýchla unárna inverzia slova.}{Nastavuje príznak ZF.}{Vykoná sa v minimálnom počte mikrotaktov.}
+\InstructionPage{XOR}{10010}{Logika}{Bitová neverzia (XOR)}{dst <- srcA XOR srcB}{Používa sa na prepínanie bitov a rýchle vynulovanie registra.}{Nastavuje príznak ZF.}{Základná inštrukcia pre paritu, CRC a kryptografiu.}
+\InstructionPage{XNOR}{10011}{Logika}{Bitová ekvivalencia}{dst <- NOT (srcA XOR srcB)}{Porovnanie bitov na zhodu.}{Nastavuje príznak ZF.}{Rýchla paralelná kontrola ekvivalencie masiek.}
+\InstructionPage{INC}{10100}{Aritmetika}{Inkrementácia o 1}{dst <- src + 1}{Rýchly krok počítadla cyklu.}{Nastavuje ZF, OF; prenos CF riadený cez \field{cfg}.}{Optimalizuje indexovanie v poliach.}
+\InstructionPage{DEC}{10101}{Aritmetika}{Dekrementácia o 1}{dst <- src - 1}{Krok zostupného počítadla.}{Nastavuje ZF, OF.}{Kompaktná realizácia cyklov.}
+\InstructionPage{PUSH}{10110}{Zásobník}{Uloženie slova do zásobníka}{%
+stack <- src \\
+SREG <- SREG - 2%
+}{Zdroj: ľubovoľný register R0--R7 alebo systémový register.}{Aritmetické príznaky sa nemenia.}{Hardvérová podpora volaní funkcií a ukladania kontextu.}
+\InstructionPage{POP}{10111}{Zásobník}{Výber slova zo zásobníka}{%
+dst <- stack \\
+SREG <- SREG + 2%
+}{Cieľ: registre R0--R7 alebo stavové registre.}{Aritmetické príznaky sa nemenia.}{Symetrické obnovenie kontextu po prerušení.}
+\InstructionPage{BSL}{11000}{Posuny}{Barelový posun doľava}{dst <- src << amount}{Rozsah posunu: konštanta alebo hodnota v registri.}{Najvyšší vysunutý bit zachytený v FREG.DBIT; podpora režimov SMOD/SBIT.}{Rýchle aritmetické škálovanie a zarovnávanie bitov.}
+\InstructionPage{BSR}{11001}{Posuny}{Barelový posun doprava}{dst <- src >> amount}{Logický alebo aritmetický posun voliteľný cez \field{cfg}.}{Najnižší vysunutý bit uložený v DBIT.}{Rýchle delenie mocninami dvojky.}
+\InstructionPage{CSRM}{11010}{Systém}{Prístup k systémovým registrom}{special\_reg <- src OR dst <- special\_reg}{Prístup k registrom \reg{FREG}, \reg{PTREG}, \reg{SREG}.}{Príznaky sa aktualizujú pri modifikácii FREG.}{Privilegované prepínanie kontextu jadra.}
+\InstructionPage{RSV27}{11011}{Rezerva}{Hardvérové rozšírenie}{reserved}{Vyhradené pre budúce revízie architektúry LIM.}{Nedefinované.}{Rezervované.}
+\InstructionPage{RSV28}{11100}{Rezerva}{Hardvérové rozšírenie}{reserved}{Vyhradené pre budúce revízie architektúry LIM.}{Nedefinované.}{Rezervované.}
+\InstructionPage{RSV29}{11101}{Rezerva}{Hardvérové rozšírenie}{reserved}{Vyhradené pre budúce revízie architektúry LIM.}{Nedefinované.}{Rezervované.}
+\InstructionPage{RSV30}{11110}{Rezerva}{Hardvérové rozšírenie}{reserved}{Vyhradené pre budúce revízie architektúry LIM.}{Nedefinované.}{Rezervované.}
+\InstructionPage{RSV31}{11111}{Rezerva}{Hardvérové rozšírenie}{reserved}{Vyhradené pre budúce revízie architektúry LIM.}{Nedefinované.}{Rezervované.}
+
+\clearpage
+\section{Fyzické rozhranie a rozloženie vývodov (34-vývodové puzdro)}
+Procesor je integrovaný v kompaktnom 34-vývodovom puzdre s dvojradovým usporiadaním kontaktov:
+
+\begin{center}
+\begin{tikzpicture}[font=\sffamily\scriptsize,
+  pinbox/.style={draw,thick,fill=white,minimum width=6mm,minimum height=4mm,inner sep=0pt,font=\bfseries\tiny}]
+\def\chipW{3.2}
+\def\chipH{9.9}
+\draw[thick,fill=limlight] (0,0) rectangle (\chipW,-\chipH);
+\draw[thick] ($(\chipW/2,0)+(-0.35,0)$) arc (180:360:0.35);
+\node[font=\bfseries\Large,text=limblue,rotate=-90] at (\chipW/2,-\chipH/2) {LIM M2};
+\foreach \i/\sigL/\sigR in {
+  1/A0/D0, 2/A1/D1, 3/A2/D2, 4/A3/D3, 5/A4/D4, 6/A5/D5, 7/A6/D6, 8/A7/D7,
+  9/A8/D8, 10/A9/VCC, 11/A10/GND, 12/A11/RD, 13/A12/WD, 14/A13/RF, 15/A14/AL, 16/A15/RDI, 17/CLK1/CLK2
+} {
+  \pgfmathsetmacro{\y}{-\i * 0.55}
+  \pgfmathtruncatemacro{\pinR}{35 - \i}
+  \node[pinbox] at (0,\y) {\i};
+  \node[anchor=east] at (-0.38,\y) {\sigL};
+  \node[pinbox] at (\chipW,\y) {\pinR};
+  \node[anchor=west] at (\chipW+0.38,\y) {\sigR};
+}
+\end{tikzpicture}
+\end{center}
+
+\subsection{Funkčný popis signálov}
+\begin{tabularx}{\textwidth}{>{\ttfamily}p{28mm}p{24mm}X}
+\toprule
+Vývod & Typ & Popis systémového signálu \\
+\midrule
+A0--A15    & Výstup / Tri-State & 16-bitová adresová zbernica (riadená externým impulzom AL). \\
+D0--D7     & Obojsmerný         & 8-bitová zbernica pre prenos dát s pamäťou a perifériami. \\
+CLK1, CLK2 & Vstup              & Dvojfázové hodinové signály s ochranou proti prekrytiu fáz. \\
+VCC, GND   & Napájanie          & Hlavné napájacie vedenie logiky procesora (+5 V nominálne). \\
+RD, WD     & Výstup             & Riadiace impulzy čítania (Read) a zápisu (Write) na zbernici. \\
+AL         & Výstup             & Address Latch: riadenie záchytného registra adresy. \\
+RF         & Vstup              & Ready Flag: hardvérové potvrdenie pripravenosti podriadeného zariadenia. \\
+RDI        & Vstup              & Raw Direct Interrupt: prioritná linka hardvérového prerušenia. \\
+\bottomrule
+\end{tabularx}
+
+\section{Záver}
+Architektúra \textbf{LIM M2} spája overenú stabilitu mikroprogramového riadenia s modernou efektivitou aktívnej dátovej cesty bez tretieho stavu. Odstránením zbernicových kolízií a parazitných kapacít jadro zaručuje kryštálovú čistotu digitálnych signálov a bezpečne odomyká frekvenčný rozsah od 200~MHz až po fyzické limity moderných kremíkových štruktúr.
+\end{document}

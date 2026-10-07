@@ -1,0 +1,729 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1750 1120" width="1750" height="1120">
+    <defs>
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&amp;family=Inter:wght@400;500;600;700;800;900&amp;display=swap');
+            text { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+            .mono { font-family: 'JetBrains Mono', monospace; }
+        </style>
+
+        <!-- Shadow Filters -->
+        <filter id="card-shadow" x="-5%" y="-5%" width="112%" height="116%" filterUnits="userSpaceOnUse">
+            <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.08"/>
+            <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#0f172a" flood-opacity="0.05"/>
+        </filter>
+        <filter id="block-shadow" x="-6%" y="-8%" width="112%" height="120%" filterUnits="userSpaceOnUse">
+            <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#0f172a" flood-opacity="0.06"/>
+        </filter>
+
+        <!-- Gradients -->
+        <linearGradient id="bg-grad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#ffffff"/>
+            <stop offset="100%" stop-color="#f8fafc"/>
+        </linearGradient>
+
+        <linearGradient id="header-grad" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="#0f172a"/>
+            <stop offset="100%" stop-color="#1e293b"/>
+        </linearGradient>
+
+        <linearGradient id="reg-grad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#ffffff"/>
+            <stop offset="100%" stop-color="#f1f5f9"/>
+        </linearGradient>
+
+        <linearGradient id="mux-grad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#f8fafc"/>
+            <stop offset="100%" stop-color="#e2e8f0"/>
+        </linearGradient>
+
+        <linearGradient id="mux2-grad" x1="0" y1="1" x2="0" y2="0">
+            <stop offset="0%" stop-color="#fef3c7"/>
+            <stop offset="100%" stop-color="#fde68a"/>
+        </linearGradient>
+
+        <linearGradient id="alu-grad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#e0e7ff"/>
+            <stop offset="100%" stop-color="#c7d2fe"/>
+        </linearGradient>
+
+        <linearGradient id="ctrl-grad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#fff1f2"/>
+            <stop offset="100%" stop-color="#ffe4e6"/>
+        </linearGradient>
+
+        <linearGradient id="mem-grad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#f0f9ff"/>
+            <stop offset="100%" stop-color="#e0f2fe"/>
+        </linearGradient>
+
+        <!-- Arrow Markers (Tips touch target exactly at border) -->
+        <marker id="arrow-data" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+            <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#0f172a"/>
+        </marker>
+
+        <marker id="arrow-ctrl" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+            <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#dc2626"/>
+        </marker>
+
+        <marker id="arrow-flag" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+            <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#0d9488"/>
+        </marker>
+
+        <marker id="arrow-mem" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+            <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#2563eb"/>
+        </marker>
+    </defs>
+
+    <!-- Canvas Background -->
+    <rect width="1750" height="1120" fill="url(#bg-grad)"/>
+
+    <!-- Outer Structural Container Card -->
+    <rect x="20" y="18" width="1710" height="1084" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.8" filter="url(#card-shadow)"/>
+
+    <!-- Header Banner -->
+    <rect x="20" y="18" width="1710" height="64" rx="14" fill="url(#header-grad)"/>
+    <rect x="20" y="56" width="1710" height="26" fill="url(#header-grad)"/>
+    <text x="48" y="58" font-size="21" font-weight="900" fill="#ffffff" letter-spacing="1">АРХИТЕКТУРА ПРОЦЕССОРА LIM-2 / СТРУКТУРНАЯ СХЕМА ШИН И УПРАВЛЕНИЯ</text>
+    <text x="1702" y="58" font-size="12" font-weight="600" fill="#94a3b8" text-anchor="end">16-bit RISC / Dual-Accumulator Datapath Architecture</text>
+
+    <!-- Legend in Top-Right Corner -->
+    <g transform="translate(1230, 95)" font-size="11" font-weight="600">
+        <rect x="0" y="0" width="460" height="58" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.2"/>
+        <text x="14" y="20" font-weight="800" font-size="10.5" fill="#475569" letter-spacing="0.5">УСЛОВНЫЕ ОБОЗНАЧЕНИЯ СХЕМЫ:</text>
+        
+        <!-- Legend Item 1: Data Bus -->
+        <line x1="20" y1="40" x2="65" y2="40" stroke="#0f172a" stroke-width="3" marker-end="url(#arrow-data)"/>
+        <text x="75" y="44" fill="#0f172a" font-size="11">Шина данных (16-bit Data Bus)</text>
+
+        <!-- Legend Item 2: Control Line -->
+        <line x1="20" y1="52" x2="65" y2="52" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="4,3" marker-end="url(#arrow-ctrl)"/>
+        <text x="75" y="55" fill="#dc2626" font-size="11">Управление (Control Line)</text>
+
+        <!-- Legend Item 3: Bidir Bus -->
+        <line x1="270" y1="40" x2="315" y2="40" stroke="#0d9488" stroke-width="2.5" marker-end="url(#arrow-flag)"/>
+        <text x="325" y="44" fill="#0d9488" font-size="11">Связь флагов (Flag Link)</text>
+
+        <!-- Legend Item 4: Bridge Crossing -->
+        <path d="M 270 52 L 288 52 A 6 6 0 0 1 300 52 L 315 52" fill="none" stroke="#0f172a" stroke-width="2"/>
+        <text x="325" y="55" fill="#475569" font-size="11">Пересечение без контакта (Bridge)</text>
+    </g>
+
+<!-- ================= 1. РЕГИСТРЫ R0 - R7 ================= -->
+
+        <g id="reg-R0" filter="url(#block-shadow)">
+            <rect x="100" y="160" width="90" height="66" rx="7" fill="url(#reg-grad)" stroke="#1e293b" stroke-width="1.8"/>
+            <rect x="100" y="160" width="90" height="22" rx="7" fill="#f1f5f9"/>
+            <rect x="100" y="174" width="90" height="8" fill="#f1f5f9"/>
+            <text x="145.0" y="176" text-anchor="middle" font-size="11" font-weight="700" fill="#475569">REG 0 (16-bit)</text>
+            <text x="145.0" y="210" text-anchor="middle" font-size="18" font-weight="900" fill="#0f172a">R0</text>
+            <!-- Pin badges: Data In on left, WE on right -->
+            <circle cx="127.0" cy="160" r="3" fill="#0f172a"/>
+            <circle cx="163.0" cy="160" r="3" fill="#dc2626"/>
+            <!-- Data Out on bottom -->
+            <circle cx="145.0" cy="226" r="3.5" fill="#0f172a"/>
+        </g>
+
+        <g id="reg-R1" filter="url(#block-shadow)">
+            <rect x="218" y="160" width="90" height="66" rx="7" fill="url(#reg-grad)" stroke="#1e293b" stroke-width="1.8"/>
+            <rect x="218" y="160" width="90" height="22" rx="7" fill="#f1f5f9"/>
+            <rect x="218" y="174" width="90" height="8" fill="#f1f5f9"/>
+            <text x="263.0" y="176" text-anchor="middle" font-size="11" font-weight="700" fill="#475569">REG 1 (16-bit)</text>
+            <text x="263.0" y="210" text-anchor="middle" font-size="18" font-weight="900" fill="#0f172a">R1</text>
+            <!-- Pin badges: Data In on left, WE on right -->
+            <circle cx="245.0" cy="160" r="3" fill="#0f172a"/>
+            <circle cx="281.0" cy="160" r="3" fill="#dc2626"/>
+            <!-- Data Out on bottom -->
+            <circle cx="263.0" cy="226" r="3.5" fill="#0f172a"/>
+        </g>
+
+        <g id="reg-R2" filter="url(#block-shadow)">
+            <rect x="336" y="160" width="90" height="66" rx="7" fill="url(#reg-grad)" stroke="#1e293b" stroke-width="1.8"/>
+            <rect x="336" y="160" width="90" height="22" rx="7" fill="#f1f5f9"/>
+            <rect x="336" y="174" width="90" height="8" fill="#f1f5f9"/>
+            <text x="381.0" y="176" text-anchor="middle" font-size="11" font-weight="700" fill="#475569">REG 2 (16-bit)</text>
+            <text x="381.0" y="210" text-anchor="middle" font-size="18" font-weight="900" fill="#0f172a">R2</text>
+            <!-- Pin badges: Data In on left, WE on right -->
+            <circle cx="363.0" cy="160" r="3" fill="#0f172a"/>
+            <circle cx="399.0" cy="160" r="3" fill="#dc2626"/>
+            <!-- Data Out on bottom -->
+            <circle cx="381.0" cy="226" r="3.5" fill="#0f172a"/>
+        </g>
+
+        <g id="reg-R3" filter="url(#block-shadow)">
+            <rect x="454" y="160" width="90" height="66" rx="7" fill="url(#reg-grad)" stroke="#1e293b" stroke-width="1.8"/>
+            <rect x="454" y="160" width="90" height="22" rx="7" fill="#f1f5f9"/>
+            <rect x="454" y="174" width="90" height="8" fill="#f1f5f9"/>
+            <text x="499.0" y="176" text-anchor="middle" font-size="11" font-weight="700" fill="#475569">REG 3 (16-bit)</text>
+            <text x="499.0" y="210" text-anchor="middle" font-size="18" font-weight="900" fill="#0f172a">R3</text>
+            <!-- Pin badges: Data In on left, WE on right -->
+            <circle cx="481.0" cy="160" r="3" fill="#0f172a"/>
+            <circle cx="517.0" cy="160" r="3" fill="#dc2626"/>
+            <!-- Data Out on bottom -->
+            <circle cx="499.0" cy="226" r="3.5" fill="#0f172a"/>
+        </g>
+
+        <g id="reg-R4" filter="url(#block-shadow)">
+            <rect x="572" y="160" width="90" height="66" rx="7" fill="url(#reg-grad)" stroke="#1e293b" stroke-width="1.8"/>
+            <rect x="572" y="160" width="90" height="22" rx="7" fill="#f1f5f9"/>
+            <rect x="572" y="174" width="90" height="8" fill="#f1f5f9"/>
+            <text x="617.0" y="176" text-anchor="middle" font-size="11" font-weight="700" fill="#475569">REG 4 (16-bit)</text>
+            <text x="617.0" y="210" text-anchor="middle" font-size="18" font-weight="900" fill="#0f172a">R4</text>
+            <!-- Pin badges: Data In on left, WE on right -->
+            <circle cx="599.0" cy="160" r="3" fill="#0f172a"/>
+            <circle cx="635.0" cy="160" r="3" fill="#dc2626"/>
+            <!-- Data Out on bottom -->
+            <circle cx="617.0" cy="226" r="3.5" fill="#0f172a"/>
+        </g>
+
+        <g id="reg-R5" filter="url(#block-shadow)">
+            <rect x="690" y="160" width="90" height="66" rx="7" fill="url(#reg-grad)" stroke="#1e293b" stroke-width="1.8"/>
+            <rect x="690" y="160" width="90" height="22" rx="7" fill="#f1f5f9"/>
+            <rect x="690" y="174" width="90" height="8" fill="#f1f5f9"/>
+            <text x="735.0" y="176" text-anchor="middle" font-size="11" font-weight="700" fill="#475569">REG 5 (16-bit)</text>
+            <text x="735.0" y="210" text-anchor="middle" font-size="18" font-weight="900" fill="#0f172a">R5</text>
+            <!-- Pin badges: Data In on left, WE on right -->
+            <circle cx="717.0" cy="160" r="3" fill="#0f172a"/>
+            <circle cx="753.0" cy="160" r="3" fill="#dc2626"/>
+            <!-- Data Out on bottom -->
+            <circle cx="735.0" cy="226" r="3.5" fill="#0f172a"/>
+        </g>
+
+        <g id="reg-R6" filter="url(#block-shadow)">
+            <rect x="808" y="160" width="90" height="66" rx="7" fill="url(#reg-grad)" stroke="#1e293b" stroke-width="1.8"/>
+            <rect x="808" y="160" width="90" height="22" rx="7" fill="#f1f5f9"/>
+            <rect x="808" y="174" width="90" height="8" fill="#f1f5f9"/>
+            <text x="853.0" y="176" text-anchor="middle" font-size="11" font-weight="700" fill="#475569">REG 6 (16-bit)</text>
+            <text x="853.0" y="210" text-anchor="middle" font-size="18" font-weight="900" fill="#0f172a">R6</text>
+            <!-- Pin badges: Data In on left, WE on right -->
+            <circle cx="835.0" cy="160" r="3" fill="#0f172a"/>
+            <circle cx="871.0" cy="160" r="3" fill="#dc2626"/>
+            <!-- Data Out on bottom -->
+            <circle cx="853.0" cy="226" r="3.5" fill="#0f172a"/>
+        </g>
+
+        <g id="reg-R7" filter="url(#block-shadow)">
+            <rect x="926" y="160" width="90" height="66" rx="7" fill="url(#reg-grad)" stroke="#1e293b" stroke-width="1.8"/>
+            <rect x="926" y="160" width="90" height="22" rx="7" fill="#f1f5f9"/>
+            <rect x="926" y="174" width="90" height="8" fill="#f1f5f9"/>
+            <text x="971.0" y="176" text-anchor="middle" font-size="11" font-weight="700" fill="#475569">REG 7 (16-bit)</text>
+            <text x="971.0" y="210" text-anchor="middle" font-size="18" font-weight="900" fill="#0f172a">R7</text>
+            <!-- Pin badges: Data In on left, WE on right -->
+            <circle cx="953.0" cy="160" r="3" fill="#0f172a"/>
+            <circle cx="989.0" cy="160" r="3" fill="#dc2626"/>
+            <!-- Data Out on bottom -->
+            <circle cx="971.0" cy="226" r="3.5" fill="#0f172a"/>
+        </g>
+<!-- ================= 2. MUX 1 (REG MUX) ================= -->
+    <!-- Vertical drops from R0..R7 into MUX 1 -->
+    <g id="wires-r-to-mux1">
+        <line x1="145.0" y1="226" x2="145.0" y2="285" stroke="#0f172a" stroke-width="2.6" marker-end="url(#arrow-data)"/>
+        <line x1="263.0" y1="226" x2="263.0" y2="285" stroke="#0f172a" stroke-width="2.6" marker-end="url(#arrow-data)"/>
+        <line x1="381.0" y1="226" x2="381.0" y2="285" stroke="#0f172a" stroke-width="2.6" marker-end="url(#arrow-data)"/>
+        <line x1="499.0" y1="226" x2="499.0" y2="285" stroke="#0f172a" stroke-width="2.6" marker-end="url(#arrow-data)"/>
+        <line x1="617.0" y1="226" x2="617.0" y2="285" stroke="#0f172a" stroke-width="2.6" marker-end="url(#arrow-data)"/>
+        <line x1="735.0" y1="226" x2="735.0" y2="285" stroke="#0f172a" stroke-width="2.6" marker-end="url(#arrow-data)"/>
+        <line x1="853.0" y1="226" x2="853.0" y2="285" stroke="#0f172a" stroke-width="2.6" marker-end="url(#arrow-data)"/>
+        <line x1="971.0" y1="226" x2="971.0" y2="285" stroke="#0f172a" stroke-width="2.6" marker-end="url(#arrow-data)"/>
+    </g>
+
+    <g id="mux1-block" filter="url(#card-shadow)">
+        <polygon points="85.0,285 1031.0,285 773.0,345 343.0,345" fill="url(#mux-grad)" stroke="#1e293b" stroke-width="2.2"/>
+        <text x="558.0" y="311" text-anchor="middle" font-size="16" font-weight="900" fill="#0f172a" letter-spacing="0.8">MUX 1 (REG MUX) — 8 → 1</text>
+        <text x="558.0" y="330" text-anchor="middle" font-size="11" font-weight="600" fill="#475569">Селектор регистра-источника • Выход: REG_DATA [15:0]</text>
+    </g>
+<!-- ================= 3. DEST-DMUX & ACCUMULATORS ================= -->
+
+    <!-- DEST-DMUX Block -->
+    <g id="dmux-block" filter="url(#block-shadow)">
+        <polygon points="195.0,450 335.0,450 385.0,500 145.0,500" fill="url(#mux-grad)" stroke="#1e293b" stroke-width="2"/>
+        <text x="265" y="473" text-anchor="middle" font-size="13" font-weight="900" fill="#0f172a">DEST-DMUX</text>
+        <text x="265" y="490" text-anchor="middle" font-size="10" font-weight="700" fill="#475569">1 → 2 ДЕМУЛЬТИПЛЕКСОР</text>
+    </g>
+
+    <!-- Wires DMUX -> ACCA & ACCB -->
+    <line x1="200" y1="500" x2="200" y2="570" stroke="#0f172a" stroke-width="2.6" marker-end="url(#arrow-data)"/>
+    <line x1="330" y1="500" x2="330" y2="570" stroke="#0f172a" stroke-width="2.6" marker-end="url(#arrow-data)"/>
+    
+    <rect x="176" y="518" width="20" height="15" rx="3" fill="#e2e8f0"/>
+    <text x="186" y="529" text-anchor="middle" font-size="9" font-weight="800" fill="#334155">[0]</text>
+    
+    <rect x="336" y="518" width="20" height="15" rx="3" fill="#e2e8f0"/>
+    <text x="346" y="529" text-anchor="middle" font-size="9" font-weight="800" fill="#334155">[1]</text>
+
+    <!-- ACCA Component (16-bit) -->
+    <g id="block-acca" filter="url(#block-shadow)">
+        <rect x="148.0" y="570" width="104" height="66" rx="7" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+        <rect x="148.0" y="570" width="104" height="20" rx="7" fill="#dbeafe"/>
+        <text x="200" y="585" text-anchor="middle" font-size="10" font-weight="800" fill="#1e40af">ACCA (16-bit)</text>
+        <text x="200" y="618" text-anchor="middle" font-size="17" font-weight="900" fill="#1e3a8a">АККУМ. A</text>
+    </g>
+
+    <!-- ACCB Component (16-bit) -->
+    <g id="block-accb" filter="url(#block-shadow)">
+        <rect x="278.0" y="570" width="104" height="66" rx="7" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+        <rect x="278.0" y="570" width="104" height="20" rx="7" fill="#dbeafe"/>
+        <text x="330" y="585" text-anchor="middle" font-size="10" font-weight="800" fill="#1e40af">ACCB (16-bit)</text>
+        <text x="330" y="618" text-anchor="middle" font-size="17" font-weight="900" fill="#1e3a8a">АККУМ. B</text>
+    </g>
+
+    <!-- Wires ACCA, ACCB -> ALU -->
+    <line x1="200" y1="636" x2="200" y2="705" stroke="#0f172a" stroke-width="2.8" marker-end="url(#arrow-data)"/>
+    <line x1="330" y1="636" x2="330" y2="705" stroke="#0f172a" stroke-width="2.8" marker-end="url(#arrow-data)"/>
+    
+    <text x="176" y="693" font-size="10.5" font-weight="800" fill="#1e3a8a">Вход A [15:0]</text>
+    <text x="334" y="693" font-size="10.5" font-weight="800" fill="#1e3a8a">Вход B [15:0]</text>
+
+    <!-- ALU Component -->
+    <g id="block-alu" filter="url(#card-shadow)">
+        <polygon points="130.0,705 242.0,705 265,731 288.0,705 400.0,705 354.1,800 175.89999999999998,800" fill="url(#alu-grad)" stroke="#3730a3" stroke-width="2.2"/>
+        <text x="265" y="755" text-anchor="middle" font-size="20" font-weight="900" fill="#312e81" letter-spacing="1">ALU (АЛУ)</text>
+        <text x="265" y="777" text-anchor="middle" font-size="11" font-weight="700" fill="#4338ca">16-bit Arithmetic Logic Unit</text>
+    </g>
+<!-- ================= 4. MUX 2 (MEM MUX - FLIPPED) ================= -->
+
+    <g id="block-mux2" filter="url(#card-shadow)">
+        <polygon points="580.0,515 760.0,515 825.0,615 515.0,615" fill="url(#mux2-grad)" stroke="#b45309" stroke-width="2.2"/>
+        <text x="670" y="549" text-anchor="middle" font-size="15" font-weight="900" fill="#78350f" letter-spacing="0.5">MUX 2 (MEM MUX)</text>
+        <text x="670" y="568" text-anchor="middle" font-size="11" font-weight="700" fill="#92400e">3 → 1 СЕЛЕКТОР ЗАПИСИ [15:0]</text>
+        
+        <!-- Input Badges along the wide bottom edge (Y = 615) -->
+        <!-- [0] ALU on bottom-left (centered at X = 580) -->
+        <rect x="553" y="591" width="54" height="18" rx="3" fill="#ffffff" stroke="#ca8a04"/>
+        <text x="580" y="604" text-anchor="middle" font-size="10" font-weight="800" fill="#854d0e">[0] ALU</text>
+
+        <!-- [1] REG in bottom-center (centered at X = 670) -->
+        <rect x="643" y="591" width="54" height="18" rx="3" fill="#ffffff" stroke="#ca8a04"/>
+        <text x="670" y="604" text-anchor="middle" font-size="10" font-weight="800" fill="#854d0e">[1] REG</text>
+
+        <!-- [2] CTRL on bottom-right (centered at X = 760) -->
+        <rect x="733" y="591" width="54" height="18" rx="3" fill="#ffffff" stroke="#ca8a04"/>
+        <text x="760" y="604" text-anchor="middle" font-size="10" font-weight="800" fill="#854d0e">[2] CTRL</text>
+    </g>
+
+    <!-- FLAG REG Component -->
+    <g id="block-flag-reg" filter="url(#block-shadow)">
+        <rect x="570" y="805" width="200" height="75" rx="8" fill="#f0fdfa" stroke="#0d9488" stroke-width="2.2"/>
+        <rect x="570" y="805" width="200" height="24" rx="8" fill="#ccfbf1"/>
+        <text x="670.0" y="822" text-anchor="middle" font-size="11" font-weight="800" fill="#0f766e" letter-spacing="0.5">ФЛАГОВЫЙ РЕГИСТР (FLAG REG)</text>
+        
+        <!-- Individual Flag Cells -->
+        <g transform="translate(584, 837)" font-size="11" font-weight="800" text-anchor="middle">
+            <rect x="0" y="0" width="38" height="32" rx="4" fill="#ffffff" stroke="#5eead4" stroke-width="1.3"/>
+            <text x="19" y="16" fill="#0f766e">Z</text>
+            <text x="19" y="27" font-size="8" fill="#14b8a6">Zero</text>
+
+            <rect x="44" y="0" width="38" height="32" rx="4" fill="#ffffff" stroke="#5eead4" stroke-width="1.3"/>
+            <text x="63" y="16" fill="#0f766e">C</text>
+            <text x="63" y="27" font-size="8" fill="#14b8a6">Carry</text>
+
+            <rect x="88" y="0" width="38" height="32" rx="4" fill="#ffffff" stroke="#5eead4" stroke-width="1.3"/>
+            <text x="107" y="16" fill="#0f766e">N</text>
+            <text x="107" y="27" font-size="8" fill="#14b8a6">Neg</text>
+
+            <rect x="132" y="0" width="38" height="32" rx="4" fill="#ffffff" stroke="#5eead4" stroke-width="1.3"/>
+            <text x="151" y="16" fill="#0f766e">V</text>
+            <text x="151" y="27" font-size="8" fill="#14b8a6">Over</text>
+        </g>
+    </g>
+<!-- ================= 5. КОНТРОЛЛЕР И ПАМЯТЬ ================= -->
+
+    <!-- CONTROLLER Component -->
+    <g id="block-controller" filter="url(#card-shadow)">
+        <rect x="990" y="340" width="640" height="280" rx="12" fill="url(#ctrl-grad)" stroke="#dc2626" stroke-width="2.5"/>
+        <rect x="990" y="340" width="640" height="42" rx="12" fill="#fee2e2"/>
+        <rect x="990" y="366" width="640" height="16" fill="#fee2e2"/>
+        <text x="1310.0" y="364" text-anchor="middle" font-size="15" font-weight="900" fill="#991b1b" letter-spacing="1">КОНТРОЛЛЕР ПРОЦЕССОРА (CONTROL UNIT / SEQUENCER)</text>
+        <text x="1310.0" y="378" text-anchor="middle" font-size="10" font-weight="700" fill="#b91c1c">ДЕКОДЕР КОМАНД • КОНЕЧНЫЙ АВТОМАТ УПРАВЛЕНИЯ (16-BIT FSM)</text>
+        
+        <!-- Physical Interface Ports on Left Border (X = 990) -->
+        <!-- Port 1: Opcode Input at Y = 415 -->
+        <g transform="translate(1006, 396)" font-size="10.5" font-weight="700">
+            <rect x="0" y="0" width="180" height="38" rx="6" fill="#ffffff" stroke="#fca5a5" stroke-width="1.3"/>
+            <text x="90" y="16" text-anchor="middle" fill="#991b1b">ВХОД ОПКОДА (IR)</text>
+            <text x="90" y="29" text-anchor="middle" font-size="9" fill="#475569">REG_DATA [15:0] ← MUX 1</text>
+        </g>
+
+        <!-- Port 2: SEL_WB [1:0] at Y = 460 -->
+        <g transform="translate(1006, 442)" font-size="10.5" font-weight="700">
+            <rect x="0" y="0" width="180" height="36" rx="6" fill="#ffffff" stroke="#fca5a5" stroke-width="1.3"/>
+            <text x="90" y="15" text-anchor="middle" fill="#dc2626">SEL_WB [1:0]</text>
+            <text x="90" y="28" text-anchor="middle" font-size="9" fill="#dc2626">Селектор MUX 2 →</text>
+        </g>
+
+        <!-- Port 3: Control Outputs (ACC/ALU) at Y = 505 -->
+        <g transform="translate(1006, 486)" font-size="10.5" font-weight="700">
+            <rect x="0" y="0" width="180" height="38" rx="6" fill="#ffffff" stroke="#dc2626" stroke-width="1.3"/>
+            <text x="90" y="15" text-anchor="middle" fill="#dc2626">УПР. ALU И ACC</text>
+            <text x="90" y="29" text-anchor="middle" font-size="9" fill="#dc2626">SEL_ACC, LD_A/B, ALU_OP</text>
+        </g>
+
+        <!-- Port 4: Flag Bidir Interface at Y = 550 -->
+        <g transform="translate(1006, 532)" font-size="10.5" font-weight="700">
+            <rect x="0" y="0" width="180" height="36" rx="6" fill="#ffffff" stroke="#5eead4" stroke-width="1.3"/>
+            <text x="90" y="15" text-anchor="middle" fill="#0f766e">ФЛАГИ [Z,C,N,V]</text>
+            <text x="90" y="28" text-anchor="middle" font-size="9" fill="#0f766e">Двусторонняя шина ↔ FSM</text>
+        </g>
+
+        <!-- Port 5: Controller to MUX 2 Data at Y = 595 -->
+        <g transform="translate(1006, 576)" font-size="10.5" font-weight="700">
+            <rect x="0" y="0" width="180" height="36" rx="6" fill="#ffffff" stroke="#ca8a04" stroke-width="1.3"/>
+            <text x="90" y="15" text-anchor="middle" fill="#b45309">MEM/IMM [15:0]</text>
+            <text x="90" y="28" text-anchor="middle" font-size="9" fill="#b45309">Данные в MUX 2 (Вход [2])</text>
+        </g>
+
+        <!-- Internal Memory Bus Interface on right half of Controller -->
+        <g transform="translate(1204, 396)" font-size="11" font-weight="700">
+            <rect x="0" y="0" width="410" height="216" rx="8" fill="#ffffff" stroke="#93c5fd" stroke-width="1.3"/>
+            <text x="205" y="26" text-anchor="middle" font-size="13" fill="#1d4ed8">ИНТЕРФЕЙС ПАМЯТИ (BUS CONTROLLER)</text>
+            <text x="20" y="56" fill="#475569">• Генерация адреса: PC [15:0] или пара регистров R2||R3</text>
+            <text x="20" y="86" fill="#475569">• Передача данных: WR_DATA [15:0] на запись в память</text>
+            <text x="20" y="116" fill="#1e40af">• Прием данных из памяти: RD_DATA [15:0]</text>
+            <text x="20" y="146" fill="#b45309">• Трансляция в MUX 2: MEM/IMM [15:0] на порт [2] MUX 2</text>
+            <text x="20" y="176" fill="#dc2626">• Управление стробами: MEM_RD, MEM_WR, CLK</text>
+            <text x="205" y="202" text-anchor="middle" font-size="10" font-weight="600" fill="#64748b">Обеспечивает 16-битный доступ к коду и данным в едином 64 KB пространстве</text>
+        </g>
+    </g>
+
+    <!-- MEMORY Component (16-bit Flat Space) -->
+    <g id="block-memory" filter="url(#card-shadow)">
+        <rect x="990" y="680" width="640" height="240" rx="10" fill="url(#mem-grad)" stroke="#0284c7" stroke-width="2.2"/>
+        <rect x="990" y="680" width="640" height="34" rx="10" fill="#bae6fd"/>
+        <text x="1310.0" y="704" text-anchor="middle" font-size="15" font-weight="900" fill="#0369a1" letter-spacing="1">ПАМЯТЬ СИСТЕМЫ (SYSTEM MEMORY: RAM / ROM)</text>
+        
+        <text x="1310.0" y="746" text-anchor="middle" font-size="16" font-weight="900" fill="#0c4a6e">ЕДИНОЕ АДРЕСНОЕ ПРОСТРАНСТВО (FLAT 16-BIT 64 KB)</text>
+        <text x="1310.0" y="766" text-anchor="middle" font-size="11.5" font-weight="600" fill="#0369a1">0x0000 – 0xFFFF: Код программы, ОЗУ данных, Стек, VRAM, MMIO</text>
+
+        <!-- Memory Port Specification Card -->
+        <g transform="translate(1014, 784)" font-size="11.5" font-weight="600">
+            <rect x="0" y="0" width="592" height="120" rx="6" fill="#ffffff" stroke="#7dd3fc" stroke-width="1.2"/>
+            
+            <text x="18" y="26" fill="#0284c7" font-weight="800">• ADDR [15:0]:</text>
+            <text x="130" y="26" fill="#334155">16-битный адрес от контроллера (через PC или пару R2||R3)</text>
+            
+            <text x="18" y="52" fill="#0f172a" font-weight="800">• WR_DATA [15:0]:</text>
+            <text x="155" y="52" fill="#334155">16-битные данные для записи в память (от контроллера)</text>
+
+            <text x="18" y="78" fill="#1e40af" font-weight="800">• RD_DATA [15:0]:</text>
+            <text x="155" y="78" fill="#1e40af" font-weight="800">16-битные данные чтения из памяти (поступают в контроллер)</text>
+
+            <text x="18" y="104" fill="#dc2626" font-weight="800">• CONTROL:</text>
+            <text x="130" y="104" fill="#334155">Стробы управления: MEM_RD (чтение), MEM_WR (запись), CLK</text>
+        </g>
+    </g>
+<!-- ================= 6. ШИНЫ ДАННЫХ (DATA PATH 16-BIT) ================= -->
+
+    <!-- MUX 1 Main Trunk: drops to Y = 415 -->
+    <line x1="558.0" y1="345" x2="558.0" y2="415" stroke="#0f172a" stroke-width="3.5"/>
+    <circle cx="558.0" cy="415" r="4.5" fill="#0f172a"/>
+
+    <!-- Branch A: MUX 1 -> DEST-DMUX (Left) -->
+    <path d="M 558.0 415 L 265 415 L 265 450" 
+          fill="none" stroke="#0f172a" stroke-width="3" marker-end="url(#arrow-data)"/>
+    <text x="275" y="436" font-size="11" font-weight="800" fill="#0f172a">16 bit</text>
+
+    <!-- Branch C: MUX 1 -> CONTROLLER Opcode Port (Right) -->
+    <!-- Straight horizontal line from (558, 415) into Controller outer wall at (990, 415) -->
+    <line x1="558.0" y1="415" x2="990" y2="415" stroke="#0f172a" stroke-width="3" marker-end="url(#arrow-data)"/>
+    
+    <g transform="translate(810, 391)">
+        <rect x="0" y="0" width="170" height="20" rx="3" fill="#e2e8f0"/>
+        <text x="85" y="14" text-anchor="middle" font-size="10.5" font-weight="800" fill="#0f172a">Опкод / Данные [15:0] →</text>
+    </g>
+
+    <!-- Branch B: MUX 1 -> MUX 2 Input [1] REG (Direct Operand) -->
+    <!-- Drops from spine at X = 490 to Y = 650, goes right to X = 670, enters MUX 2 bottom at (670, 615) pointing UP -->
+    <circle cx="490" cy="415" r="4.5" fill="#0f172a"/>
+    <path d="M 490 415 L 490 650 L 670 650 L 670 615"
+          fill="none" stroke="#0f172a" stroke-width="3" marker-end="url(#arrow-data)"/>
+    <g transform="translate(415, 630)">
+        <rect x="0" y="0" width="145" height="19" rx="3" fill="#e2e8f0"/>
+        <text x="72" y="13" text-anchor="middle" font-size="10" font-weight="800" fill="#0f172a">Прямой операнд [15:0]</text>
+    </g>
+
+    <!-- ALU_RES -> MUX 2 Input [0] ALU -->
+    <!-- Exits ALU right flank at (354, 750), routes to X = 430 -> UP to Y = 680 -> right to X = 580 -> UP towards (580, 615). -->
+    <!-- Crosses the REG line (Y = 650) at X = 580: REAL INTERSECTION -> Arc bridge at (580, 650)! -->
+    <path d="M 354.1 750 L 430 750 L 430 680 L 580 680 L 580 658"
+          fill="none" stroke="#0f172a" stroke-width="3"/>
+    <path d="M 580 658 A 8 8 0 0 1 580 642" fill="none" stroke="#0f172a" stroke-width="3"/>
+    <path d="M 580 642 L 580 615"
+          fill="none" stroke="#0f172a" stroke-width="3" marker-end="url(#arrow-data)"/>
+
+    <g transform="translate(365, 728)">
+        <rect x="0" y="0" width="125" height="20" rx="3" fill="#e2e8f0"/>
+        <text x="62" y="14" text-anchor="middle" font-size="10" font-weight="800" fill="#0f172a">ALU_RES [15:0]</text>
+    </g>
+
+    <!-- ALU Flags -> FLAG REG (Left Input) -->
+    <!-- Drops from ALU bottom (265, 800) to Y = 842 -> straight into Flag REG at (570, 842) -->
+    <path d="M 265 800 L 265 842 L 570 842"
+          fill="none" stroke="#0d9488" stroke-width="2.8" marker-end="url(#arrow-flag)"/>
+    <g transform="translate(305, 828)">
+        <rect x="0" y="0" width="150" height="20" rx="3" fill="#ccfbf1"/>
+        <text x="75" y="14" text-anchor="middle" font-size="10" font-weight="800" fill="#0f766e">ALU_FLAGS [Z, C, N, V]</text>
+    </g>
+
+    <!-- FLAG REG <-> CONTROLLER (BIDIRECTIONAL CONNECTION) -->
+    <!-- Rendered first so data bus bridges can hop cleanly over it -->
+    <path d="M 850 700 L 850 842 L 770 842"
+          fill="none" stroke="#0d9488" stroke-width="2.8" marker-end="url(#arrow-flag)"/>
+    <path d="M 850 700 L 850 550 L 990 550"
+          fill="none" stroke="#0d9488" stroke-width="2.8" marker-end="url(#arrow-flag)"/>
+    
+    <g transform="translate(865, 538)">
+        <rect x="0" y="0" width="118" height="20" rx="3" fill="#ccfbf1" stroke="#5eead4" stroke-width="1.2"/>
+        <text x="59" y="14" text-anchor="middle" font-size="10" font-weight="800" fill="#0f766e">ФЛАГИ ↔ FSM</text>
+    </g>
+
+    <!-- CONTROLLER to MUX 2 Input [2] CTRL (MEM/IMM [15:0]) -->
+    <!-- Routes safely around MUX 2: leaves Controller at (990, 595), goes left to X = 875, -->
+    <!-- drops to Y = 650 (below MUX 2), hops over Flag line at (850, 650), goes to X = 760, -->
+    <!-- and enters MUX 2 bottom at (760, 615) pointing UP! -->
+    <path d="M 990 595 L 875 595 L 875 650 L 858 650" fill="none" stroke="#0f172a" stroke-width="3"/>
+    <!-- Arc Bridge jumping over vertical Flag line at X = 850 -->
+    <path d="M 858 650 A 8 8 0 0 1 842 650" fill="none" stroke="#0f172a" stroke-width="3"/>
+    <path d="M 842 650 L 760 650 L 760 615"
+          fill="none" stroke="#0f172a" stroke-width="3" marker-end="url(#arrow-data)"/>
+    <g transform="translate(865, 583)">
+        <rect x="0" y="0" width="118" height="20" rx="3" fill="#fef3c7" stroke="#ca8a04" stroke-width="1"/>
+        <text x="59" y="14" text-anchor="middle" font-size="10" font-weight="800" fill="#92400e">MEM/IMM [15:0] ←</text>
+    </g>
+
+
+    <!-- CONTROLLER <-> MEMORY DIRECT INTERFACE -->
+    <!-- Bus 1: ADDR [15:0] -->
+    <line x1="1435" y1="620" x2="1435" y2="680" stroke="#2563eb" stroke-width="2.6" marker-end="url(#arrow-mem)"/>
+    <g transform="translate(1390, 640)">
+        <rect x="0" y="0" width="90" height="22" rx="4" fill="#dbeafe"/>
+        <text x="45" y="15" text-anchor="middle" font-size="10.5" font-weight="800" fill="#1d4ed8">ADDR [15:0]</text>
+    </g>
+
+    <!-- Bus 2: WR_DATA [15:0] -->
+    <line x1="1515" y1="620" x2="1515" y2="680" stroke="#0f172a" stroke-width="2.6" marker-end="url(#arrow-data)"/>
+    <g transform="translate(1465, 640)">
+        <rect x="0" y="0" width="100" height="22" rx="4" fill="#e2e8f0"/>
+        <text x="50" y="15" text-anchor="middle" font-size="10.5" font-weight="800" fill="#0f172a">WR_DATA [15:0]</text>
+    </g>
+
+    <!-- Bus 3: RD / WR / EN -->
+    <line x1="1590" y1="630" x2="1590" y2="680" stroke="#dc2626" stroke-width="2.2" marker-end="url(#arrow-ctrl)"/>
+    <line x1="1590" y1="670" x2="1590" y2="620" stroke="#dc2626" stroke-width="2.2" marker-end="url(#arrow-ctrl)"/>
+    <g transform="translate(1552, 640)">
+        <rect x="0" y="0" width="76" height="22" rx="4" fill="#fee2e2"/>
+        <text x="38" y="15" text-anchor="middle" font-size="10.5" font-weight="800" fill="#991b1b">RD/WR</text>
+    </g>
+
+<!-- ================= 7. ШИНА ОБРАТНОЙ ЗАПИСИ (ВЫХОД СВЕРХУ MUX 2) ================= -->
+
+    <!-- Output Arrow on top of MUX 2 pointing UP -->
+    <line x1="670" y1="515" x2="670" y2="503" stroke="#0f172a" stroke-width="3.5" marker-end="url(#arrow-data)"/>
+
+    <!-- Writeback Highway: Segment from MUX 2 top to bridge before MUX 1 drop -->
+    <path d="M 670 503 L 670 368 L 566.0 368"
+          fill="none" stroke="#0f172a" stroke-width="3.5"/>
+    <!-- Arc Bridge jumping over MUX 1 drop trunk at (558, 368) -->
+    <path d="M 566.0 368 A 8 8 0 0 1 550.0 368"
+          fill="none" stroke="#0f172a" stroke-width="3.5"/>
+    <!-- Highway continues left to track X = 52, up to top rail Y = 95, and across to R7 -->
+    <path d="M 550.0 368 L 52 368 L 52 95 L 996.0 95"
+          fill="none" stroke="#0f172a" stroke-width="3.5"/>
+
+    <!-- Corridor Highway Badge in open space above DMUX -->
+    <g transform="translate(130, 355)">
+        <rect x="0" y="0" width="300" height="26" rx="4" fill="#0f172a"/>
+        <text x="150" y="17" text-anchor="middle" font-size="11.5" font-weight="800" fill="#ffffff" letter-spacing="0.5">ШИНА ОБРАТНОЙ ЗАПИСИ: WB_DATA [15:0]</text>
+    </g>
+
+    <!-- Vertical Left Track Badge -->
+    <g transform="translate(62, 240) rotate(-90)">
+        <rect x="-90" y="-12" width="180" height="24" rx="4" fill="#0f172a"/>
+        <text x="0" y="4" text-anchor="middle" font-size="11" font-weight="800" fill="#ffffff">WB_DATA [15:0] → В GPR</text>
+    </g>
+
+    <!-- Writeback Drops into Registers R0..R7 (Data In pin cx - 18) -->
+    <g id="wb-drops-into-registers">
+
+        <line x1="127.0" y1="95" x2="127.0" y2="160" stroke="#0f172a" stroke-width="2.6" marker-end="url(#arrow-data)"/>
+        <circle cx="127.0" cy="95" r="3.5" fill="#0f172a"/>
+
+        <line x1="245.0" y1="95" x2="245.0" y2="160" stroke="#0f172a" stroke-width="2.6" marker-end="url(#arrow-data)"/>
+        <circle cx="245.0" cy="95" r="3.5" fill="#0f172a"/>
+
+        <line x1="363.0" y1="95" x2="363.0" y2="160" stroke="#0f172a" stroke-width="2.6" marker-end="url(#arrow-data)"/>
+        <circle cx="363.0" cy="95" r="3.5" fill="#0f172a"/>
+
+        <line x1="481.0" y1="95" x2="481.0" y2="160" stroke="#0f172a" stroke-width="2.6" marker-end="url(#arrow-data)"/>
+        <circle cx="481.0" cy="95" r="3.5" fill="#0f172a"/>
+
+        <line x1="599.0" y1="95" x2="599.0" y2="160" stroke="#0f172a" stroke-width="2.6" marker-end="url(#arrow-data)"/>
+        <circle cx="599.0" cy="95" r="3.5" fill="#0f172a"/>
+
+        <line x1="717.0" y1="95" x2="717.0" y2="160" stroke="#0f172a" stroke-width="2.6" marker-end="url(#arrow-data)"/>
+        <circle cx="717.0" cy="95" r="3.5" fill="#0f172a"/>
+
+        <line x1="835.0" y1="95" x2="835.0" y2="160" stroke="#0f172a" stroke-width="2.6" marker-end="url(#arrow-data)"/>
+        <circle cx="835.0" cy="95" r="3.5" fill="#0f172a"/>
+
+        <line x1="953.0" y1="95" x2="953.0" y2="160" stroke="#0f172a" stroke-width="2.6" marker-end="url(#arrow-data)"/>
+        <circle cx="953.0" cy="95" r="3.5" fill="#0f172a"/>
+    </g>
+<!-- ================= 8. ЛИНИИ УПРАВЛЕНИЯ (ФИЗИЧЕСКИ ОТ КОНТРОЛЛЕРА) ================= -->
+
+    <!-- 1. CTRL -> MUX 1 (SEL_REG [2:0]) -->
+    <path d="M 1110 340 L 1110 315 L 906.0 315"
+          fill="none" stroke="#dc2626" stroke-width="2" stroke-dasharray="5,3" marker-end="url(#arrow-ctrl)"/>
+    <g transform="translate(1005, 302)">
+        <rect x="0" y="0" width="105" height="20" rx="3" fill="#fee2e2" stroke="#fca5a5" stroke-width="1"/>
+        <text x="52" y="14" text-anchor="middle" font-size="10" font-weight="800" fill="#dc2626">SEL_REG [2:0]</text>
+    </g>
+
+
+    <!-- 2. CTRL -> MUX 2 (SEL_WB [1:0]) -->
+    <path d="M 990 460 L 770 460 L 770 540 L 745 540" 
+          fill="none" stroke="#dc2626" stroke-width="2" stroke-dasharray="5,3" marker-end="url(#arrow-ctrl)"/>
+    <g transform="translate(865, 447)">
+        <rect x="0" y="0" width="105" height="20" rx="3" fill="#fee2e2" stroke="#fca5a5" stroke-width="1"/>
+        <text x="52" y="14" text-anchor="middle" font-size="10" font-weight="800" fill="#dc2626">SEL_WB [1:0] ←</text>
+    </g>
+
+
+    <!-- 3. CTRL -> DEST-DMUX & ACCA/B & ALU: PHYSICAL CONNECTION FROM PORT 3 -->
+    <path d="M 990 505 L 678 505" fill="none" stroke="#dc2626" stroke-width="2.2" stroke-dasharray="5,3"/>
+    
+    <!-- Bridge over MUX 2 output line at X = 670 -->
+    <path d="M 678 505 A 8 8 0 0 1 662 505" fill="none" stroke="#dc2626" stroke-width="2.2"/>
+
+    <!-- To REG line at X = 490 -->
+    <path d="M 662 505 L 498 505" fill="none" stroke="#dc2626" stroke-width="2.2" stroke-dasharray="5,3"/>
+    <path d="M 498 505 A 8 8 0 0 1 482 505" fill="none" stroke="#dc2626" stroke-width="2.2"/>
+
+    <!-- Enter DEST-DMUX right slant -->
+    <path d="M 482 505 L 394.0 505" fill="none" stroke="#dc2626" stroke-width="2.2" stroke-dasharray="5,3" marker-end="url(#arrow-ctrl)"/>
+    
+    <g transform="translate(390, 492)">
+        <rect x="0" y="0" width="75" height="18" rx="3" fill="#fee2e2" stroke="#fca5a5" stroke-width="1"/>
+        <text x="37" y="13" text-anchor="middle" font-size="10" font-weight="800" fill="#dc2626">SEL_ACC</text>
+    </g>
+
+    <!-- Branch from control trunk down into ACCA, ACCB, and ALU -->
+    <circle cx="435" cy="505" r="3" fill="#dc2626"/>
+    <path d="M 435 505 L 435 540 L 338 540" fill="none" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="4,3"/>
+    
+    <!-- Hop over ACCB drop at (330, 540) -->
+    <path d="M 338 540 A 8 8 0 0 1 322 540" fill="none" stroke="#dc2626" stroke-width="1.8"/>
+    <!-- Line to ACCA hop at (200, 540) -->
+    <path d="M 322 540 L 208 540" fill="none" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="4,3"/>
+    <path d="M 208 540 A 8 8 0 0 1 192 540" fill="none" stroke="#dc2626" stroke-width="1.8"/>
+    
+    <!-- LD_A: enters left of ACCA -->
+    <path d="M 192 540 L 115 540 L 115 600 L 148.0 600"
+          fill="none" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="4,3" marker-end="url(#arrow-ctrl)"/>
+    <g transform="translate(120, 582)">
+        <rect x="0" y="0" width="40" height="16" rx="3" fill="#fee2e2" stroke="#fca5a5" stroke-width="0.8"/>
+        <text x="20" y="12" text-anchor="middle" font-size="9" font-weight="800" fill="#dc2626">LD_A</text>
+    </g>
+
+    <!-- LD_B: enters right of ACCB -->
+    <path d="M 435 540 L 435 600 L 382.0 600"
+          fill="none" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="4,3" marker-end="url(#arrow-ctrl)"/>
+    <g transform="translate(382, 582)">
+        <rect x="0" y="0" width="40" height="16" rx="3" fill="#fee2e2" stroke="#fca5a5" stroke-width="0.8"/>
+        <text x="20" y="12" text-anchor="middle" font-size="9" font-weight="800" fill="#dc2626">LD_B</text>
+    </g>
+
+    <!-- ALU_OP [3:0]: continues down along X = 115 into ALU left flank -->
+    <circle cx="115" cy="600" r="2.5" fill="#dc2626"/>
+    <path d="M 115 600 L 115 750 L 130.0 750"
+          fill="none" stroke="#dc2626" stroke-width="2" stroke-dasharray="5,3" marker-end="url(#arrow-ctrl)"/>
+    <g transform="translate(65, 725)">
+        <rect x="0" y="0" width="95" height="20" rx="3" fill="#fee2e2" stroke="#fca5a5" stroke-width="1"/>
+        <text x="47" y="14" text-anchor="middle" font-size="10" font-weight="800" fill="#dc2626">ALU_OP [3:0]</text>
+    </g>
+
+
+    <!-- 4. CTRL -> R0..R7 WRITE ENABLE BUS (REG_WE [7:0]) WITH BRIDGE HOPS -->
+    <path d="M 1140 340 L 1140 135"
+          fill="none" stroke="#dc2626" stroke-width="2" stroke-dasharray="5,3"/>
+    
+    <g transform="translate(1000, 111)">
+        <rect x="0" y="0" width="165" height="20" rx="3" fill="#fee2e2" stroke="#fca5a5" stroke-width="1"/>
+        <text x="82" y="14" text-anchor="middle" font-size="10" font-weight="800" fill="#b91c1c">REG_WE [7:0] (Запись)</text>
+    </g>
+
+    <line x1="1140" y1="135" x2="989.0" y2="135" stroke="#dc2626" stroke-width="2" stroke-dasharray="5,3"/>
+    <circle cx="989.0" cy="135" r="2.5" fill="#dc2626"/>
+    <line x1="989.0" y1="135" x2="989.0" y2="160" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="3,2" marker-end="url(#arrow-ctrl)"/>
+    <line x1="989.0" y1="135" x2="959.0" y2="135" stroke="#dc2626" stroke-width="2" stroke-dasharray="5,3"/>
+    <path d="M 959.0 135 A 6 6 0 0 1 947.0 135" fill="none" stroke="#dc2626" stroke-width="2"/>
+    <line x1="947.0" y1="135" x2="871.0" y2="135" stroke="#dc2626" stroke-width="2" stroke-dasharray="5,3"/>
+    <circle cx="871.0" cy="135" r="2.5" fill="#dc2626"/>
+    <line x1="871.0" y1="135" x2="871.0" y2="160" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="3,2" marker-end="url(#arrow-ctrl)"/>
+    <line x1="871.0" y1="135" x2="841.0" y2="135" stroke="#dc2626" stroke-width="2" stroke-dasharray="5,3"/>
+    <path d="M 841.0 135 A 6 6 0 0 1 829.0 135" fill="none" stroke="#dc2626" stroke-width="2"/>
+    <line x1="829.0" y1="135" x2="753.0" y2="135" stroke="#dc2626" stroke-width="2" stroke-dasharray="5,3"/>
+    <circle cx="753.0" cy="135" r="2.5" fill="#dc2626"/>
+    <line x1="753.0" y1="135" x2="753.0" y2="160" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="3,2" marker-end="url(#arrow-ctrl)"/>
+    <line x1="753.0" y1="135" x2="723.0" y2="135" stroke="#dc2626" stroke-width="2" stroke-dasharray="5,3"/>
+    <path d="M 723.0 135 A 6 6 0 0 1 711.0 135" fill="none" stroke="#dc2626" stroke-width="2"/>
+    <line x1="711.0" y1="135" x2="635.0" y2="135" stroke="#dc2626" stroke-width="2" stroke-dasharray="5,3"/>
+    <circle cx="635.0" cy="135" r="2.5" fill="#dc2626"/>
+    <line x1="635.0" y1="135" x2="635.0" y2="160" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="3,2" marker-end="url(#arrow-ctrl)"/>
+    <line x1="635.0" y1="135" x2="605.0" y2="135" stroke="#dc2626" stroke-width="2" stroke-dasharray="5,3"/>
+    <path d="M 605.0 135 A 6 6 0 0 1 593.0 135" fill="none" stroke="#dc2626" stroke-width="2"/>
+    <line x1="593.0" y1="135" x2="517.0" y2="135" stroke="#dc2626" stroke-width="2" stroke-dasharray="5,3"/>
+    <circle cx="517.0" cy="135" r="2.5" fill="#dc2626"/>
+    <line x1="517.0" y1="135" x2="517.0" y2="160" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="3,2" marker-end="url(#arrow-ctrl)"/>
+    <line x1="517.0" y1="135" x2="487.0" y2="135" stroke="#dc2626" stroke-width="2" stroke-dasharray="5,3"/>
+    <path d="M 487.0 135 A 6 6 0 0 1 475.0 135" fill="none" stroke="#dc2626" stroke-width="2"/>
+    <line x1="475.0" y1="135" x2="399.0" y2="135" stroke="#dc2626" stroke-width="2" stroke-dasharray="5,3"/>
+    <circle cx="399.0" cy="135" r="2.5" fill="#dc2626"/>
+    <line x1="399.0" y1="135" x2="399.0" y2="160" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="3,2" marker-end="url(#arrow-ctrl)"/>
+    <line x1="399.0" y1="135" x2="369.0" y2="135" stroke="#dc2626" stroke-width="2" stroke-dasharray="5,3"/>
+    <path d="M 369.0 135 A 6 6 0 0 1 357.0 135" fill="none" stroke="#dc2626" stroke-width="2"/>
+    <line x1="357.0" y1="135" x2="281.0" y2="135" stroke="#dc2626" stroke-width="2" stroke-dasharray="5,3"/>
+    <circle cx="281.0" cy="135" r="2.5" fill="#dc2626"/>
+    <line x1="281.0" y1="135" x2="281.0" y2="160" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="3,2" marker-end="url(#arrow-ctrl)"/>
+    <line x1="281.0" y1="135" x2="251.0" y2="135" stroke="#dc2626" stroke-width="2" stroke-dasharray="5,3"/>
+    <path d="M 251.0 135 A 6 6 0 0 1 239.0 135" fill="none" stroke="#dc2626" stroke-width="2"/>
+    <line x1="239.0" y1="135" x2="163.0" y2="135" stroke="#dc2626" stroke-width="2" stroke-dasharray="5,3"/>
+    <circle cx="163.0" cy="135" r="2.5" fill="#dc2626"/>
+    <line x1="163.0" y1="135" x2="163.0" y2="160" stroke="#dc2626" stroke-width="1.8" stroke-dasharray="3,2" marker-end="url(#arrow-ctrl)"/>
+    <line x1="163.0" y1="135" x2="133.0" y2="135" stroke="#dc2626" stroke-width="2" stroke-dasharray="5,3"/>
+    <path d="M 133.0 135 A 6 6 0 0 1 121.0 135" fill="none" stroke="#dc2626" stroke-width="2"/>
+    <line x1="121.0" y1="135" x2="85" y2="135" stroke="#dc2626" stroke-width="2" stroke-dasharray="5,3"/>
+
+    <!-- Functional Cycle Explanation Card (16-bit) -->
+    <g transform="translate(52, 980)" font-size="11">
+        <rect x="0" y="0" width="1646" height="100" rx="9" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.3"/>
+        <text x="24" y="24" font-size="13" font-weight="900" fill="#0f172a" letter-spacing="0.5">ЭТАПЫ ВЫПОЛНЕНИЯ ИНСТРУКЦИЙ И РАСПРЕДЕЛЕНИЕ ДАННЫХ В 16-БИТНОМ ПРОЦЕССОРЕ LIM-2:</text>
+        
+        <!-- Step 1 -->
+        <g transform="translate(24, 38)">
+            <rect x="0" y="0" width="375" height="52" rx="6" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
+            <text x="12" y="20" font-weight="800" fill="#0f172a">1. Выборка операнда (Чтение из GPR)</text>
+            <text x="12" y="38" font-size="10" fill="#475569">R0–R7 через MUX 1 выдают 16-бит слово на шину REG_DATA.</text>
+        </g>
+
+        <!-- Step 2 -->
+        <g transform="translate(415, 38)">
+            <rect x="0" y="0" width="375" height="52" rx="6" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
+            <text x="12" y="20" font-weight="800" fill="#1e40af">2. Загрузка в ACCA/B и Расчет в АЛУ</text>
+            <text x="12" y="38" font-size="10" fill="#475569">DEST-DMUX направляет слово в ACCA/B. АЛУ считает и пишет флаги.</text>
+        </g>
+
+        <!-- Step 3 -->
+        <g transform="translate(805, 38)">
+            <rect x="0" y="0" width="395" height="52" rx="6" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
+            <text x="12" y="20" font-weight="800" fill="#b45309">3. Селекция источника (MUX 2 снизу вверх)</text>
+            <text x="12" y="38" font-size="10" fill="#475569">Входы [0..2] входят снизу. Результат выходит сверху на WB_DATA.</text>
+        </g>
+
+        <!-- Step 4 -->
+        <g transform="translate(1215, 38)">
+            <rect x="0" y="0" width="395" height="52" rx="6" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
+            <text x="12" y="20" font-weight="800" fill="#991b1b">4. Обратная запись (Writeback) и Управление</text>
+            <text x="12" y="38" font-size="10" fill="#475569">Шина WB_DATA [15:0] пишет результат в регистр по сигналу REG_WE.</text>
+        </g>
+    </g>
+
+</svg>

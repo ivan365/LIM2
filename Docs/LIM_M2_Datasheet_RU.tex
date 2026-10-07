@@ -1,0 +1,637 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[T2A]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[russian,english]{babel}
+\usepackage{geometry,xcolor,array,booktabs,longtable,tabularx,tikz,fancyhdr,titlesec,enumitem,hyperref,lastpage,microtype}
+\usepackage[sfdefault]{noto}
+\usepackage[most]{tcolorbox}
+\usepackage{pdflscape}
+\usetikzlibrary{arrows.meta,calc,positioning,shapes.geometric,babel}
+
+\geometry{left=18mm,right=18mm,top=21mm,bottom=20mm,headheight=20pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
+\setlength{\emergencystretch}{2em}
+\setlist{nosep,leftmargin=*}
+\definecolor{limblue}{HTML}{102A43}
+\definecolor{limcyan}{HTML}{00A6A6}
+\definecolor{limaccent}{HTML}{FF6B4A}
+\definecolor{limmint}{HTML}{DFF7F5}
+\definecolor{limlight}{HTML}{F1F5F8}
+\definecolor{limpaper}{HTML}{FAFCFD}
+\definecolor{limgray}{HTML}{627D98}
+\hypersetup{colorlinks=true,linkcolor=limcyan,urlcolor=limcyan,pdftitle={LIM M2 --- Архитектурная спецификация процессора}}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\colorbox{limblue}{\textcolor{white}{\strut\hspace{2mm}\textbf{LIM M2}\hspace{2mm}}}}
+\fancyhead[R]{\small\textcolor{limgray}{PROCESSOR REFERENCE MANUAL / REVISION 0.2}}
+\fancyfoot[L]{\small LIM M2 Reference Manual --- Редакция 0.2 (Октябрь 2026)}
+\fancyfoot[R]{\small \thepage/\pageref{LastPage}}
+\renewcommand{\headrulewidth}{0pt}
+\titleformat{\section}{\Large\bfseries\color{limblue}}
+  {\colorbox{limcyan}{\textcolor{white}{\strut\thesection}}}{0.75em}{}
+\titleformat{\subsection}{\large\bfseries\color{limblue}}{\thesubsection}{0.7em}{}
+\titlespacing*{\section}{0pt}{16pt}{8pt}
+\titlespacing*{\subsection}{0pt}{5pt}{1pt}
+
+\newcommand{\TBD}{\textcolor{limcyan}{\textbf{TBD}}}
+\newcommand{\reg}[1]{\texttt{#1}}
+\newcommand{\bits}[1]{\texttt{#1}}
+\newcommand{\field}[1]{\textsf{#1}}
+\newcommand{\opcodebox}[1]{\tikz[baseline=(n.base)]\node[fill=limblue,text=white,rounded corners=2pt,inner xsep=7pt,inner ysep=3pt,font=\ttfamily\bfseries] (n) {#1};}
+\newtcolorbox{limnote}[1]{
+  enhanced,breakable,colback=limlight,colframe=limcyan,boxrule=0pt,
+  borderline west={3pt}{0pt}{limcyan},arc=1mm,left=4mm,right=4mm,
+  top=3mm,bottom=3mm,title={#1},fonttitle=\bfseries\color{limblue},
+  coltitle=limblue,attach title to upper={\par\smallskip}}
+\newtcolorbox{specbox}{
+  enhanced,colback=limpaper,colframe=limlight,boxrule=0.8pt,arc=2mm,
+  left=3mm,right=3mm,top=2mm,bottom=2mm}
+
+% Шаблон страницы инструкции: одна команда на отдельную страницу
+\newcommand{\InstructionPage}[8]{%
+  \clearpage
+  \phantomsection\addcontentsline{toc}{subsection}{#1 --- #4}
+  \begin{tcolorbox}[enhanced,colback=limblue,colframe=limblue,arc=3mm,
+    left=5mm,right=5mm,top=4mm,bottom=4mm]
+  \begin{minipage}[t]{0.68\textwidth}
+    {\fontsize{30}{34}\selectfont\bfseries\color{white}#1}\par\vspace{1mm}
+    {\large\color{white}#4}
+  \end{minipage}\hfill
+  \begin{minipage}[t]{0.25\textwidth}\raggedleft
+    \tikz[baseline=(n.base)]\node[fill=limcyan,text=white,rounded corners=2pt,
+      inner xsep=8pt,inner ysep=4pt,font=\ttfamily\bfseries] (n) {#2};
+    \par\smallskip{\small\color{white}#3}
+  \end{minipage}
+  \end{tcolorbox}
+  \vspace{3mm}
+  \begin{specbox}
+  \begin{tabularx}{\dimexpr\textwidth-8mm\relax}{>{\bfseries\color{limblue}}p{31mm}X}
+    \toprule
+    Мнемоника & \texttt{#1} \\
+    Opcode & \bits{#2} (старшие 5 бит кода команды) \\
+    Формат команды & 5 бит opcode, 3 бита \field{cfg} и аргументы переменного формата (у специализированных команд --- операнды сразу после opcode) \\
+    Класс операции & #3 \\
+    Статус фиксации & Базовый функционал утверждён; битовые поля аргументов и расширенные модификаторы находятся на стадии финализации \\
+    \bottomrule
+  \end{tabularx}
+  \end{specbox}
+  \subsection*{Назначение команды} #4.
+  \subsection*{Архитектурная семантика}
+  \begin{tcolorbox}[colback=limmint,colframe=limmint,arc=2mm,boxrule=0pt,left=4mm]
+    \ttfamily #5
+  \end{tcolorbox}
+  \subsection*{Конфигурация и операнды} #6
+  \subsection*{Влияние на регистр флагов (FREG)} #7
+  \subsection*{Микрооперации исполнительного тракта}
+  \begin{enumerate}[topsep=1pt,itemsep=0pt,parsep=0pt]
+    \item Коммутация мультиплексоров тракта данных для выборки исходных операндов.
+    \item Исполнение операции в специализированном функциональном блоке (АЛУ / память / переходы).
+    \item Направление результата через арбитр записи (MUX 2) к целевому регистру-приёмнику.
+    \item Синхронное обновление аппаратных флагов \reg{FREG} и служебных регистров (\reg{PTREG}, \reg{SREG}).
+  \end{enumerate}
+  Точная сетка микротактов и управляющие стробы: \TBD.
+  \subsection*{Особенности реализации и примечания} #8
+  \vfill{\footnotesize\color{limgray}Параметры с отметкой TBD соответствуют расширенным опциям спецификации.}
+}
+
+\begin{document}
+\begin{titlepage}
+  \pagecolor{limpaper}\color{limblue}
+  \begin{tikzpicture}[remember picture,overlay]
+    \fill[limblue] (current page.north west) rectangle
+      ([xshift=58mm]current page.south west);
+    \fill[limcyan] ([xshift=58mm]current page.north west) rectangle
+      ([xshift=63mm]current page.south west);
+    \draw[limlight,line width=0.7pt] ([xshift=77mm,yshift=-37mm]current page.north west)
+      -- ([xshift=-16mm,yshift=-37mm]current page.north east);
+  \end{tikzpicture}
+  \vspace*{18mm}
+  \hspace*{-7mm}\begin{minipage}{50mm}\centering
+    {\color{white}\bfseries\large HIGH-PERFORMANCE}\par\smallskip
+    {\color{limcyan}\bfseries\small 16-BIT ARCHITECTURE}
+  \end{minipage}\par
+  \vspace{31mm}
+  \hspace*{68mm}\begin{minipage}{100mm}\raggedright
+    {\fontsize{38}{42}\selectfont\bfseries LIM\par M2}\par
+    \vspace{7mm}
+    {\Large\bfseries\color{limcyan}Архитектурное руководство по процессору}\par
+    \vspace{9mm}
+    {\large Высокодетерминированная 16-разрядная процессорная архитектура с чистым мультиплексорным трактом данных и расширенной 24-битной адресацией.}\par
+    \vspace{18mm}
+    \begin{tikzpicture}[node distance=5mm]
+      \foreach \x/\n in {0/R0,1.25/R1,2.5/R2,3.75/R3,5/R4,6.25/R5,7.5/R6,8.75/R7}
+        \node[draw=limblue,rounded corners=1.5pt,minimum width=10mm,minimum height=8mm,
+          fill=white,font=\bfseries\scriptsize] (r\n) at (\x,0) {\n};
+      \draw[limcyan,line width=2pt,-{Latex[length=2mm]}] (0,-0.8) -- (8.75,-0.8);
+      \draw[limblue,line width=1.2pt,-{Latex[length=2mm]}] (8.75,-1.25) -- (0,-1.25);
+      \node[anchor=west,font=\small\bfseries,text=limgray] at (0,-1.85)
+        {POINT-TO-POINT DATA ROUTING \enspace·\enspace ZERO BUS CONTENTION};
+    \end{tikzpicture}
+  \end{minipage}
+  \vfill
+  \hspace*{68mm}\begin{minipage}{100mm}\raggedright
+    {\bfseries\color{limaccent}OFFICIAL REFERENCE SPECIFICATION}\par\smallskip
+    {\large Редакция 0.2 --- Октябрь 2026 г.}\par\medskip
+    {\small\color{limgray}Спецификация ядра LIM M2. Все права защищены.}
+  \end{minipage}
+  \vspace*{10mm}
+\end{titlepage}
+\nopagecolor
+
+\tableofcontents
+\clearpage
+
+\section{Статус документа и архитектурные цели}
+Настоящий документ является официальным техническим описанием и архитектурным стандартом микропроцессора \textbf{LIM M2}. 
+Архитектура спроектирована с прицелом на бескомпромиссную надежность, математическую строгость и высокую тактовую частоту.
+
+В основу тракта данных LIM M2 заложен фундаментальный принцип \textbf{полного отказа от внутренних шин третьего состояния (Tri-State / Hi-Z)}. Внутренние потоки данных построены исключительно на детерминированных двухтактных мультиплексорных деревьях (Point-to-Point MUX Routing), что гарантирует полное отсутствие сквозных токов, шинных конфликтов (bus contention) и паразитных емкостных задержек.
+
+\begin{limnote}{Архитектурная нумерация команд}
+Система команд LIM M2 использует непрерывную 5-битную сетку первичных кодов: 
+\texttt{NOP}=0, \texttt{ADD}=1, \ldots, \texttt{CSRM}=26. Коды 27--31 зарезервированы для аппаратных расширений следующего поколения.
+\end{limnote}
+
+\subsection{Условные обозначения и сокращения}
+\begin{tabularx}{\textwidth}{>{\ttfamily}p{28mm}X}
+\toprule
+Обозначение & Архитектурный смысл \\
+\midrule
+dst & Целевой регистр-приёмник результата операции \\
+src, srcA, srcB & Регистры-источники входных операндов \\
+imm & Непосредственное скалярное значение, встроенное в тело инструкции \\
+addr & Эффективный адрес памяти (16-битный базовый или 24-битный расширенный) \\
+cfg & 3-битное поле функционального модификатора операции \\
+ZF, CF, OF & Аппаратные флаги нуля, переноса и знакового переполнения регистра \reg{FREG} \\
+\bottomrule
+\end{tabularx}
+
+\section{Архитектурный обзор процессора LIM M2}
+\textbf{LIM M2} представляет собой высокоэффективный 16-разрядный микропрограммный процессор общего назначения с развитой целочисленной арифметикой. Ключевые архитектурные достоинства процессора включают:
+
+\begin{itemize}
+  \item \textbf{Чистая мультиплексорная маршрутизация данных:} Внутренний тракт полностью избавлен от третьего состояния. Передача данных осуществляется активными драйверами через каскад селекторов \textbf{MUX 1}, \textbf{DEST-DMUX} и \textbf{MUX 2}, что делает архитектуру идеально совместимой с современными полупроводниковыми техпроцессами (ASIC) и быстрыми ПЛИС (FPGA).
+  \item \textbf{Двухаккумуляторный исполнительный узел (Dual Accumulator Staging):} Регистры \reg{ACCA} и \reg{ACCB} обеспечивают надёжную фиксацию операндов перед АЛУ, изолируя переходные процессы вычислений от основного регистрового файла.
+  \item \textbf{Аппаратное каскадирование длинной арифметики (ALU Auto-Chaining):} Внутренний тракт АЛУ оснащён остаточным аккумулятором \reg{ALU\_RESIDUAL}. При возникновении переноса ($+1$ при сложении $>2^{16}-1$), заёма ($-1$ при разности $<0$) или избыточных старших разрядов умножения/деления, остаток фиксируется аппаратно и автоматически суммируется или вычитается при следующей математической операции. Это обеспечивает непрерывную многобайтовую арифметику (32, 48, 64+ бит) без отдельных команд ADC/SBB. Сброс цепочки выполняется командой \texttt{NOP}.
+  \item \textbf{Прямой тракт пересылки (Reg-to-Reg Bypass):} Обходной канал от MUX 1 напрямую в MUX 2 позволяет осуществлять копирование данных между регистрами без задействования и блокировки вычислительных ресурсов АЛУ.
+  \item \textbf{Расширенная 24-битная адресация памяти (до 16 МБ):} Специализированные 24-битные регистры-указатели \reg{PTREG} (указатель данных с автоинкрементом) и \reg{SREG} (указатель стека) позволяют процессору линейно адресовать обширные массивы памяти и стек до 16~Мбайт за пределами классического 64-килобайтного окна.
+  \item \textbf{Высокочастотный потенциал:} Отсутствие емкостной нагрузки от распределённых шин позволяет ядру достигать базовой рабочей частоты \textbf{200~МГц}, а при трансляции в специализированный кремний (ASIC) ориентироваться на частоты \textbf{700~МГц и выше}.
+\end{itemize}
+
+\clearpage
+\begin{landscape}
+\thispagestyle{empty}
+\subsection{Принципиальная структурная схема тракта данных (Datapath)}
+\begin{center}
+\begin{tikzpicture}[
+    x=1cm, y=1cm,
+    >=Stealth,
+    font=\sffamily\scriptsize,
+    % Component Styles
+    regnode/.style={
+        draw=black!85, rectangle, rounded corners=3pt, minimum width=1.1cm, minimum height=0.75cm, 
+        line width=1.1pt, fill=white, font=\bfseries\scriptsize, align=center
+    },
+    block/.style={
+        draw=black!85, rectangle, rounded corners=3pt, line width=1.1pt, fill=white, 
+        font=\bfseries\scriptsize, align=center
+    },
+    ctrlbox/.style={
+        draw=red!80!black, rectangle, rounded corners=7pt, line width=1.4pt,
+        fill=red!5, align=center
+    },
+    membox/.style={
+        draw=cyan!75!black, rectangle, rounded corners=6pt, line width=1.3pt,
+        fill=cyan!6, align=center
+    },
+    % Wire Styles
+    databus/.style={->, line width=1.3pt, draw=black!90},
+    databus_line/.style={line width=1.3pt, draw=black!90},
+    ctrlbus/.style={->, line width=1.0pt, draw=red!80!black, dashed},
+    ctrlbus_line/.style={line width=1.0pt, draw=red!80!black, dashed},
+    bidir/.style={<->, line width=1.2pt, draw=teal!80!black}
+]
+
+    % ========================================================
+    % 1. РЕГИСТРЫ R0 - R7 (16-BIT GPR) (Y = 12.0)
+    % ========================================================
+    \foreach \i/\x in {0/0.6, 1/2.0, 2/3.4, 3/4.8, 4/6.2, 5/7.6, 6/9.0, 7/10.4} {
+        \node[regnode] (R\i) at (\x, 12.0) {\textbf{R\i}};
+        \coordinate (R\i_in) at (\x - 0.25, 12.38);
+        \coordinate (R\i_we) at (\x + 0.25, 12.38);
+        \coordinate (R\i_out) at (\x, 11.62);
+    }
+
+    % ========================================================
+    % 2. MUX 1 (REG MUX) (Y = 9.7 .. 10.6, Center X = 5.5)
+    % ========================================================
+    \draw[fill=gray!12, draw=black!85, line width=1.2pt] 
+        (-0.2, 10.6) -- (11.2, 10.6) -- (7.9, 9.7) -- (3.1, 9.7) -- cycle;
+    \node[align=center] at (5.5, 10.15) {\textbf{\normalsize MUX 1}};
+
+    % Спуски от каждого регистра в MUX 1
+    \foreach \i in {0,...,7} {
+        \draw[databus] (R\i_out) -- (R\i_out |- 0, 10.6);
+    }
+
+    % ========================================================
+    % 3. ЛЕВАЯ КОЛОНКА: DEST-DMUX, ACCA, ACCB, ALU (16-BIT)
+    % ========================================================
+    % DEST-DMUX (Center X = 2.2, Y = 5.9 .. 6.9)
+    \draw[fill=gray!12, draw=black!85, line width=1.1pt] 
+        (1.3, 6.9) -- (3.1, 6.9) -- (3.6, 5.9) -- (0.8, 5.9) -- cycle;
+    \node[align=center] at (2.2, 6.4) {\textbf{\scriptsize DEST-DMUX}};
+
+    % Аккумуляторы ACCA и ACCB (Y = 4.9)
+    \node[regnode, fill=blue!6, draw=blue!75!black, minimum width=1.2cm, minimum height=0.8cm] 
+        (ACCA) at (1.3, 4.9) {\textbf{ACCA}};
+    \node[regnode, fill=blue!6, draw=blue!75!black, minimum width=1.2cm, minimum height=0.8cm] 
+        (ACCB) at (3.1, 4.9) {\textbf{ACCB}};
+
+    % Связи от DMUX к аккумуляторам
+    \draw[databus] (1.3, 5.9) -- (ACCA.north);
+    \draw[databus] (3.1, 5.9) -- (ACCB.north);
+    \node[font=\tiny\bfseries, fill=white, inner sep=1pt] at (1.05, 5.55) {[0]};
+    \node[font=\tiny\bfseries, fill=white, inner sep=1pt] at (3.35, 5.55) {[1]};
+
+    % ALU (Center X = 2.2, Y = 2.0 .. 3.6)
+    \draw[fill=blue!8, draw=blue!85!black, line width=1.3pt]
+        (0.5, 3.6) -- (1.8, 3.6) -- (2.2, 3.2) -- (2.6, 3.6) -- (3.9, 3.6) -- (3.2, 2.0) -- (1.2, 2.0) -- cycle;
+    \node[align=center, text=blue!90!black] at (2.2, 2.7) {\textbf{\large ALU}};
+
+    % Входы в ALU от аккумуляторов
+    \draw[databus] (ACCA.south) -- (1.3, 3.6);
+    \draw[databus] (ACCB.south) -- (3.1, 3.6);
+    \node[font=\tiny\bfseries, left] at (1.3, 4.1) {A [15:0]};
+    \node[font=\tiny\bfseries, right] at (3.1, 4.1) {B [15:0]};
+
+    % ========================================================
+    % 4. ЦЕНТРАЛЬНАЯ КОЛОНКА: MUX 2 (MEM MUX) И FLAG REG
+    % ========================================================
+    % MUX 2: ПЕРЕВЕРНУТ! (Узкий верх Y = 5.8, широкий низ Y = 4.4, Center X = 6.4)
+    \draw[fill=yellow!18, draw=orange!80!black, line width=1.3pt]
+        (5.6, 5.8) -- (7.2, 5.8) -- (7.8, 4.4) -- (5.0, 4.4) -- cycle;
+    \node[align=center, text=orange!90!black] at (6.4, 5.25) {\textbf{\normalsize MUX 2}};
+
+    % Бейджи входов MUX 2 ВНУТРИ трапеции по нижнему краю
+    \node[font=\tiny\bfseries, fill=white, draw=orange!80!black, rounded corners=1pt, inner sep=1.2pt] at (5.6, 4.68) {[0] ALU};
+    \node[font=\tiny\bfseries, fill=white, draw=orange!80!black, rounded corners=1pt, inner sep=1.2pt] at (6.4, 4.68) {[1] REG};
+    \node[font=\tiny\bfseries, fill=white, draw=orange!80!black, rounded corners=1pt, inner sep=1.2pt] at (7.2, 4.68) {[2] CTRL};
+
+    % Флаговый регистр (Center X = 6.4, Y = 1.2, W = 3.0cm, H = 0.8cm)
+    \node[block, minimum width=3.0cm, minimum height=0.8cm, fill=teal!6, draw=teal!80!black] 
+        (FLAGS) at (6.4, 1.2) {\textbf{FLAGS}\\[1pt]\scriptsize$[$ Z, C, N, V $]$};
+
+    % ========================================================
+    % 5. ПРАВАЯ КОЛОНКА: КОНТРОЛЛЕР И ПАМЯТЬ
+    % ========================================================
+    % Контроллер (X = 11.4 .. 16.8, Y = 4.2 .. 9.2, Center X = 14.1)
+    \node[ctrlbox, minimum width=5.4cm, minimum height=5.0cm] 
+        (CTRL) at (14.1, 6.7) {};
+    
+    % Заголовок контроллера
+    \node[font=\bfseries\normalsize, text=red!90!black] at (14.1, 8.7) {CONTROL UNIT};
+
+    % Порты на левой стенке Контроллера (X = 11.4)
+    \node[draw=red!40!black, fill=white, rounded corners=2pt, font=\tiny\bfseries, inner sep=2pt, right] 
+        at (11.5, 8.3) {IR [15:0]};
+    \node[draw=red!70!black, fill=white, rounded corners=2pt, font=\tiny\bfseries, inner sep=2pt, text=red!80!black, right] 
+        at (11.5, 7.3) {CTRL ALU/ACC};
+    \node[draw=red!70!black, fill=white, rounded corners=2pt, font=\tiny\bfseries, inner sep=2pt, text=red!80!black, right] 
+        at (11.5, 6.2) {SEL\_WB [1:0]};
+    \node[draw=teal!70!black, fill=white, rounded corners=2pt, font=\tiny\bfseries, inner sep=2pt, text=teal!90!black, right] 
+        at (11.5, 5.2) {FLAGS};
+    \node[draw=orange!80!black, fill=white, rounded corners=2pt, font=\tiny\bfseries, inner sep=2pt, text=orange!90!black, right] 
+        at (11.5, 4.5) {MEM/IMM};
+
+    % Память системы (X = 11.4 .. 16.8, Y = 0.8 .. 3.4, Center X = 14.1)
+    \node[membox, minimum width=5.4cm, minimum height=2.6cm] 
+        (MEM) at (14.1, 2.1) {\textbf{\normalsize MEMORY (64 KB)}\\[3pt]\tiny ADDR [15:0] • DATA [15:0] • RD/WR};
+
+    % Прямые вертикальные шины между Контроллером и Памятью
+    \draw[databus, draw=blue!80!black] (12.6, 4.2) -- (12.6, 3.4) node[midway, fill=white, inner sep=1pt, font=\tiny\bfseries, text=blue!80!black] {ADDR};
+    \draw[databus] (14.1, 4.2) -- (14.1, 3.4) node[midway, fill=white, inner sep=1pt, font=\tiny\bfseries] {WR\_DATA};
+    \draw[bidir, draw=red!80!black] (15.6, 3.4) -- (15.6, 4.2) node[midway, fill=white, inner sep=1pt, font=\tiny\bfseries, text=red!80!black] {RD / WR};
+
+    % ========================================================
+    % 6. РАЗВОДКА ШИН ДАННЫХ (DATA PATH 16-BIT)
+    % ========================================================
+    % Спуск от MUX 1: до распределительной линии Y = 8.3
+    \draw[databus_line] (5.5, 9.7) -- (5.5, 8.3);
+    \filldraw (5.5, 8.3) circle (2pt);
+
+    % Ветвь A: MUX 1 -> DEST-DMUX
+    \draw[databus] (5.5, 8.3) -| (2.2, 6.9) node[pos=0.25, above, font=\tiny\bfseries] {[15:0]};
+
+    % Ветвь C: MUX 1 -> Контроллер (порт IR)
+    \draw[databus] (5.5, 8.3) -- (11.4, 8.3) node[pos=0.45, above, font=\tiny\bfseries] {REG\_DATA [15:0]};
+
+    % Ветвь B: MUX 1 -> MUX 2 (Вход [1] REG - входит СНИЗУ)
+    \filldraw (4.6, 8.3) circle (1.8pt);
+    \draw[databus_line] (4.6, 8.3) -- (4.6, 3.6);
+    % Горизонталь по Y = 3.6: мост над шиной ALU (X = 5.6) и вход снизу в [1] (6.4, 4.4)
+    \draw[databus_line] (4.6, 3.6) -- (5.4, 3.6);
+    \draw[databus_line] (5.4, 3.6) arc[start angle=180, end angle=0, radius=0.2] -- (6.4, 3.6);
+    \draw[databus] (6.4, 3.6) -- (6.4, 4.4);
+    \node[font=\tiny\bfseries, fill=white, inner sep=1.2pt, below] at (5.0, 3.55) {[15:0]};
+
+    % ALU -> MUX 2 (Вход [0] ALU - входит СНИЗУ)
+    \draw[databus] (3.2, 2.5) -- (5.6, 2.5) -- (5.6, 4.4);
+    \node[font=\tiny\bfseries, fill=white, inner sep=1pt] at (3.9, 2.75) {ALU\_RES [15:0]};
+
+    % CONTROLLER -> MUX 2 (Вход [2] CTRL)
+    \draw[databus_line] (11.4, 4.5) -- (10.3, 4.5) -- (10.3, 3.6) -- (9.8, 3.6);
+    \draw[databus_line] (9.8, 3.6) arc[start angle=0, end angle=180, radius=0.2] -- (7.2, 3.6);
+    \draw[databus] (7.2, 3.6) -- (7.2, 4.4);
+    \node[font=\tiny\bfseries, fill=white, inner sep=1pt] at (10.8, 4.7) {MEM/IMM [15:0]};
+
+    % ALU -> FLAG REG
+    \draw[->, line width=1.1pt, draw=teal!80!black] (2.2, 2.0) |- (FLAGS.west);
+    \node[font=\tiny\bfseries, fill=white, inner sep=1pt, text=teal!90!black] at (3.5, 1.2) {FLAGS};
+
+    % ========================================================
+    % 7. FLAG REG <-> КОНТРОЛЛЕР (ДВУСТОРОННЯЯ СВЯЗЬ)
+    % ========================================================
+    \draw[bidir] (7.9, 1.2) -- (9.6, 1.2) -- (9.6, 5.2) -- (11.4, 5.2);
+    \node[font=\tiny\bfseries, fill=white, inner sep=1pt, text=teal!90!black] at (10.4, 5.45) {FLAGS};
+
+    % ========================================================
+    % 8. ШИНА ОБРАТНОЙ ЗАПИСИ (ВЫХОД СВЕРХУ MUX 2 -> РЕГИСТРЫ)
+    % ========================================================
+    \draw[databus_line] (6.4, 5.8) -- (6.4, 9.0) -- (5.7, 9.0) 
+                        arc[start angle=0, end angle=180, radius=0.2] 
+                        -- (-0.8, 9.0) -- (-0.8, 13.5) -- (10.9, 13.5);
+    \node[font=\tiny\bfseries, fill=black!85, text=white, inner sep=2.5pt, rounded corners=2pt] 
+        at (2.2, 9.0) {WB\_DATA [15:0]};
+    
+    \foreach \i in {0,...,7} {
+        \draw[databus] (R\i_in |- 0, 13.5) -- (R\i_in);
+        \filldraw (R\i_in |- 0, 13.5) circle (1.8pt);
+    }
+
+    % ========================================================
+    % 9. СИГНАЛЫ УПРАВЛЕНИЯ
+    % ========================================================
+    % 1. К MUX 1: SEL_REG [2:0]
+    \draw[ctrlbus] (12.8, 9.2) |- (7.9, 10.15);
+    \node[font=\tiny\bfseries, text=red!80!black, fill=white, inner sep=1pt] at (12.8, 9.7) {SEL\_REG [2:0]};
+
+    % 2. К MUX 2: SEL_WB [1:0]
+    \draw[ctrlbus] (11.4, 6.2) -| (8.5, 5.3) -- (7.4, 5.3);
+    \node[font=\tiny\bfseries, text=red!80!black, fill=white, inner sep=1pt] at (9.8, 6.2) {SEL\_WB [1:0]};
+
+    % 3. К DEST-DMUX, ACCA, ACCB, ALU: магистраль выходит из порта (11.4, 7.3)
+    \draw[ctrlbus_line] (11.4, 7.3) -- (6.6, 7.3)
+                        arc[start angle=0, end angle=180, radius=0.2]
+                        -- (4.8, 7.3)
+                        arc[start angle=0, end angle=180, radius=0.2]
+                        -- (4.1, 7.3);
+    
+    % Вертикальный спуск к DEST-DMUX и ACCB по линии X = 4.1
+    \draw[ctrlbus_line] (4.1, 7.3) -- (4.1, 4.9);
+    \filldraw[red!80!black] (4.1, 7.3) circle (1.4pt);
+
+    % Отвод к DEST-DMUX (SEL_ACC)
+    \draw[ctrlbus] (4.1, 6.4) -- (3.35, 6.4);
+    \filldraw[red!80!black] (4.1, 6.4) circle (1.4pt);
+    \node[font=\tiny\bfseries, text=red!80!black, fill=white, inner sep=1pt, above] at (3.72, 6.45) {SEL\_ACC};
+
+    % Отвод к ACCB (LD_B)
+    \draw[ctrlbus] (4.1, 4.9) -- (ACCB.east);
+    \node[font=\tiny\bfseries, text=red!80!black, fill=white, inner sep=1pt, above] at (3.9, 4.95) {LD\_B};
+
+    % Магистраль продолжается влево над DEST-DMUX к ACCA и ALU:
+    \draw[ctrlbus_line] (4.1, 7.3) -- (2.4, 7.3)
+                        arc[start angle=0, end angle=180, radius=0.2]
+                        -- (0.3, 7.3);
+
+    % Отвод к ACCA (LD_A)
+    \draw[ctrlbus] (0.3, 7.3) -- (0.3, 4.9) -- (ACCA.west);
+    \node[font=\tiny\bfseries, text=red!80!black, fill=white, inner sep=1pt, left] at (0.25, 5.0) {LD\_A};
+
+    % Отвод к ALU (ALU_OP [3:0])
+    \draw[ctrlbus] (0.3, 4.9) -- (0.3, 2.8) -- (0.8, 2.8);
+    \node[font=\tiny\bfseries, text=red!80!black, fill=white, inner sep=1pt, left] at (0.25, 3.2) {ALU\_OP [3:0]};
+
+    % 4. К регистрам R0..R7: REG_WE [7:0]
+    \draw[ctrlbus_line] (15.2, 9.2) -- (15.2, 12.8) -- (-0.2, 12.8);
+    \node[font=\tiny\bfseries, text=red!80!black, fill=white, inner sep=1pt] at (13.0, 12.8) {REG\_WE [7:0]};
+    \foreach \i in {0,...,7} {
+        \draw[ctrlbus] (R\i_we |- 0, 12.8) -- (R\i_we);
+        \filldraw[red!80!black] (R\i_we |- 0, 12.8) circle (1.4pt);
+    }
+
+\end{tikzpicture}
+\end{center}
+\end{landscape}
+\clearpage
+
+\section{Программно видимые регистры и состояние процессора}
+Архитектурное состояние процессора LIM M2 представлено набором ортогональных регистров, сгруппированных по функциональному назначению:
+
+\begin{longtable}{>{\ttfamily\bfseries}p{25mm}p{28mm}p{93mm}}
+\toprule
+Регистр & Разрядность & Архитектурная роль и особенности \\
+\midrule\endhead
+R0--R7 & 16 бит & Регистры общего назначения (GPR). Селектор MUX 1 обеспечивает сверхбыстрое бесконфликтное считывание; фиксация результата происходит по стробу с шины WB\_DATA. \\
+SREG & 24 бита & Системный регистр стека (Stack Register). Поддерживает эффективное аппаратное отслеживание глубины стековых кадров с прямой 24-битной адресацией стекового пространства (до 16~Мбайт). \\
+PTREG & 24 бита & Высокоточный регистр-указатель (Pointer Register). Обеспечивает прямое линейное обращение к памяти объёмом до 16~Мбайт с аппаратным автоинкрементом по флагу AIP. \\
+FREG & 16 бит & Регистр состояния и управления (Processor Status \& Control Register). Объединяет флаги арифметических результатов и биты конфигурации режимов ядра. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Топология регистра флагов и управления (FREG)}
+Регистр \reg{FREG} является ключевым элементом контроля математического тракта и системных режимов:
+
+\begin{tabularx}{\textwidth}{>{\bfseries}p{14mm}>{\ttfamily}p{23mm}X}
+\toprule
+Бит & Мнемоника & Функциональное описание \\
+\midrule
+0    & ZF   & Zero Flag: истинен при нулевом результате операции. \\
+1    & CF   & Carry Flag: аппаратный флаг переноса / заёма в арифметике. \\
+2    & OF   & Overflow Flag: индикатор знакового переполнения дополнительного кода. \\
+3    & EM   & Error Math: аппаратная ловушка математических исключений (деление на ноль). \\
+4--5 & CMP  & Compare Result: результат двухбитного аппаратного компаратора ($<$, $=$, $>$). \\
+6--7 & CLK  & Clock Mode: выбор профиля делителя тактовой частоты ядра. \\
+8    & PIE  & Program Interrupt Enable: глобальное разрешение программных прерываний. \\
+9    & MIE  & Master Interrupt Enable: разрешение маскируемых внешних прерываний. \\
+10   & DWR  & Disable Wait for Ready: форсированный безакцептный обмен без ожидания шины. \\
+11   & M24  & 24-bit Mode Enable: активация расширенного 24-битного адресного режима. \\
+12   & DBIT & Discarded Bit: буфер последнего бита, выдвинутого сдвиговым узлом. \\
+13   & SMOD & Shift Mode: выбор режима заполнения при выполнении BSL/BSR. \\
+14   & SBIT & Shift Bit Value: фиксированное значение бита вставки при SMOD=1. \\
+15   & AIP  & Auto-Increment PTREG: разрешение аппаратного инкремента указателя при обращении. \\
+\bottomrule
+\end{tabularx}
+
+\section{Формат машинных инструкций}
+Инструкции процессора LIM M2 обладают компактным, легко декодируемым форматом. 
+Базовый опкод занимает старшие 5 бит, обеспечивая мгновенную диспетчеризацию в микропрограммном ПЗУ управления:
+
+\begin{center}
+\begin{tikzpicture}[x=0.9cm,y=0.72cm]
+  \draw[thick,fill=limblue] (0,0) rectangle (5,1.25);
+  \draw[thick,fill=limcyan] (5,0) rectangle (8,1.25);
+  \draw[thick,fill=limlight] (8,0) rectangle (17,1.25);
+  \node[text=white,font=\bfseries,align=center] at (2.5,0.62) {OPCODE\\5 бит};
+  \node[text=white,font=\bfseries,align=center] at (6.5,0.62) {CFG\\3 бита};
+  \node[font=\bfseries,align=center] at (12.5,0.62) {Операнды и аргументы\\динамическая длина};
+  \node[anchor=south west,font=\small] at (0,1.32) {$W-1$};
+  \node[anchor=south,font=\small] at (5,1.32) {$W-6$};
+  \node[anchor=south,font=\small] at (8,1.32) {$W-9$};
+  \node[anchor=south east,font=\small] at (17,1.32) {0};
+\end{tikzpicture}
+\end{center}
+
+Поле \field{cfg} (3 бита) определяет специализированную конфигурацию (до 8 ортогональных режимов операции), что позволяет одной базовой команде покрывать широкий спектр адресаций без раздувания пространства опкодов.
+
+\section{Сводная таблица команд ядра LIM M2}
+\small
+\begin{longtable}{r>{\ttfamily}p{13mm}>{\ttfamily}p{19mm}p{28mm}p{75mm}}
+\toprule
+№ & Код & Мнемоника & Класс & Назначение операции \\
+\midrule\endhead
+0  & 00000 & NOP  & Управление & Пустая операция и сброс остаточного регистра АЛУ \\
+1  & 00001 & ADD  & Арифметика & Сложение с автокаскадированием переноса через остаток АЛУ \\
+2  & 00010 & SUB  & Арифметика & Вычитание с автокаскадированием заёма через остаток АЛУ \\
+3  & 00011 & MUL  & Арифметика & Умножение с фиксацией старших разрядов в остатке АЛУ \\
+4  & 00100 & DIV  & Арифметика & Деление с фиксацией остатка во внутреннем регистре АЛУ \\
+5  & 00101 & LMR  & Память     & Чтение слова из памяти в целевой регистр \\
+6  & 00110 & LRM  & Память     & Запись значения регистра в системную память \\
+7  & 00111 & LRR  & Пересылка  & Прямое межрегистровое копирование через обходной MUX \\
+8  & 01000 & CMP  & Сравнение  & Аппаратное сравнение операндов без разрушения данных \\
+9  & 01001 & JMP  & Переход    & Безусловный переход (прямой, косвенный, 24-битный) \\
+10 & 01010 & JCR  & Переход    & Условный переход по состоянию флага переноса CF \\
+11 & 01011 & JNZ  & Переход    & Условный переход при ненулевом результате (ZF = 0) \\
+12 & 01100 & JZ   & Переход    & Условный переход при нулевом результате (ZF = 1) \\
+13 & 01101 & AND  & Логика     & Побитовое логическое умножение (И) \\
+14 & 01110 & OR   & Логика     & Побитовое логическое сложение (ИЛИ) \\
+15 & 01111 & NAND & Логика     & Побитовая инверсия логического И \\
+16 & 10000 & NOR  & Логика     & Побитовая инверсия логического ИЛИ \\
+17 & 10001 & NOT  & Логика     & Побитовое инвертирование операнда (дополнение до 1) \\
+18 & 10010 & XOR  & Логика     & Побитовое исключающее ИЛИ \\
+19 & 10011 & XNOR & Логика     & Побитовая эквивалентность \\
+20 & 10100 & INC  & Арифметика & Аппаратный инкремент операнда на единицу \\
+21 & 10101 & DEC  & Арифметика & Аппаратный декремент операнда на единицу \\
+22 & 10110 & PUSH & Стек       & Размещение регистра в стековом пространстве \\
+23 & 10111 & POP  & Стек       & Извлечение вершины стека в целевой регистр \\
+24 & 11000 & BSL  & Сдвиги     & Баррельный сдвиг влево с настраиваемым вводом бит \\
+25 & 11001 & BSR  & Сдвиги     & Баррельный сдвиг вправо с контролем флага DBIT \\
+26 & 11010 & CSRM & Система    & Атомарный доступ к служебным регистрам (FREG/PTREG/SREG) \\
+27 & 11011 & RSV27 & Резерв    & Зарезервировано для векторных/SIMD инструкций \\
+28 & 11100 & RSV28 & Резерв    & Зарезервировано для расширенной адресации \\
+29 & 11101 & RSV29 & Резерв    & Зарезервировано для операций с плавающей точкой \\
+30 & 11110 & RSV30 & Резерв    & Зарезервировано для аппаратной криптографии \\
+31 & 11111 & RSV31 & Резерв    & Зарезервировано для расширения системы команд \\
+\bottomrule
+\end{longtable}
+\normalsize
+
+\section{Детальная спецификация системы команд}
+Ниже представлены исчерпывающие паспорта всех 32 базовых опкодов процессора LIM M2.
+
+\InstructionPage{NOP}{00000}{Управление}{Аппаратная пустая операция и сброс арифметической цепочки}{%
+PC <- PC + instruction\_length \\
+ALU\_RESIDUAL <- 0 \\
+FREG.CF <- 0 \\
+FREG.OF <- 0%
+}{Операнды отсутствуют; поле \field{cfg} зарезервировано для калибровки задержек.}{Сбрасывает флаги переноса (CF), переполнения (OF) и заёма каскадной цепочки АЛУ; остальные флаги сохраняются.}{Служит для тактовой синхронизации конвейера и аппаратного сброса (Flush) внутреннего остаточного регистра АЛУ, разрывая цепочку автопереноса перед новыми независимыми вычислениями.}
+\InstructionPage{ADD}{00001}{Арифметика}{Сложение с автоматическим каскадированием переноса}{%
+sum\_full <- srcA + srcB + ALU\_RESIDUAL \\
+dst <- sum\_full[15:0] \\
+ALU\_RESIDUAL <- (sum\_full > 0xFFFF ? 1 : 0)%
+}{Регистры R0--R7, аккумуляторы ACCA/ACCB или непосредственные операнды.}{Взводит флаг переноса CF и переполнения OF при превышении $2^{16}-1$; обновляет ZF по значению dst.}{Поддерживает сквозную многобайтовую арифметику (32, 48, 64+ бит). Если результат суммы не помещается в 16 бит ($>2^{16}-1$), перенос (+1) фиксируется во внутреннем регистре АЛУ и автоматически суммируется при следующей операции ADD без отдельных инструкций ADC. Младшие 16 бит всегда детерминированно сохраняются в dst. Цепочка сбрасывается инструкцией NOP либо перезаписывается новой математической операцией.}
+\InstructionPage{SUB}{00010}{Арифметика}{Вычитание с автоматическим каскадированием заёма}{%
+diff\_full <- srcA - srcB - ALU\_RESIDUAL \\
+dst <- diff\_full[15:0] \\
+ALU\_RESIDUAL <- (diff\_full < 0 ? 1 : 0)%
+}{Регистры R0--R7, константы или аккумуляторы ACCA/ACCB.}{При разности $< 0$ взводит флаг заёма (Borrow / CF) и OF; обновляет ZF.}{Реализует непрерывное многословное вычитание. При возникновении отрицательной разности ($< 0$) заём ($-1$) запоминается во внутреннем регистре АЛУ, и в следующей операции SUB АЛУ автоматически вычитает 1 из старшего слова. Результат младшего слова детерминированно фиксируется в dst. Для начала новой независимой разности цепочка прерывается инструкцией NOP.}
+\InstructionPage{MUL}{00011}{Арифметика}{Целочисленное умножение с сохранением старшей части в регистре АЛУ}{%
+prod <- srcA * srcB \\
+dst <- prod[15:0] \\
+ALU\_RESIDUAL <- prod[31:16]%
+}{Регистры R0--R7, аккумуляторы ACCA/ACCB.}{Обновляет ZF; взводит OF/CF, если старшие разряды произведения (prod[31:16]) не равны 0.}{При умножении младшие 16 бит произведения направляются в целевой регистр dst, а старшие 16 бит сохраняются во внутреннем служебном регистре АЛУ (ALU Residual). При следующей операции сложения сохранённый остаток автоматически суммируется со следующим результатом (аппаратная поддержка MAC / многословных чисел). Старшую часть произведения можно также извлечь в регистр, выполнив сложение регистра с самим собой после очистки. Инструкция NOP очищает остаточный регистр АЛУ.}
+\InstructionPage{DIV}{00100}{Арифметика}{Целочисленное деление с сохранением остатка во внутреннем регистре АЛУ}{%
+dst <- srcA / srcB \\
+ALU\_RESIDUAL <- srcA \% srcB%
+}{Регистры R0--R7, аккумуляторы ACCA/ACCB.}{При делении на ноль взводится аппаратный флаг ошибки EM (Error Math) без зависания ядра; обновляет ZF.}{Результат целочисленного деления (частное) записывается в целевой регистр dst, а остаток от деления (modulo) автоматически сохраняется во внутреннем служебном регистре АЛУ. Сохранённый остаток может быть задействован в последующих операциях АЛУ либо сброшен командой NOP.}
+\InstructionPage{LMR}{00101}{Память}{Загрузка данных из системной памяти в регистр}{dst\_reg <- MEM[address]}{Адресация: прямая, косвенная через \reg{PTREG}, либо со смещением.}{Флаги сохраняются без изменений.}{Поддерживает автоматический инкремент указателя при активном флаге AIP.}
+\InstructionPage{LRM}{00110}{Память}{Запись содержимого регистра в память}{MEM[address] <- src\_reg}{Режимы адресации определяются полем \field{cfg} и регистром \reg{PTREG}.}{Флаги сохраняются без изменений.}{Прямая передача данных из регистрового файла на системную шину.}
+\InstructionPage{LRR}{00111}{Пересылка}{Сверхбыстрое копирование между регистрами}{dst\_reg <- src\_reg}{Аргументы определяют регистры источника и приёмника.}{Флаги сохраняются без изменений.}{Исполняется через прямой обходной канал MUX 1 $\to$ MUX 2, разгружая АЛУ.}
+\InstructionPage{CMP}{01000}{Сравнение}{Аппаратное сравнение операндов}{FREG.CMP <- compare(srcA, srcB)}{Сравнение с регистром либо с константой.}{Обновляет двухбитное аппаратное поле FREG.CMP, а также флаги ZF, CF, OF.}{Позволяет выполнять быстрые условные переходы без искажения регистров.}
+\InstructionPage{JMP}{01001}{Переход}{Безусловный переход по адресу}{PC <- target}{Поддерживает 16-битный внутристраничный или полный 24-битный переход через \reg{PTREG}.}{Флаги сохраняются без изменений.}{Атомарная загрузка Program Counter за минимальное число микротактов.}
+\InstructionPage{JCR}{01010}{Переход}{Условный переход по флагу переноса}{if FREG.CF == 1 then PC <- target}{Целевой адрес задаётся смещением либо абсолютным значением.}{Флаги читаются, но не изменяются.}{Ключевой примитив для построения длинной многословной арифметики.}
+\InstructionPage{JNZ}{01011}{Переход}{Условный переход при неравенстве нулю}{if FREG.ZF == 0 then PC <- target}{Высокоэффективный переход для организации циклов и счетчиков.}{Флаги не изменяются.}{Минимизированное время принятия решения в микрокоде.}
+\InstructionPage{JZ}{01100}{Переход}{Условный переход при равенстве нулю}{if FREG.ZF == 1 then PC <- target}{Отрабатывает условие успешного завершения или совпадения.}{Флаги не изменяются.}{Оптимизирован для алгоритмов поиска и сравнения строк.}
+\InstructionPage{AND}{01101}{Логика}{Побитовое логическое И}{dst <- srcA AND srcB}{Регистровые и масочные непосредственные операнды.}{Обновляет флаг нуля ZF; сбрасывает флаги переполнения.}{Идеально для наложения битовых масок.}
+\InstructionPage{OR}{01110}{Логика}{Побитовое логическое ИЛИ}{dst <- srcA OR srcB}{Регистровые операнды и объединение битовых полей.}{Обновляет флаг ZF; флаги переноса детерминированы.}{Быстрое объединение управляющих битов.}
+\InstructionPage{NAND}{01111}{Логика}{Побитовое логическое И-НЕ}{dst <- NOT (srcA AND srcB)}{Универсальный логический базис.}{Обновляет флаг ZF.}{Позволяет сократить код при синтезе нестандартных логических функций.}
+\InstructionPage{NOR}{10000}{Логика}{Побитовое логическое ИЛИ-НЕ}{dst <- NOT (srcA OR srcB)}{Полноценная инверсная логика.}{Обновляет флаг ZF.}{Расширяет набор быстрых логических трансформаций.}
+\InstructionPage{NOT}{10001}{Логика}{Побитовое инвертирование (дополнение до 1)}{dst <- NOT src}{Унарная высокоскоростная операция.}{Обновляет флаг ZF.}{Выполняется за минимальное количество микротактов.}
+\InstructionPage{XOR}{10010}{Логика}{Побитовое исключающее ИЛИ}{dst <- srcA XOR srcB}{Используется для инверсии битов и быстрого обнуления регистров.}{Обновляет флаг ZF.}{Базовая операция для алгоритмов контрольных сумм и шифрования.}
+\InstructionPage{XNOR}{10011}{Логика}{Побитовая эквивалентность}{dst <- NOT (srcA XOR srcB)}{Побитовое сравнение на идентичность.}{Обновляет флаг ZF.}{Эффективная проверка соответствия битовых масок.}
+\InstructionPage{INC}{10100}{Арифметика}{Инкремент операнда на единицу}{dst <- src + 1}{Быстрый шаг итератора цикла.}{Обновляет ZF, OF; флаг переноса CF сохраняется или обновляется по \field{cfg}.}{Оптимизирует обработку массивов.}
+\InstructionPage{DEC}{10101}{Арифметика}{Декремент операнда на единицу}{dst <- src - 1}{Шаг обратного счетчика.}{Обновляет ZF, OF.}{Компактная реализация декрементных циклов.}
+\InstructionPage{PUSH}{10110}{Стек}{Сохранение слова в стек}{%
+stack <- src \\
+SREG <- SREG - 2%
+}{Операнд: любой из регистров R0--R7 или специальный регистр.}{Флаги не изменяются.}{Аппаратная поддержка вызова процедур и сохранения контекста.}
+\InstructionPage{POP}{10111}{Стек}{Извлечение слова из вершины стека}{%
+dst <- stack \\
+SREG <- SREG + 2%
+}{Целевой регистр: R0--R7 или регистры состояния.}{Флаги не изменяются.}{Симметричное восстановление контекста прерываний и функций.}
+\InstructionPage{BSL}{11000}{Сдвиги}{Баррельный сдвиг влево}{dst <- src << amount}{Параметр сдвига: константа или динамическое значение регистра.}{Выдвинутый старший бит фиксируется в поле DBIT регистра FREG.}{Поддерживает режим ввода SBIT при активном SMOD.}
+\InstructionPage{BSR}{11001}{Сдвиги}{Баррельный сдвиг вправо}{dst <- src >> amount}{Логический или арифметический сдвиг через выбор \field{cfg}.}{Младший выдвинутый бит заносится в DBIT.}{Эффективное масштабирование и деление на степени двойки.}
+\InstructionPage{CSRM}{11010}{Система}{Контроль и модификация служебных регистров}{special\_reg <- src OR dst <- special\_reg}{Доступ к \reg{FREG}, \reg{PTREG}, \reg{SREG}.}{Флаги обновляются при модификации FREG.}{Привилегированный примитив переключения контекста ядра.}
+\InstructionPage{RSV27}{11011}{Резерв}{Аппаратное расширение функционала}{reserved}{Зарезервировано для будущих ревизий архитектуры LIM.}{Не определено.}{Зарезервировано.}
+\InstructionPage{RSV28}{11100}{Резерв}{Аппаратное расширение функционала}{reserved}{Зарезервировано для будущих ревизий архитектуры LIM.}{Не определено.}{Зарезервировано.}
+\InstructionPage{RSV29}{11101}{Резерв}{Аппаратное расширение функционала}{reserved}{Зарезервировано для будущих ревизий архитектуры LIM.}{Не определено.}{Зарезервировано.}
+\InstructionPage{RSV30}{11110}{Резерв}{Аппаратное расширение функционала}{reserved}{Зарезервировано для будущих ревизий архитектуры LIM.}{Не определено.}{Зарезервировано.}
+\InstructionPage{RSV31}{11111}{Резерв}{Аппаратное расширение функционала}{reserved}{Зарезервировано для будущих ревизий архитектуры LIM.}{Не определено.}{Зарезервировано.}
+
+\clearpage
+\section{Физический интерфейс и цоколёвка (34-выводный корпус)}
+Процессор размещается в высоконадёжном компактном 34-выводном корпусе с двухрядным расположением выводов:
+
+\begin{center}
+\begin{tikzpicture}[font=\sffamily\scriptsize,
+  pinbox/.style={draw,thick,fill=white,minimum width=6mm,minimum height=4mm,inner sep=0pt,font=\bfseries\tiny}]
+\def\chipW{3.2}
+\def\chipH{9.9}
+\draw[thick,fill=limlight] (0,0) rectangle (\chipW,-\chipH);
+\draw[thick] ($(\chipW/2,0)+(-0.35,0)$) arc (180:360:0.35);
+\node[font=\bfseries\Large,text=limblue,rotate=-90] at (\chipW/2,-\chipH/2) {LIM M2};
+\foreach \i/\sigL/\sigR in {
+  1/A0/D0, 2/A1/D1, 3/A2/D2, 4/A3/D3, 5/A4/D4, 6/A5/D5, 7/A6/D6, 8/A7/D7,
+  9/A8/D8, 10/A9/VCC, 11/A10/GND, 12/A11/RD, 13/A12/WD, 14/A13/RF, 15/A14/AL, 16/A15/RDI, 17/CLK1/CLK2
+} {
+  \pgfmathsetmacro{\y}{-\i * 0.55}
+  \pgfmathtruncatemacro{\pinR}{35 - \i}
+  \node[pinbox] at (0,\y) {\i};
+  \node[anchor=east] at (-0.38,\y) {\sigL};
+  \node[pinbox] at (\chipW,\y) {\pinR};
+  \node[anchor=west] at (\chipW+0.38,\y) {\sigR};
+}
+\end{tikzpicture}
+\end{center}
+
+\subsection{Функциональное назначение внешних линий}
+\begin{tabularx}{\textwidth}{>{\ttfamily}p{28mm}p{24mm}X}
+\toprule
+Вывод & Тип & Описание системного сигнала \\
+\midrule
+A0--A15    & Выход / Tri-State & 16-разрядная магистраль адреса (мультиплексируется с защёлкой AL). \\
+D0--D7     & Двунаправленный   & 8-разрядная внешняя шина данных обмена с памятью и периферией. \\
+CLK1, CLK2 & Вход              & Двухфазная тактовая синхронизация с защитой от перекрытия фаз. \\
+VCC, GND   & Питание           & Основные шины питания логики (+5 В номинал). \\
+RD, WD     & Выход             & Стробы чтения (Read Enable) и записи (Write Enable) шины. \\
+AL         & Выход             & Address Latch: строб фиксации адреса во внешнем регистре. \\
+RF         & Вход              & Ready Flag: аппаратная квитанция готовности ведомого устройства. \\
+RDI        & Вход              & Raw Direct Interrupt: приоритетный вход аппаратного прерывания. \\
+\bottomrule
+\end{tabularx}
+
+\section{Заключение}
+Архитектура \textbf{LIM M2} сочетает в себе проверенную надёжность многотактового микропрограммного управления и современную эффективность мультиплексорного тракта без третьего состояния. Такое решение обеспечивает чистейшие цифровые фронты, исключает паразитные токи и гарантирует непревзойдённую стабильность при масштабировании тактовых частот от 200 МГц до пределов физического кремния.
+\end{document}

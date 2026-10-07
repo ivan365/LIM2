@@ -1,0 +1,342 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[russian]{babel}
+\usepackage[margin=2cm]{geometry}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{fancyhdr}
+
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{LIM2 Hardware Simulator Guide}
+\lhead{Архитектура, Регистры и Периферия}
+\rfoot{Стр. \thepage}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.96,0.97,0.98}
+
+\lstdefinestyle{pythonstyle}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{blue}\bfseries,
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\small,
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=5pt,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=4
+}
+\lstset{style=pythonstyle}
+
+\title{\textbf{Полное Архитектурное Руководство по Симулятору LIM2}\\
+\large Построчный разбор архитектуры, регистров, флагов, памяти, сигналов и ножек (Pure Python)}
+\author{Команда разработки LIM2}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+\section{Введение и Философия Проекта}
+
+Симулятор \textbf{LIM2} спроектирован для точной низкоуровневой симуляции процессорной архитектуры и материнской платы с полным сохранением аппаратной гибкости:
+\begin{itemize}
+    \item \textbf{100\% Чистый Python (Pure Python):} Полное отсутствие внешних тяжелых зависимостей. Все компоненты автономны и прозрачны.
+    \item \textbf{Конфигурация платформы в коде:} Вся материнская плата, распределение адресного пространства (Memory Mapping) и список подключенных устройств задаются в коде Python (\texttt{sim.py}). Нет необходимости каждый раз передавать длинные аргументы командной строки (\texttt{-m}, \texttt{-v}).
+    \item \textbf{Аппаратные сигнальные линии (Pins):} Полная симуляция линий управления (\texttt{RD}, \texttt{WR}, \texttt{MREQ}, \texttt{IORQ}, \texttt{CS}, \texttt{IRQ}, \texttt{RF} и пользовательских линий).
+    \item \textbf{Отставание памяти (Memory Latency \& Wait States):} Возможность задавать задержку выборки ячеек памяти в тактах шины и отрабатывать протокол готовности данных через ножку \texttt{RF} (Ready Flag).
+    \item \textbf{Многоколоночный TUI-интерфейс:} Интерактивная визуализация микросхем регистров, потока машинных команд, видеотерминалов и карты распределения памяти в стиле \textit{diskmgmt.msc}.
+\end{itemize}
+
+\section{Анатомия Процессора: Построчный Разбор (\texttt{lim2\_cpu.py})}
+
+Процессор наследуется от базового класса \texttt{BaseCPU} и состоит из трех основных методов:
+\texttt{setup(self)}, \texttt{on\_start(self)} и \texttt{on\_step(self)}.
+
+\subsection{Создание Регистров (\texttt{setup})}
+
+Каждый регистр создается методом \texttt{self.reg(...)}. Рассмотрим значение каждого аргумента:
+
+\begin{lstlisting}[language=Python, caption={Объявление регистров общего назначения}]
+def setup(self):
+    for i in range(8):
+        self.reg(
+            name=f"r{i}",      # 1. Системное имя (доступно как self.r0 .. self.r7)
+            bits=16,           # 2. Разрядность в битах (маска 0xFFFF)
+            default=0,         # 3. Начальное значение при включении и сбросе
+            indexed=True,      # 4. Доступ по номеру: self.get_reg(i) / self.set_reg(i, val)
+            title=f"R{i}",     # 5. Подпись на микросхеме в графическом интерфейсе
+            role="General",    # 6. Роль регистра
+            block="core"       # 7. Функциональный блок процессора
+        )
+\end{lstlisting}
+
+\begin{itemize}
+    \item \texttt{name}: Имя атрибута процессора (\texttt{cpu.r0}, \texttt{cpu.acca}).
+    \item \texttt{bits}: Битность регистра. Внутри автоматически рассчитывается маска $\text{mask} = 2^{\text{bits}} - 1$. Запись числа автоматически отсекает лишние старшие биты по маске.
+    \item \texttt{indexed=True}: Критически важный параметр! Позволяет обращаться к регистру по номеру: \texttt{self.get\_reg(0)} и \texttt{self.set\_reg(0, val)}. Когда номер регистра декодируется из битов опкода команды, вы напрямую обращаетесь к регистру по его числовому индексу.
+\end{itemize}
+
+\subsection{Программный Счетчик (Program Counter, PC)}
+
+Регистр программного счетчика объявляется с флагом \texttt{is\_pc=True}:
+\begin{lstlisting}[language=Python]
+self.reg("pc", bits=16, default=0x0000, is_pc=True, title="PC")
+\end{lstlisting}
+
+\begin{itemize}
+    \item \textbf{Ручной инкремент счетчика (\texttt{self.pc += 1}):} Программист сам контролирует продвижение счетчика: \texttt{self.pc += 1} или \texttt{self.pc += 2}. Переполнение разрядной сетки отсекается аппаратной маской автоматически!
+    \item \textbf{Чтение байта по адресу PC:} \texttt{val = self.bus.read8(self.pc); self.pc += 1}.
+    \item \textbf{Переходы:} Безусловный переход выполняется прямым присваиванием \texttt{self.pc = target\_addr}. Относительный переход --- через \texttt{self.pc += offset}.
+\end{itemize}
+
+\subsection{Регистр Флагов (\texttt{FREG})}
+
+Регистр флагов объявляется с параметром \texttt{is\_flag=True} и списком \texttt{flag\_layout}:
+
+\begin{lstlisting}[language=Python, caption={Конфигурация битов регистра флагов FREG}]
+flag_layout = [
+    # (Имя флага, Полное описание, Номер бита в регистре)
+    ("ZF", "Zero", 0),          # Бит 0: Флаг нуля
+    ("CF", "Carry", 1),         # Бит 1: Флаг переноса
+    ("OF", "Overflow", 2),      # Бит 2: Флаг переполнения
+    ("EM", "ErrMath", 3),       # Бит 3: Математическая ошибка
+    ("PIE", "ProgInt", 8),      # Бит 8: Разрешение прерываний
+    ("MIE", "MasterInt", 9),    # Бит 9: Глобальные прерывания
+    ("M24", "24-bit Mode", 11), # Бит 11: Режим 24-битной адресации
+]
+self.reg("freg", bits=16, default=0, is_flag=True, flag_layout=flag_layout, title="FREG")
+\end{lstlisting}
+
+Управление флагами:
+\begin{itemize}
+    \item \texttt{self.set\_flag("ZF", 1)} --- установить бит флага в 1;
+    \item \texttt{self.set\_flag("ZF", 0)} --- сбросить флаг в 0;
+    \item \texttt{self.get\_flag("ZF")} --- получить значение флага (0 или 1).
+\end{itemize}
+
+\subsection{Выборка и Декодирование Инструкций (\texttt{on\_step})}
+
+\begin{lstlisting}[language=Python, caption={Ручная выборка байтов, инкремент pc += 1 и парсинг в on\_step}]
+def on_step(self):
+    # 1. Пошаговая выборка двух байтов из шины с ручным инкрементом PC:
+    b0 = self.bus.read8(self.pc)
+    self.pc += 1
+
+    b1 = self.bus.read8(self.pc)
+    self.pc += 1
+
+    # 2. Склейка в 16-битную инструкцию на шине данных databus:
+    self.databus = (b0 << 8) | b1
+
+    # 3. Декодирование полей через конструктор парсинга битов:
+    opcode, cfg, rd, rs1, rs2 = self.parse("[15-11] [10-8] [7-5] [4-2] [1-0]")
+\end{lstlisting}
+
+Значение полей и гибкость парсинга:
+\begin{itemize}
+    \item \textbf{Диапазоны битов:} \texttt{[15-11]} (5 бит, код операции \texttt{opcode} от 0 до 31).
+    \item \textbf{Одиночный бит:} \texttt{[15]} или \texttt{[0]} (извлекает ровно 1 бит, значение 0 или 1). Например: \texttt{is\_imm = self.parse("[15]")}.
+    \item \textbf{Парсинг одного поля в переменную:} \texttt{opcode = self.parse("[15-11]")}. Результат ведет себя как полноценное целое число \texttt{int} (поддерживает \texttt{if opcode == 1:}, арифметику, форматирование), а также распаковку через кортеж: \texttt{opcode, = self.parse("[15-11]")}.
+    \item \textbf{Смешанные шаблоны:} \texttt{sign, exp, mant = self.parse("[15] [14-10] [9-0]")}.
+\end{itemize}
+
+\section{Конфигурация Платформы в Коде (\texttt{sim.py})}
+
+\begin{lstlisting}[language=Python, caption={Объявление устройств в sim.py}]
+from bus import MemoryBus
+from devices import (
+    RAMDevice,
+    TextScreenDevice,
+    UARTDevice,
+    TimerDevice
+)
+
+def setup_platform(bus: MemoryBus):
+    # 1. Системное ОЗУ: 16 КБ (0x0000 .. 0x3FFF)
+    bus.attach(RAMDevice(start=0x0000, end=0x3FFF, name="RAM"))
+
+    # 2. Текстовый видеомонитор 20x4 (0x8000 .. 0x804F)
+    bus.attach(TextScreenDevice(start=0x8000, width=20, height=4, name="MONITOR"))
+
+    # 3. Последовательный порт UART (0xF000 .. 0xF003)
+    bus.attach(UARTDevice(start=0xF000, name="UART0"))
+
+    # 4. Аппаратный таймер с ножкой IRQ (0xF010 .. 0xF013)
+    bus.attach(TimerDevice(start=0xF010, name="TIMER0", irq_pin="IRQ"))
+\end{lstlisting}
+
+\section{Аппаратные Ножки, Отставание Памяти (Latency) и Сигнал Готовности (RF)}
+
+В реальных интегральных схемах микросхемы памяти обладают временем доступа. Симулятор \textbf{LIM2} позволяет точно симулировать задержки чтения и протокол рукопожатия (Handshake) с использованием сигнала \texttt{RF} (Ready Flag):
+
+\subsection{Настройка задержки}
+\begin{lstlisting}[language=Python]
+# ОЗУ с задержкой в 2 такта шины и ножкой готовности RF:
+ram = RAMDevice(start=0x0000, end=0x3FFF, latency=2, ready_pin="RF")
+bus.attach(ram)
+\end{lstlisting}
+
+\subsection{Временная диаграмма цикла шины}
+\begin{enumerate}
+    \item \textbf{Старт цикла чтения:} Процессор поднимает сигнал \texttt{bus.pins.RD = 1} и выставляет адрес.
+    \item \textbf{Захват устройством:} Устройство видит сигнал \texttt{RD}, сбрасывает ножку готовности \texttt{bus.pins.RF = 0} (данные еще не готовы) и запускает таймер задержки.
+    \item \textbf{Такты ожидания (Wait States):} Процессор ожидает на шине, пока ножка \texttt{RF == 0}.
+    \item \textbf{Готовность данных:} Устройство завершает выборку, выставляет данные на шину и поднимает \texttt{bus.pins.RF = 1}.
+    \item \textbf{Захват процессором:} Процессор фиксирует данные и сбрасывает строб \texttt{bus.pins.RD = 0}.
+\end{enumerate}
+
+\subsection{Использование в коде процессора}
+\begin{lstlisting}[language=Python]
+# Чтение с автоматической отработкой тактов ожидания:
+data, wait_cycles = self.bus.read_handshake(0x1000)
+
+# Либо пошаговое ожидание ножки RF в цикле инструкций:
+waited = self.wait_for_pin("RF")
+\end{lstlisting}
+
+\section{Взаимодействие Устройств Друг с Другом и с Процессором}
+
+\begin{itemize}
+    \item \textbf{MMIO (Memory-Mapped I/O):} Обращение к регистрам устройств по адресам шины. При чтении/записи по адресу шина автоматически транслирует вызов в соответствующее устройство.
+    \item \textbf{Линия прерываний (\texttt{IRQ}):} Таймер при обнулении выставляет \texttt{self.bus.pins.IRQ.set(1)}, а процессор проверяет этот сигнал в начале цикла команды.
+    \item \textbf{Слушатели сигналов (\texttt{listen}):} Одно устройство может подписаться на сигнал ножки другого:
+    \begin{lstlisting}[language=Python]
+    bus.pins.MY_PULSE.listen(lambda val: other_device.on_signal(val))
+    \end{lstlisting}
+\end{itemize}
+
+\section{Внешние Дополнения: Графический Пиксельный Монитор}
+
+В качестве примера абсолютной расширяемости платформы в папке \texttt{addons/} реализован пиксельный дисплей с графическим окном Tkinter (\texttt{addons/pixel\_monitor.py}):
+
+\begin{lstlisting}[language=Python, caption={Подключение пиксельного монитора в sim.py}]
+from addons.pixel_monitor import PixelMonitorDevice
+
+def setup_platform(bus: MemoryBus):
+    bus.attach(RAMDevice(0x0000, 0x3FFF, "RAM"))
+
+    # Графический дисплей 64x64 в отдельном окне GUI (масштаб 6x):
+    bus.attach(PixelMonitorDevice(
+        start=0x4000,
+        width=64,
+        height=64,
+        scale=6,
+        mode="rgb332",
+        show_gui=True
+    ))
+\end{lstlisting}
+
+Адрес пикселя $(x, y)$ рассчитывается по формуле:
+$$\text{Addr} = \text{start} + (y \times \text{width}) + x$$
+Запись цвета процессором в этот адрес мгновенно отображает пиксель в графическом окне ОС.
+
+\section{Инициализация Устройств и Форматы Файлов}
+
+\subsection{Предустановка данных в устройствах (\texttt{default\_data})}
+При создании любого устройства в \texttt{sim.py} можно сразу задать его начальное содержимое:
+\begin{lstlisting}[language=Python]
+# Текстовый экран с приветственной надписью:
+bus.attach(TextScreenDevice(0x8000, 20, 4, default_data="LIM2 READY..."))
+
+# ПЗУ с шестнадцатеричным дампом байтов:
+bus.attach(ROMDevice(0xF800, 0xFFFF, default_data="08 66 F8 00 12 34"))
+
+# ОЗУ с бинарным файлом ядра:
+bus.attach(RAMDevice(0x0000, 0x3FFF, default_data="kernel.bin"))
+\end{lstlisting}
+
+\subsection{Поддержка форматов .bin и .hex}
+Симулятор автоматически распознает формат входного файла:
+\begin{itemize}
+    \item \texttt{.bin}: Прямой бинарный образ (байты записываются в память последовательно начиная с адреса \texttt{--org}).
+    \item \texttt{.hex}: Шестнадцатеричный текстовый файл или формат Intel HEX (\texttt{:100000...}).
+    \item \texttt{.asm / .lasm}: Исходный ассемблерный файл.
+\end{itemize}
+
+\section{Режим Непрерывной Сессии (Long-Term Work, \texttt{-L})}
+
+Флаг \texttt{-L} (или \texttt{--long-term [FILE]}) обеспечивает непрерывную долговременную работу:
+\begin{lstlisting}[language=bash]
+# Запуск с автосохранением в дефолтный дамп lim2_state.dump:
+python3 sim.py kernel.bin -i -L
+
+# Запуск с именованным файлом сессии:
+python3 sim.py kernel.bin -i -L my_session.dump
+\end{lstlisting}
+
+\begin{itemize}
+    \item \textbf{При старте:} Если файл снимка существует, восстанавливаются все регистры процессора, счетчик команд \texttt{PC}, такты \texttt{step\_count}, память \texttt{RAM} и состояние всех подключенных устройств.
+    \item \textbf{При выходе (\texttt{q} или Ctrl+C):} Симулятор автоматически записывает обновленный снимок машины в указанный файл дампа.
+\end{itemize}
+
+\section{Управление Раскладкой и Перенос Блоков по Колонкам}
+
+\subsection{Интерактивное перемещение блоков}
+Симулятор разделен на 5 независимых инфо-блоков: \texttt{cpu}, \texttt{code}, \texttt{screen}, \texttt{mem}, \texttt{map}. Любой блок можно динамически переместить в любую колонку:
+\begin{lstlisting}[language=bash]
+move screen 2      # перенести монитор во вторую колонку
+move screen 3      # перенести монитор в третью колонку
+move code 1        # перенести дизассемблер в первую колонку
+move screen next   # циклический сдвиг в следующую колонку (+)
+move screen prev   # сдвиг в предыдущую колонку (-)
+cols               # показать текущую раскладку колонок
+\end{lstlisting}
+
+\subsection{Автоматический перенос при нехватке высоты экрана (Height Auto-Wrap)}
+При небольшой высоте терминала симулятор автоматически отслеживает переполнение колонки. Если суммарная высота блоков превышает размер окна, лишние блоки автоматически перетекают в соседнюю свободную колонку, предотвращая вертикальную прокрутку.
+\begin{itemize}
+    \item \texttt{wrap on / off}: Включение и выключение автоматического переноса блоков по высоте.
+    \item \texttt{height <N|auto>}: Ручная фиксация или автоопределение предельной высоты.
+\end{itemize}
+
+\section{Командный Интерфейс Отладчика (\texttt{-i})}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Команда} & \textbf{Описание} \\ \midrule
+\texttt{<Enter> / s / step} & Выполнить 1 такт/команду \\
+\texttt{do <N>} & Выполнить ровно $N$ тактов \\
+\texttt{r / run / cont} & Непрерывный запуск симуляции \\
+\texttt{delay <ms>} & Установить задержку анимации (мс) \\
+\texttt{b <addr>} & Установить/снять точку останова \\
+\texttt{r0=0x42 / acca=10} & Изменить значение регистра \\
+\texttt{set <addr> <val...>} & Записать байты в память \\
+\texttt{write <dev> <off> <val>} & Записать байты или текст в устройство \\
+\texttt{save [file]} & Сохранить снимок машины (дамп) в файл \\
+\texttt{load [file]} & Загрузить снимок машины или бинарник \\
+\texttt{layout [auto|1col|2col|3col]} & Переключить раскладку колонок \\
+\texttt{move / cols} & Показать распределение блоков по колонкам \\
+\texttt{move <блок> <1|2|3>} & Назначить блок в колонку (напр: \texttt{move screen 2}) \\
+\texttt{move <блок> next/prev} & Сдвинуть блок в следующую/предыдущую колонку \\
+\texttt{wrap [on|off]} & Автоперенос блоков при нехватке высоты экрана \\
+\texttt{height [N|auto]} & Ограничить высоту колонок (в строках) \\
+\texttt{view [cpu|code|mem|screen|map]} & Включение/выключение панелей \\
+\texttt{map} & Показать карту памяти \textit{diskmgmt} \\
+\texttt{reset} & Сброс процессора к начальному состоянию \\
+\texttt{q / quit / exit} & Выход (с автосохранением дампа при \texttt{-L}) \\ \bottomrule
+\end{tabular}
+\caption{Основные команды интерактивного отладчика}
+\end{table}
+
+\section{Заключение}
+
+Архитектура \textbf{LIM2} предоставляет разработчику полную свободу: от написания собственного процессора и декодера инструкций до симуляции отставания памяти, аппаратных ножек, межмодульных связей и сложной внешней периферии с наглядной визуализацией в терминале или графических окнах ОС.
+
+\end{document}

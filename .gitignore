@@ -1,0 +1,78 @@
+# ==========================================
+# macOS System Files
+# ==========================================
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon\r\r
+._*
+.Spotlight-V100
+.Trashes
+
+# ==========================================
+# LaTeX Auxiliary and Temporary Build Files
+# ==========================================
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.idx
+*.ilg
+*.ind
+*.lof
+*.lot
+*.log
+*.nav
+*.out
+*.run.xml
+*.snm
+*.synctex.gz
+*.synctex(busy)
+*.toc
+*.vrb
+*.upa
+*.upb
+texput.log
+texput.fls
+build_*.log
+
+# ==========================================
+# Python Bytecode, Caches & Virtual Envs
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ==========================================
+# IDEs and Code Editors
+# ==========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.directory
+
+# ==========================================
+# Whitelist Deliverables & Artifacts
+# ==========================================
+!*.pdf
+!*.png
+!*.svg
+!*.tex
+!*.md
+!*.hex
+!*.bin
+!*.sh
