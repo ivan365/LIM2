@@ -77,7 +77,7 @@ Pre-compiled, ready-to-print comprehensive technical reference datasheets are lo
 * **`CF` (1):** Carry / Borrow Flag.
 * **`OF` (2):** Overflow Flag (signed arithmetic).
 * **`EM` (3):** Error Math (hardware trap on division by zero).
-* **`CMP` (4–5):** 2-bit Hardware Comparator Result (`<`, `=`, `>`).
+* **`CMP` (4–5):** 2-bit Hardware Comparator Result `cmp_flags` (`00`: initial reset / no compare / error; `01`: less; `10`: equal; `11`: greater).
 * **`CLK` (6–7):** Core Clock Divider Mode.
 * **`PIE` (8):** Program Interrupt Enable.
 * **`MIE` (9):** Master Interrupt Enable.
@@ -99,10 +99,10 @@ Pre-compiled, ready-to-print comprehensive technical reference datasheets are lo
 | **00010** | `0x02` | **`SUB`** | Arithmetic | 16-bit subtraction with automatic borrow chaining via `ALU_RESIDUAL` |
 | **00011** | `0x03` | **`MUL`** | Arithmetic | Integer multiplication; upper 16 bits latched into `ALU_RESIDUAL` |
 | **00100** | `0x04` | **`DIV`** | Arithmetic | Integer division; remainder (modulo) latched into `ALU_RESIDUAL` |
-| **00101** | `0x05` | **`LMR`** | Memory | Load word from memory into register (supports 24-bit `PTREG`) |
-| **00110** | `0x06` | **`LRM`** | Memory | Store word from register into memory |
+| **00101** | `0x05` | **`LMR`** | Memory | Load byte/word into register (src: 0=Imm, 1=Ptr, 2=PTREG, 3=Register pair 24-bit; size: 8/16-bit) |
+| **00110** | `0x06` | **`LRM`** | Memory | Store byte/word into memory (dst: 0=Inline, 1=Ptr, 2=PTREG, 3=Register pair 24-bit; size: 8/16-bit) |
 | **00111** | `0x07` | **`LRR`** | Transfer | Fast register-to-register copy via bypass (`MUX 1` $\to$ `MUX 2`) |
-| **01000** | `0x08` | **`CMP`** | Compare | Arithmetic compare; updates `FREG.CMP`, `ZF`, `CF`, `OF` non-destructively |
+| **01000** | `0x08` | **`CMP`** | Compare | Arithmetic compare; updates `FREG.CMP` (`01`: `<`, `10`: `=`, `11`: `>`), `ZF`, `CF`, `OF` non-destructively |
 | **01001** | `0x09` | **`JMP`** | Branch | Unconditional branch (16-bit local or full 24-bit via `PTREG`) |
 | **01010** | `0x0A` | **`JCR`** | Branch | Conditional branch on Carry Flag (`CF == 1`) |
 | **01011** | `0x0B` | **`JNZ`** | Branch | Conditional branch on Non-Zero (`ZF == 0`) |
@@ -120,7 +120,7 @@ Pre-compiled, ready-to-print comprehensive technical reference datasheets are lo
 | **10111** | `0x17` | **`POP`** | Stack | Pop 16-bit word from 24-bit stack (`SREG <- SREG + 2`) |
 | **11000** | `0x18` | **`BSL`** | Shift | Barrel Shift Left (zero-fill or cyclic rotate via `DBIT` if `SMOD=1`) |
 | **11001** | `0x19` | **`BSR`** | Shift | Barrel Shift Right (zero-fill or cyclic rotate via `DBIT` if `SMOD=1`) |
-| **11010** | `0x1A` | **`CSRM`** | System | Control and Status Register Access (`FREG`, `PTREG`, `SREG`) |
+| **11010** | `0x1A` | **`MSP`** | System | Manage Special Registers (`FREG`, `PTREG`) |
 | **11011** | `0x1B` | **`RSV27`** | Reserved | Vector / SIMD hardware extensions slot |
 | **11100** | `0x1C` | **`RSV28`** | Reserved | Extended addressing coprocessor slot |
 | **11101** | `0x1D` | **`RSV29`** | Reserved | Floating-Point Unit (FPU) slot |
@@ -194,6 +194,194 @@ Exiting the handler pops the saved architectural context:
 1. $\text{FREG} \leftarrow \text{Memory}[\text{SREG}], \quad \text{SREG} \leftarrow \text{SREG} + 2$ (automatically clearing `INTR` back to `0` and restoring `MIE`).
 2. $\text{PC} \leftarrow \text{Memory}[\text{SREG}], \quad \text{SREG} \leftarrow \text{SREG} + 2$.
 Execution resumes instantly on the subsequent cycle with zero state contamination.
+
+---
+
+## 📐 Unified Instruction Syntax Philosophy (Destination First)
+
+The LIM M2 architecture enforces a strict and consistent operand order across all instructions:
+
+> **The destination operand (target, "where to") is always declared first, followed by input source operands ("where from").**
+
+* **Arithmetic (3 Operands):** `ADD Rd, Rs1, Rs2` denotes $\text{Rd} = \text{Rs1} + \text{Rs2}$ (e.g., `ADD R0, R1, R2` computes $R0 = R1 + R2$). Similarly: `SUB`, `MUL`, `DIV`.
+* **Logic (2 Operands):** `AND Rd, Rs` denotes $\text{Rd} = \text{Rd} \ \& \ \text{Rs}$ (e.g., `AND R0, R1` computes $R0 = R0 \ \& \ R1$). Similarly: `OR`, `NAND`, `NOR`, `XOR`, `XNOR`.
+* **Bitwise Inversion NOT (1 Operand, 1-byte instruction):** `NOT Rd` denotes $\text{Rd} = \sim\text{Rd}$ (e.g., `NOT R0` computes $R0 = \sim R0$). Encoded in 1 byte (`[7:3]` opcode, `[2:0]` Rd), no second byte is fetched from memory.
+* **Register-to-Register Transfer:** `LRR Rd, Rs` executes a direct transfer from source (point B, `Rs`) to destination (point A, `Rd`): $\text{Rd} = \text{Rs}$ (e.g., `LRR R0, R1` computes $R0 = R1$).
+* **Memory Loads:** `LMR Rd, ...` stores data read from memory into the first argument `Rd`.
+
+---
+
+## 📥 LMR Instruction Architecture (Load Memory to Register)
+
+The **`LMR`** instruction (`Opcode 00101` / `0x05`) serves as the primary gateway for transferring external data and memory into the LIM M2 general-purpose register file (`R0`–`R7`). It features a versatile encoding structure with native support for 24-bit physical addressing (up to 16 MB).
+
+### 1. Instruction Bit Encoding
+The instruction is composed of two primary 8-bit octets (bytes):
+
+```text
+Octet 0 (Opcode & Mode Configuration):
+ 7   6   5   4   3   2   1   0
++---+---+---+---+---+---+---+---+
+| 0   0   1   0   1 |  SRC  |SZ |
++---+---+---+---+---+---+---+---+
+ \_____ 5 bits ____/ \_2b._/ \1b/
+
+Octet 1 (Register Arguments):
+ 7   6   5   4   3   2   1   0
++---+---+---+---+---+---+---+---+
+|  Arg1 (R_hi/Dst)  |   Arg2    | 0   0 |
++---+---+---+---+---+---+---+---+
+ \_____ 3 bits _____/ \_ 3 bits _/ \_2b._/
+```
+
+* **Data Size (`SZ`, Bit 0 of Octet 0):**
+  * `0`: Load **1 Byte** (8-bit). Lower byte of target register receives value, upper byte is zero-extended (`{8'b0, data[7:0]}`).
+  * `1`: Load **2 Bytes** (16-bit / machine word).
+* **Data Source Mode (`SRC`, Bits [2:1] of Octet 0):**
+  * `00` (`0`): **Immediate Data** — Literal data resides in memory directly following the instruction opcode (`[PC]`). `PC` advances by $1$ or $2$ bytes automatically.
+  * `01` (`1`): **Immediate Pointer** — An absolute memory pointer immediately follows the instruction in code (`[[PC]]`), through which the operand is dereferenced.
+  * `10` (`2`): **`PTREG` Pointer** — Memory is accessed via the dedicated 24-bit system pointer register `PTREG`. If auto-increment flag `FREG.AIP` (bit 12) is set, `PTREG` automatically increments by $+1$ or $+2$, delivering hardware-accelerated streaming array transfers.
+  * `11` (`3`): **User Register Pair (24-bit Addressing via 32-bit Composite)** — The user selects two 16-bit registers (`Arg1` and `Arg2`) forming a 32-bit composite word, of which the lower 24 bits are used for physical addressing:
+    * **`Arg1` (Bits [7:5] of Octet 1):** holds the **upper address bits**. Crucially, this same register also serves as the destination register: after data is retrieved from memory, the upper address bits in `Arg1` are **overwritten with the loaded data**!
+    * **`Arg2` (Bits [4:2] of Octet 1):** holds the **lower 16 address bits** and preserves its value.
+    * The physical 24-bit address is synthesized in hardware:
+      $$\text{EA}[23:0] = ((\text{Arg1}[15:0] \ll 16) \mid \text{Arg2}[15:0]) \;\&\; \text{0xFFFFFF}$$
+    * The loaded data is stored directly into `Arg1`.
+
+---
+
+## 📤 LRM Instruction Architecture (Load Register to Memory)
+
+The **`LRM`** instruction (`Opcode 00110` / `0x06`) provides a symmetrical mechanism for storing data from internal general-purpose registers to memory or external address spaces. Overwriting/destroying existing code or data at the target address is strictly the programmer's responsibility!
+
+### 1. Instruction Bit Encoding
+The instruction is composed of two primary 8-bit octets (bytes):
+
+```text
+Octet 0 (Opcode & Destination Mode Configuration):
+ 7   6   5   4   3   2   1   0
++---+---+---+---+---+---+---+---+
+| 0   0   1   1   0 |  DST  |SZ |
++---+---+---+---+---+---+---+---+
+ \_____ 5 bits ____/ \_2b._/ \1b/
+
+Octet 1 (Register Arguments):
+ 7   6   5   4   3   2   1   0
++---+---+---+---+---+---+---+---+
+|  Arg1 (Rs/R_hi)   |   Arg2    | 0   0 |
++---+---+---+---+---+---+---+---+
+ \_____ 3 bits _____/ \_ 3 bits _/ \_2b._/
+```
+
+* **Data Size (`SZ`, Bit 0 of Octet 0):**
+  * `0`: Store **1 Byte** (8-bit). Only the lower byte of source register `Rs[7:0]` is written to memory.
+  * `1`: Store **2 Bytes** (16-bit / machine word `Rs[15:0]`).
+* **Destination Mode (`DST`, Bits [2:1] of Octet 0):**
+  * `00` (`0`): **Inline Memory (Code Tail Store)** — Data is written directly into memory immediately following the instruction opcode (`[PC]`). `PC` automatically advances by $1$ or $2$ bytes. Designed for self-modifying code generation and inline buffer initialization. Overwriting instructions is the programmer's responsibility.
+  * `01` (`1`): **Immediate Pointer** — An absolute 16-bit pointer directly follows the instruction (`[[PC]]`), through which the store is performed.
+  * `10` (`2`): **`PTREG` Pointer** — Stored via the 24-bit physical address in `PTREG`. If auto-increment flag `FREG.AIP` (bit 12) is active, `PTREG` automatically increments by $+1$ or $+2$, enabling high-throughput memory streaming.
+  * `11` (`3`): **User Register Pair (24-bit Addressing via 32-bit Composite)**:
+    * **`Arg1` (Bits [7:5] of Octet 1):** holds the **upper address bits** and simultaneously acts as the **source register** (`Rs`) containing data to write.
+    * **`Arg2` (Bits [4:2] of Octet 1):** holds the **lower 16 address bits** (`Rs_lo`).
+    * The physical 24-bit effective address is synthesized in hardware:
+      $$\text{EA}[23:0] = ((\text{Arg1}[15:0] \ll 16) \mid \text{Arg2}[15:0]) \;\&\; \text{0xFFFFFF}$$
+    * The data from `Arg1` is written to memory at address $\text{EA}$. Data destruction at destination is exclusively managed by the programmer.
+
+---
+
+## 🔄 LRR Instruction Architecture (Load Register to Register)
+
+The **`LRR`** instruction (`Opcode 00111` / `0x07`) provides a high-speed, direct register-to-register move mechanism across general-purpose registers (`R0`–`R7`), transferring data from source (point B, `Rs`) to destination (point A, `Rd`).
+
+### 1. Instruction Bit Encoding
+The instruction is composed of two 8-bit octets (16 bits):
+
+```text
+Octet 0 (Opcode & Reserved):
+ 7   6   5   4   3   2   1   0
++---+---+---+---+---+---+---+---+
+| 0   0   1   1   1 | 0   0   0 |
++---+---+---+---+---+---+---+---+
+ \_____ 5 bits ____/ \_ 3 bits _/
+
+Octet 1 (Register Arguments):
+ 7   6   5   4   3   2   1   0
++---+---+---+---+---+---+---+---+
+|  Arg1 (Rd, WHERE TO)| Arg2 (Rs, FROM)| 0   0 |
++---+---+---+---+---+---+---+---+
+ \_____ 3 bits _____/ \_ 3 bits ______/ \_2b._/
+```
+
+* **Destination Register (`Arg1` / `Rd`, Bits [7:5] of Octet 1):** Point A (receives data).
+* **Source Register (`Arg2` / `Rs`, Bits [4:2] of Octet 1):** Point B (provides data).
+* **Operation Semantics:**
+  $$\text{Rd} \leftarrow \text{Rs}$$
+  For example: `LRR R0, R1` $\implies R0 = R1$ (value of `R1` is copied into `R0`).
+* **Hardware Implementation:** Data bypasses the ALU entirely, traversing the dedicated single-cycle multiplexer bus `MUX 1` $\to$ `MUX 2` directly into `DEST-DMUX`. All flags in `FREG` remain untouched.
+
+---
+
+## 💻 Programmer ISA Reference & Instruction Semantics
+
+The LIM M2 processor enforces a strict **Destination First** paradigm across all multi-operand instructions. In all operations, the first argument (`arg0`) explicitly defines the destination register where the result is committed.
+
+In assembly and the compiler toolchain, general-purpose registers are designated as `R0`, `R1`, `R2`, `R3`, `R4`, `R5`, `R6`, `R7`.
+
+### 1. Data Transfer & Memory
+| Mnemonic | Programmer Signature | Code Example | Description |
+|---|---|---|---|
+| **`LRR`** | `LRR arg0(REG), arg1(REG) : arg0 = arg1` | `LRR R0, R1 ; R0 = R1` | Fast register-to-register copy (flags untouched). |
+| **`LMR`** | `LMR arg0(REG), arg1(SRC_MODE) : arg0 = MEM[...]` | `LMR R0, R1, R2 ; R0 = MEM[{R0, R2}]` | Load from memory into register (Immediate, Pointer, PTREG, or 24-bit register pair). |
+| **`LRM`** | `LRM arg0(REG), arg1(DST_MODE) : MEM[...] = arg0` | `LRM R0, R1 ; MEM[{R0, R1}] = R0` | Store register into memory (Inline, Pointer, PTREG, or 24-bit register pair). |
+| **`PUSH`** | `PUSH arg0(REG) : SREG -= 2, MEM[SREG] = arg0` | `PUSH R0 ; Push R0 to stack` | Decrement SREG by 2 and push 16-bit word onto stack. |
+| **`POP`** | `POP arg0(REG) : arg0 = MEM[SREG], SREG += 2` | `POP R0 ; Pop word into R0` | Pop word from stack into register and increment SREG by 2. |
+
+### 2. Arithmetic & Comparison
+| Mnemonic | Programmer Signature | Code Example | Description |
+|---|---|---|---|
+| **`ADD`** | `ADD arg0(REG), arg1(REG), arg2(REG) : arg0 = arg1 + arg2` | `ADD R0, R1, R2 ; R0 = R1 + R2` | 16-bit addition updating ZF, CF, OF flags. |
+| **`SUB`** | `SUB arg0(REG), arg1(REG), arg2(REG) : arg0 = arg1 - arg2` | `SUB R0, R1, R2 ; R0 = R1 - R2` | 16-bit subtraction with borrow and zero flags. |
+| **`MUL`** | `MUL arg0(REG), arg1(REG), arg2(REG) : arg0 = arg1 * arg2` | `MUL R0, R1, R2 ; R0 = R1 * R2` | Unsigned 16x16-bit multiplication (high bits in FREG/DBIT). |
+| **`DIV`** | `DIV arg0(REG), arg1(REG), arg2(REG) : arg0 = arg1 / arg2` | `DIV R0, R1, R2 ; R0 = R1 / R2` | Integer division (division by zero triggers VEC 0 fault). |
+| **`INC`** | `INC arg0(REG) : arg0 = arg0 + 1` | `INC R0 ; R0 = R0 + 1` | Single-cycle register increment by 1. |
+| **`DEC`** | `DEC arg0(REG) : arg0 = arg0 - 1` | `DEC R0 ; R0 = R0 - 1` | Single-cycle register decrement by 1. |
+| **`CMP`** | `CMP arg0(REG), arg1(REG) : compare(arg0, arg1)` | `CMP R0, R1 ; Compare R0 with R1` | Non-destructive compare setting `FREG.CMP` (`01`: R0<R1, `10`: R0==R1, `11`: R0>R1; `00`: reset/error) and ZF, CF flags. |
+
+### 3. Bitwise Logic
+| Mnemonic | Programmer Signature | Code Example | Description |
+|---|---|---|---|
+| **`AND`** | `AND arg0(REG), arg1(REG) : arg0 = arg0 & arg1` | `AND R0, R1 ; R0 = R0 & R1` | Bitwise logical AND (2 operands). |
+| **`OR`** | `OR arg0(REG), arg1(REG) : arg0 = arg0 \| arg1` | `OR R0, R1 ; R0 = R0 \| R1` | Bitwise logical OR (2 operands). |
+| **`XOR`** | `XOR arg0(REG), arg1(REG) : arg0 = arg0 ^ arg1` | `XOR R0, R1 ; R0 = R0 ^ R1` | Bitwise exclusive OR (2 operands, clears register if R0==R1). |
+| **`NOT`** | `NOT arg0(REG) : arg0 = ~arg0` | `NOT R0 ; R0 = ~R0` | 1-byte instruction (`[7:3]` opcode, `[2:0]` Rd): bitwise inversion. |
+| **`NAND`** | `NAND arg0(REG), arg1(REG) : arg0 = ~(arg0 & arg1)` | `NAND R0, R1 ; R0 = ~(R0 & R1)` | Bitwise NAND (2 operands). |
+| **`NOR`** | `NOR arg0(REG), arg1(REG) : arg0 = ~(arg0 \| arg1)` | `NOR R0, R1 ; R0 = ~(R0 \| R1)` | Bitwise NOR (2 operands). |
+| **`XNOR`** | `XNOR arg0(REG), arg1(REG) : arg0 = ~(arg0 ^ arg1)` | `XNOR R0, R1 ; R0 = ~(R0 ^ R1)` | Bitwise equivalence check (2 operands). |
+
+### 4. Bit Shifts (with SMOD and DBIT Support)
+| Mnemonic | Programmer Signature | Code Example | Description |
+|---|---|---|---|
+| **`SHL`** | `SHL arg0(REG), arg1(REG), arg2(IMM\|REG) : arg0 = arg1 << arg2` | `SHL R0, R1, 1 ; Shift R1 left` | Logical/cyclic left shift. If `SMOD` is enabled, evicted bit enters `DBIT`, incoming bit is loaded from `DBIT`. |
+| **`SHR`** | `SHR arg0(REG), arg1(REG), arg2(IMM\|REG) : arg0 = arg1 >> arg2` | `SHR R0, R1, 1 ; Shift R1 right` | Logical/cyclic right shift. If `SMOD` is disabled, zero-padded. |
+
+### 5. Control Flow & Subroutines
+| Mnemonic | Programmer Signature | Code Example | Description |
+|---|---|---|---|
+| **`JMP`** | `JMP target(IMM\|REG) : PC = target` | `JMP R0 ; Unconditional jump` | Unconditional jump to literal or register address. |
+| **`JZ`** | `JZ target(IMM\|REG) : if FREG.ZF == 1 then PC = target` | `JZ loop_end ; Jump if ZF == 1` | Conditional branch if Zero Flag is asserted. |
+| **`CALL`** | `CALL target(IMM\|REG) : SREG -= 2, MEM[SREG] = PC, PC = target` | `CALL func ; Call subroutine` | Push return address onto stack and branch to target. |
+| **`RET`** | `RET : PC = MEM[SREG], SREG += 2` | `RET ; Return from subroutine` | Pop return address from stack into PC. |
+
+### 6. Control, Interrupts & System Registers
+| Mnemonic | Programmer Signature | Code Example | Description |
+|---|---|---|---|
+| **`NOP`** | `NOP : No Operation` | `NOP ; Pipeline bubble` | Single-cycle no-operation. |
+| **`HALT`** | `HALT : Stop execution until interrupt` | `HALT ; Wait for hardware event` | Enter low-power sleep mode waiting for interrupt. |
+| **`CLI`** | `CLI : FREG.MIE = 0` | `CLI ; Disable interrupts` | Atomic interrupt masking (critical section). |
+| **`STI`** | `STI : FREG.MIE = 1` | `STI ; Enable interrupts` | Atomic interrupt unmasking. |
+| **`INTR`** | `INTR vec(IMM) : Software interrupt trigger` | `INTR 4 ; Software interrupt VEC 4` | Trap into interrupt vector table, pushing PC and FREG. |
+| **`RETI`** | `RETI : FREG = MEM[SREG], PC = MEM[SREG+2], SREG += 4` | `RETI ; Return from ISR` | Atomic restoration of FREG (clearing INTR to 0) and PC. |
+| **`MSP`** | `MSP sreg, [op], args : special register operations` | `MSP FREG, OR, R0 ; FREG = FREG \| R0` | Direct load FREG/PTREG, bitmask logic on FREG (AND/OR/XOR/XNOR), or local pointer arithmetic on PTREG (ADD/SUB). |
 
 ---
 

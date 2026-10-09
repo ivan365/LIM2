@@ -149,7 +149,7 @@ Základným kameňom dátovej cesty LIM M2 je \textbf{úplné vylúčenie vnúto
 
 \begin{limnote}{Číslovanie inštrukčného súboru}
 Inštrukčná sada LIM M2 využíva súvislý 5-bitový priestor primárnych kódov: 
-\texttt{NOP}=0, \texttt{ADD}=1, \ldots, \texttt{CSRM}=26. Kódy 27--31 sú vyhradené pre hardvérové rozšírenia novej generácie.
+\texttt{NOP}=0, \texttt{ADD}=1, \ldots, \texttt{MSP}=26. Kódy 27--31 sú vyhradené pre hardvérové rozšírenia novej generácie.
 \end{limnote}
 
 \subsection{Dohodnuté označenia}
@@ -165,6 +165,16 @@ cfg & 3-bitové konfiguračné pole modifikátora operácie \\
 ZF, CF, OF & Hardvérové príznaky nuly, prenosu a pretečenia v registri \reg{FREG} \\
 \bottomrule
 \end{tabularx}
+
+\subsection{Jednotná filozofia formátu inštrukcií}
+Architektúra procesora LIM M2 striktne uplatňuje univerzálnu paradigmu: \textbf{najprv sa vždy uvádza cieľový príjemca (kam), a až potom vstupné operandy (odkiaľ)}. To zaručuje čistú, logickú a prehľadnú syntax:
+\begin{itemize}
+  \item \textbf{Aritmetické operácie (3 operandy):} \texttt{ADD Rd, Rs1, Rs2} znamená $\text{Rd} \leftarrow \text{Rs1} + \text{Rs2}$ (napríklad zápis \texttt{ADD R0, R1, R2} vypočíta $R0 = R1 + R2$); rovnako pre \texttt{SUB}, \texttt{MUL}, \texttt{DIV}.
+  \item \textbf{Logické operácie (2 operandy):} \texttt{AND Rd, Rs} znamená $\text{Rd} \leftarrow \text{Rd} \ \text{AND}\ \text{Rs}$ (napríklad \texttt{AND R0, R1} vypočíta $R0 = R0 \ \& \ R1$); rovnako pre \texttt{OR}, \texttt{NAND}, \texttt{NOR}, \texttt{XOR}, \texttt{XNOR}.
+  \item \textbf{Bitová inverzia NOT (1 operand, 1-bajtová inštrukcia):} \texttt{NOT Rd} znamená $\text{Rd} \leftarrow \sim\text{Rd}$ (napríklad \texttt{NOT R0} vypočíta $R0 = \sim R0$). Kóduje sa v 1 bajte (\texttt{[7:3]} opkód, \texttt{[2:0]} register Rd), druhý bajt z pamäte sa nenačítava.
+  \item \textbf{Medziregistrové presuny:} \texttt{LRR Rd, Rs} vykonáva priame kopírovanie z bodu B (zdroj \reg{Rs}) do bodu A (príjemca \reg{Rd}): $\text{Rd} \leftarrow \text{Rs}$ (napríklad \texttt{LRR R0, R1} vykoná $R0 = R1$).
+  \item \textbf{Načítanie z pamäte (LMR):} prvý argument \reg{Rd} určuje cieľový register procesora, do ktorého sa uložia načítané dáta.
+\end{itemize}
 
 \section{Architektonický prehľad procesora LIM M2}
 \textbf{LIM M2} je všestranný, vysoko výkonný 16-bitový procesor s mikroprogramovým riadením, optimalizovaný na celočíselné výpočty. Medzi kľúčové architektonické prednosti patria:
@@ -390,7 +400,7 @@ Bit & Mnemonic & Funkčný popis \\
 1    & CF   & Carry Flag: príznak aritmetického prenosu alebo výpožičky. \\
 2    & OF   & Overflow Flag: indikátor znamienkového pretečenia v doplnkovom kóde. \\
 3    & EM   & Error Math: indikátor matematických výnimiek (delenie nulou). \\
-4--5 & CMP  & Compare Result: stav 2-bitového hardvérového komparátora ($<$, $=$, $>$). \\
+4--5 & CMP  & Compare Result: stav hardvérového komparátora (00: reset/neporovnané/chyba, 01: menšie, 10: rovné, 11: väčšie). \\
 6--7 & CLK  & Clock Mode: voľba deliča systémovej frekvencie jadra. \\
 8    & PIE  & Program Interrupt Enable: globálne povolenie softvérových prerušení. \\
 9    & MIE  & Master Interrupt Enable: povolenie externých hardvérových prerušení. \\
@@ -435,8 +445,8 @@ Pole \field{cfg} (3 bity) selektuje až 8 ortogonálnych režimov inštrukcie, �
 2  & 00010 & SUB  & Aritmetika & Odčítanie s automatickým reťazením výpožičky cez zvyšok ALU \\
 3  & 00011 & MUL  & Aritmetika & Násobenie so zachytením vyšších bitov vo zvyšku ALU \\
 4  & 00100 & DIV  & Aritmetika & Delenie s uložením zvyšku do vnútorného registra ALU \\
-5  & 00101 & LMR  & Pamäť      & Načítanie slova z pamäte do cieľového registra \\
-6  & 00110 & LRM  & Pamäť      & Zápis hodnoty registra do systémovej pamäte \\
+5  & 00101 & LMR  & Pamäť      & Načítanie z pamäte/vstupu do registra (konfig zdroja 0--3, veľkosť 8/16 bit) \\
+6  & 00110 & LRM  & Pamäť      & Zápis dát z registra do pamäte/výstupu (konfig cieľa 0--3, veľkosť 8/16 bit) \\
 7  & 00111 & LRR  & Presun     & Priame kopírovanie medzi registrami cez obchádzkový MUX \\
 8  & 01000 & CMP  & Porovnanie & Hardvérové porovnanie operandov bez zmeny dát \\
 9  & 01001 & JMP  & Skok       & Nepodmienený skok (priamy, nepriamy, 24-bitový) \\
@@ -456,7 +466,7 @@ Pole \field{cfg} (3 bity) selektuje až 8 ortogonálnych režimov inštrukcie, �
 23 & 10111 & POP  & Zásobník   & Výber slova z vrcholu zásobníka do registra \\
 24 & 11000 & BSL  & Posuny     & Barelový posun doľava s konfigurovateľným vstupom \\
 25 & 11001 & BSR  & Posuny     & Barelový posun doprava s ukladaním do DBIT \\
-26 & 11010 & CSRM & Systém     & Prístup k systémovým registrom (FREG/PTREG/SREG) \\
+26 & 11010 & MSP  & Systém     & Manipulácia so špeciálnymi registrami (FREG, PTREG) \\
 27 & 11011 & RSV27 & Rezerva   & Rezervované pre vektorové inštrukcie \\
 28 & 11100 & RSV28 & Rezerva   & Rezervované pre rozšírené adresovanie \\
 29 & 11101 & RSV29 & Rezerva   & Rezervované pre koprocesor s pohyblivou rádovou čiarkou \\
@@ -470,63 +480,243 @@ Pole \field{cfg} (3 bity) selektuje až 8 ortogonálnych režimov inštrukcie, �
 Nasledujúce strany obsahujú úplné architektonické profily všetkých 32 operačných kódov procesora LIM M2.
 
 \InstructionPage{NOP}{00000}{Riadenie}{Hardvérová prázdna operácia a vyprázdnenie aritmetickej reťaze}{%
-PC <- PC + instruction\_length \\
-ALU\_RESIDUAL <- 0 \\
-FREG.CF <- 0 \\
-FREG.OF <- 0%
+\small
+Signatúra: NOP \\
+Operácia:  PC <- PC + 1, ALU\_RESIDUAL <- 0, FREG.CF <- 0, FREG.OF <- 0 \\[2pt]
+Príklad:   NOP              ; Reset reťazca prenosu ALU
 }{Bez operandov; pole \field{cfg} rezervované na kalibráciu časovania.}{Vynuluje príznaky prenosu (CF), pretečenia (OF) a výpožičky; ostatné príznaky zachováva.}{Slúži na synchronizáciu taktov a hardvérové vyprázdnenie (Flush) vnútorného zvyškového registra ALU, čím prerušuje reťazenie pred novými nezávislými výpočtami.}
 \InstructionPage{ADD}{00001}{Aritmetika}{Sčítanie s automatickým reťazením prenosu}{%
-sum\_full <- srcA + srcB + ALU\_RESIDUAL \\
-dst <- sum\_full[15:0] \\
-ALU\_RESIDUAL <- (sum\_full > 0xFFFF ? 1 : 0)%
+\small
+Signatúra: ADD arg0(REG), arg1(REG), arg2(REG) : arg0 = arg1 + arg2 \\
+Operácia:  sum <- arg1 + arg2 + ALU\_RESIDUAL \\
+           arg0 <- sum[15:0], ALU\_RESIDUAL <- (sum > 0xFFFF ? 1 : 0) \\[2pt]
+Príklad:   ADD R0, R1, R2   ; R0 = R1 + R2 (registre R0--R7)
 }{Registre R0--R7, akumulátory ACCA/ACCB alebo priame konštanty.}{Nastavuje príznak prenosu CF a pretečenia OF pri prekročení $2^{16}-1$; aktualizuje ZF podľa dst.}{Podporuje priebežnú viacbajtovú aritmetiku (32, 48, 64+ bitov). Ak súčet prekročí 16 bitov ($>2^{16}-1$), prenos (+1) sa zachová vo vnútornom registri ALU a automaticky sa pripočíta pri nasledujúcej operácii ADD bez nutnosti inštrukcie ADC. Spodných 16 bitov sa deterministicky zapíše do dst. Reťazenie sa preruší inštrukciou NOP alebo novou matematickou operáciou.}
 \InstructionPage{SUB}{00010}{Aritmetika}{Odčítanie s automatickým reťazením výpožičky}{%
-diff\_full <- srcA - srcB - ALU\_RESIDUAL \\
-dst <- diff\_full[15:0] \\
-ALU\_RESIDUAL <- (diff\_full < 0 ? 1 : 0)%
+\small
+Signatúra: SUB arg0(REG), arg1(REG), arg2(REG) : arg0 = arg1 - arg2 \\
+Operácia:  diff <- arg1 - arg2 - ALU\_RESIDUAL \\
+           arg0 <- diff[15:0], ALU\_RESIDUAL <- (diff < 0 ? 1 : 0) \\[2pt]
+Príklad:   SUB R0, R1, R2   ; R0 = R1 - R2 (registre R0--R7)
 }{Registre R0--R7, konštanty alebo akumulátory ACCA/ACCB.}{Pri zápornom rozdiele ($< 0$) nastavuje príznak výpožičky (Borrow / CF) a OF; aktualizuje ZF.}{Umožňuje kontinuálne viacbajtové odčítanie. Pri zápornom rozdiele ($< 0$) sa výpožička ($-1$) uloží do vnútorného registra ALU a pri ďalšej inštrukcii SUB sa automaticky odpočíta 1 od vyššieho slova. Výsledok spodného slova sa deterministicky uloží do dst. Na začatie nového nezávislého odčítania sa reťazenie preruší pomocou NOP.}
 \InstructionPage{MUL}{00011}{Aritmetika}{Celočíselné násobenie so zachovaním hornej časti v registri ALU}{%
-prod <- srcA * srcB \\
-dst <- prod[15:0] \\
-ALU\_RESIDUAL <- prod[31:16]%
+\small
+Signatúra: MUL arg0(REG), arg1(REG), arg2(REG) : arg0 = arg1 * arg2 \\
+Operácia:  prod <- arg1 * arg2 \\
+           arg0 <- prod[15:0], ALU\_RESIDUAL <- prod[31:16] \\[2pt]
+Príklad:   MUL R0, R1, R2   ; R0 = R1 * R2 (horná časť v ALU\_RESIDUAL)
 }{Registre R0--R7, akumulátory ACCA/ACCB.}{Aktualizuje ZF; nastavuje OF/CF, ak je horných 16 bitov súčinu (prod[31:16]) nenulových.}{Pri 32-bitovom súčine smeruje spodných 16 bitov do cieľového registra dst, kým horných 16 bitov sa uloží do vnútorného zvyškového registra ALU (ALU Residual). Pri nasledujúcom sčítaní sa tento zvyšok automaticky pripočíta (podpora MAC a viacbajtových čísiel). Hornú polovicu možno získať aj sčítaním registra so sebou samým po vynulovaní. Inštrukcia NOP register vyčistí.}
 \InstructionPage{DIV}{00100}{Aritmetika}{Celočíselné delenie so zachovaním zvyšku vo vnútornom registri ALU}{%
-dst <- srcA / srcB \\
-ALU\_RESIDUAL <- srcA \% srcB%
+\small
+Signatúra: DIV arg0(REG), arg1(REG), arg2(REG) : arg0 = arg1 / arg2 \\
+Operácia:  arg0 <- arg1 / arg2 \\
+           ALU\_RESIDUAL <- arg1 \% arg2 \\[2pt]
+Príklad:   DIV R0, R1, R2   ; R0 = R1 / R2 (zvyšok modulo v ALU\_RESIDUAL)
 }{Registre R0--R7, akumulátory ACCA/ACCB.}{Pri delení nulou sa nastavuje príznak chyby EM (Error Math) bez zablokovania procesora; aktualizuje ZF.}{Podiel sa zapíše do cieľového registra dst, pričom zvyšok po delení (modulo) sa zachová vo vnútornom registri ALU pre ďalšie operácie alebo vymazanie inštrukciou NOP.}
-\InstructionPage{LMR}{00101}{Pamäť}{Načítanie slova z pamäte do registra}{dst\_reg <- MEM[address]}{Adresovanie: priame, nepriame cez \reg{PTREG}, alebo s posunom.}{Všetky príznaky zostávajú zachované.}{Podpora hardvérového autoincrementu ukazovateľa pri aktívnom AIP.}
-\InstructionPage{LRM}{00110}{Pamäť}{Zápis registra do systémovej pamäte}{MEM[address] <- src\_reg}{Režim adresovania volený poľom \field{cfg} a registrom \reg{PTREG}.}{Všetky príznaky zostávajú zachované.}{Priamy prenos z registrového poľa na systémovú zbernicu.}
-\InstructionPage{LRR}{00111}{Presun}{Bleskové kopírovanie medzi registrami}{dst\_reg <- src\_reg}{Argumenty určujú zdrojový a cieľový register.}{Všetky príznaky zostávajú zachované.}{Smerované cez priamy premosťovací kanál MUX 1 $\to$ MUX 2 bez blokovania ALU.}
-\InstructionPage{CMP}{01000}{Porovnanie}{Hardvérové porovnanie operandov}{FREG.CMP <- compare(srcA, srcB)}{Režim porovnania s registrom alebo konštantou.}{Aktualizuje 2-bitové pole FREG.CMP a príznaky ZF, CF, OF bez zmeny registrov.}{Umožňuje rýchle podmienené vetvenie.}
-\InstructionPage{JMP}{01001}{Skok}{Nepodmienený skok}{PC <- target}{Podporuje 16-bitový lokálny alebo plný 24-bitový skok cez \reg{PTREG}.}{Príznaky zostávajú nezmenené.}{Atomické načítanie Program Counter v minimálnom počte cyklov.}
-\InstructionPage{JCR}{01010}{Skok}{Podmienený skok pri prenose}{if FREG.CF == 1 then PC <- target}{Cieľová adresa určená posunom alebo absolútne.}{Príznaky sú iba čítané.}{Základný stavebný prvok viacnásobnej presnej aritmetiky.}
-\InstructionPage{JNZ}{01011}{Skok}{Podmienený skok pri nenulovom stave}{if FREG.ZF == 0 then PC <- target}{Vysoko efektívny skok pre programové slučky a počítadlá.}{Príznaky zostávajú nezmenené.}{Rýchle vyhodnotenie podmienky v mikroprograme.}
-\InstructionPage{JZ}{01100}{Skok}{Podmienený skok pri nulovom stave}{if FREG.ZF == 1 then PC <- target}{Vyhodnocuje rovnosť alebo ukončovacie podmienky.}{Príznaky zostávajú nezmenené.}{Optimalizované pre reťazcové a vyhľadávacie operácie.}
-\InstructionPage{AND}{01101}{Logika}{Bitový logický súčin (AND)}{dst <- srcA AND srcB}{Registrové a maskovacie konštantné operandy.}{Nastavuje príznak nuly ZF; pretečenie vynulované.}{Kľúčová inštrukcia pre bitové maskovanie.}
-\InstructionPage{OR}{01110}{Logika}{Bitový logický súčet (OR)}{dst <- srcA OR srcB}{Registrové operandy a spájanie bitových polí.}{Nastavuje ZF; prenosy sú deterministicky vynulované.}{Rýchle zlučovanie riadiacich príznakov.}
-\InstructionPage{NAND}{01111}{Logika}{Bitový logický zápor súčinu (NAND)}{dst <- NOT (srcA AND srcB)}{Univerzálna logická báza.}{Nastavuje príznak ZF.}{Umožňuje kompaktnú realizáciu zákazníckych logických funkcií.}
-\InstructionPage{NOR}{10000}{Logika}{Bitový logický zápor súčtu (NOR)}{dst <- NOT (srcA OR srcB)}{Invertovaná logická funkcia.}{Nastavuje príznak ZF.}{Rozširuje množinu rýchlych bitových transformácií.}
-\InstructionPage{NOT}{10001}{Logika}{Bitová inverzia (jednotkový doplnok)}{dst <- NOT src}{Rýchla unárna inverzia slova.}{Nastavuje príznak ZF.}{Vykoná sa v minimálnom počte mikrotaktov.}
-\InstructionPage{XOR}{10010}{Logika}{Bitová neverzia (XOR)}{dst <- srcA XOR srcB}{Používa sa na prepínanie bitov a rýchle vynulovanie registra.}{Nastavuje príznak ZF.}{Základná inštrukcia pre paritu, CRC a kryptografiu.}
-\InstructionPage{XNOR}{10011}{Logika}{Bitová ekvivalencia}{dst <- NOT (srcA XOR srcB)}{Porovnanie bitov na zhodu.}{Nastavuje príznak ZF.}{Rýchla paralelná kontrola ekvivalencie masiek.}
-\InstructionPage{INC}{10100}{Aritmetika}{Inkrementácia o 1}{dst <- src + 1}{Rýchly krok počítadla cyklu.}{Nastavuje ZF, OF; prenos CF riadený cez \field{cfg}.}{Optimalizuje indexovanie v poliach.}
-\InstructionPage{DEC}{10101}{Aritmetika}{Dekrementácia o 1}{dst <- src - 1}{Krok zostupného počítadla.}{Nastavuje ZF, OF.}{Kompaktná realizácia cyklov.}
+\InstructionPage{LMR}{00101}{Pamäť}{Načítanie dát z pamäte a externých zariadení do registrov}{%
+\small
+Signatúra: LMR arg0(REG), <SRC\_MODE> : arg0 = MEM[...] \\
+Režimy:    SRC=0: LMR R0, [PC+]          ; Imm Data (1--2 bajty) \\
+           SRC=1: LMR R0, [[PC+]]        ; Imm Ukazovateľ \\
+           SRC=2: LMR R0, [PTREG]        ; Systémový ukazovateľ (AIP) \\
+           SRC=3: LMR R0(R\_hi), R1(R\_lo) ; 24-bitová adresa z páru \\
+Operácia:  arg0 <- MEM[EA] (horné bity adresy sa prepíšu dátami) \\[2pt]
+Príklad:   LMR R0, R1       ; EA=(R0<<16)|R1, načítanie MEM[EA] do R0
+}{%
+\textbf{Oktet 0:} bit $[8]$ (\field{SZ}) určuje šírku dát ($0 = 1$ bajt, $1 = 2$ bajty / slovo); bity $[10:9]$ (\field{SRC}) volia zdroj dát ($0$ --- priame dáta za kódom inštrukcie, $1$ --- priamy ukazovateľ za inštrukciou, $2$ --- nepriamo cez 24-bitový ukazovateľ \reg{PTREG}, $3$ --- nepriamo cez dvojicu používateľských registrov).\\
+\textbf{Oktet 1:} bity $[7:5]$ definujú register \reg{Arg1} (\reg{R\_hi} / cieľ), bity $[4:2]$ definujú register \reg{Arg2} (\reg{R\_lo}). V režime $\field{SRC} = 3$ používateľ zvolí dva 16-bitové registre tvoriace 32-bitové číslo, z ktorého sa na adresovanie použije 24 bitov: \reg{Arg1} nesie horné bity adresy a \reg{Arg2} dolných 16 bitov. Register \reg{Arg1} je zároveň cieľovým registrom: po výbere z pamäte sa horné bity adresy v \reg{Arg1} prepíšu načítanými dátami.%
+}{Všetky príznaky v stavovom registri \reg{FREG} zostávajú zachované bez zmeny.}{%
+Inštrukcia \texttt{LMR} predstavuje kľúčovú vstupnú bránu pre prenos externých dát a pamäte do registrového poľa procesora LIM M2 ($R0$--$R7$). Architektúra integruje štyri ortogonálne režimy výberu s natívnym 24-bitovým adresovaním:\\
+1. V režime $\field{SRC} = 0$ procesor číta literál priamo z toku kódu ($1$ alebo $2$ bajty) s automatickým posunom čítača inštrukcií \reg{PC}.\\
+2. V režime $\field{SRC} = 1$ sa za inštrukciou načíta absolútny ukazovateľ, podľa ktorého sa vyberú dáta z pamäte.\\
+3. V režime $\field{SRC} = 2$ prebieha prístup na 24-bitovú fyzickú adresu z registra \reg{PTREG}. Pri aktívnom príznaku autoincrementu \texttt{FREG.AIP} (bit 12) sa register \reg{PTREG} automaticky zvýši o veľkosť výberu ($+1$ alebo $+2$), čo umožňuje prúdové načítanie polí za jediný takt.\\
+4. V režime $\field{SRC} = 3$ používateľ zvolí dva 16-bitové registre (\reg{Arg1} a \reg{Arg2}), ktoré spolu vytvárajú 32-bitové číslo, z ktorého sa v praxi adresovania využíva dolných 24 bitov. Používateľ určí, že horné bity adresy sú v \reg{Arg1} a dolných 16 bitov v \reg{Arg2}. V tomto režime sa register \reg{Arg1} s hornými bitmi adresy stáva zároveň cieľovým registrom, do ktorého sa zapíšu načítané dáta (teda horné bity adresy v \reg{Arg1} sa prepíšu dátami, kým \reg{Arg2} uchováva dolných 16 bitov adresy).%
+}
+\InstructionPage{LRM}{00110}{Pamäť}{Zápis dát z registrov do pamäte a externých zariadení}{%
+\small
+Signatúra: LRM arg0(REG), <DST\_MODE> : MEM[...] = arg0 \\
+Režimy:    DST=0: LRM R0, [PC+]          ; Vložená pamäť za kódom \\
+           DST=1: LRM R0, [[PC+]]        ; Imm Ukazovateľ \\
+           DST=2: LRM R0, [PTREG]        ; Systémový ukazovateľ (AIP) \\
+           DST=3: LRM R0(R\_hi), R1(R\_lo) ; 24-bitová adresa z páru \\
+Operácia:  MEM[EA] <- arg0[15:0] (alebo dolný bajt pri SZ=0) \\[2pt]
+Príklad:   LRM R0, R1       ; EA=(R0<<16)|R1, zápis R0 do MEM[EA]
+}{%
+\textbf{Oktet 0:} bit $[8]$ (\field{SZ}) určuje šírku dát ($0 = 1$ bajt, $1 = 2$ bajty / slovo); bity $[10:9]$ (\field{DST}) volia cieľové umiestnenie dát ($0$ --- zápis priamo za kód inštrukcie, $1$ --- zápis podľa ukazovateľa za inštrukciou, $2$ --- nepriamo cez 24-bitový ukazovateľ \reg{PTREG}, $3$ --- nepriamo cez dvojicu registrov používateľa).\\
+\textbf{Oktet 1:} bity $[7:5]$ definujú zdrojový register \reg{Arg1} (\reg{Rs} / \reg{R\_hi}), bity $[4:2]$ definujú register \reg{Arg2} (\reg{R\_lo}). V režime $\field{DST} = 3$ dva registre tvoria 32-bitové číslo, z ktorého sa použije 24 bitov adresy (\reg{Arg1} --- horné bity adresy a zdroj dát, \reg{Arg2} --- dolných 16 bitov). Prepísanie existujúcich dát na cieľovej adrese je plnou zodpovednosťou programátora.%
+}{Všetky príznaky v stavovom registri \reg{FREG} zostávajú zachované bez zmeny.}{%
+Inštrukcia \texttt{LRM} predstavuje symetrický mechanizmus prenosu registrových dát procesora LIM M2 ($R0$--$R7$) do pamäte a periférnych obvodov. Architektúra integruje štyri ortogonálne režimy adresovania:\\
+1. V režime $\field{DST} = 0$ procesor zapisuje $1$ alebo $2$ bajty priamo do pamäte za inštrukciou (\reg{PC}) s posunom čítača inštrukcií. Režim slúži pre dynamické buffery a samomodifikujúci sa kód; prepísanie dát je na zodpovednosti programátora.\\
+2. V režime $\field{DST} = 1$ sa za inštrukciou načíta 16-bitový absolútny ukazovateľ, na ktorý sa dáta uložia.\\
+3. V režime $\field{DST} = 2$ zápis smeruje na 24-bitovú systémovú adresu registra \reg{PTREG}. Pri aktívnom príznaku \texttt{FREG.AIP} (bit 12) sa register \reg{PTREG} automaticky zvýši o $+1$ alebo $+2$, čo umožňuje prúdový DMA výstup do pamäte za jediný takt.\\
+4. V režime $\field{DST} = 3$ sa využíva dvojica 16-bitových registrov: \reg{Arg1} a \reg{Arg2} tvoria 32-bitové číslo, ktorého dolných 24 bitov určuje fyzickú adresu ($\text{Addr}[23:0]$). Dáta z \reg{Arg1} sa zapíšu na vypočítanú adresu, čo sprístupňuje celých 16 MB priestoru.%
+}
+\InstructionPage{LRR}{00111}{Presun}{Medziregistrový presun (kopírovanie z bodu B do bodu A)}{%
+\small
+Signatúra: LRR arg0(REG), arg1(REG) : arg0 = arg1 \\
+Operácia:  arg0 <- arg1 (priame kopírovanie z bodu B do bodu A) \\[2pt]
+Príklad:   LRR R0, R1       ; R0 = R1 (hodnota R1 sa skopíruje do R0)
+}{%
+\textbf{Oktet 0:} kód operácie $00111_2$ (\texttt{0x07}), bity $[10:8]$ sú rezervované ($000_2$).\\
+\textbf{Oktet 1:} bity $[7:5]$ definujú cieľový register-príjemcu \reg{Arg1} (\reg{Rd}, bod A, kam sa dáta ukladajú); bity $[4:2]$ definujú zdrojový register \reg{Arg2} (\reg{Rs}, bod B, odkiaľ sa dáta čítajú); bity $[1:0]$ obsahujú $00_2$. Pri vykonaní sa hodnota \reg{Rs} prenesie do \reg{Rd} za 1 mikrocyklus.%
+}{Všetky príznaky zostávajú zachované.}{%
+Inštrukcia \texttt{LRR} predstavuje základnú operáciu presunu dát medzi registrami všeobecného určenia procesora ($R0$--$R7$). Vykonáva prenos zo zdroja (bod B) do cieľa (bod A). Presun sa uskutočňuje cez priamy hardvérový premosťovací kanál \textbf{MUX 1} $\to$ \textbf{MUX 2} bez zaťažovania ALU a bez vplyvu na stav príznakov registra \reg{FREG}.%
+}
+\InstructionPage{CMP}{01000}{Porovnanie}{Hardvérové porovnanie operandov}{%
+\small
+Signatúra: CMP arg0(REG), arg1(REG) : compare(arg0, arg1) \\
+Operácia:  if arg0 < arg1 then FREG.CMP <- 01b (menšie) \\
+           if arg0 == arg1 then FREG.CMP <- 10b (rovné) \\
+           if arg0 > arg1 then FREG.CMP <- 11b (väčšie) \\
+           (stav 00b --- počiatočný reset / neporovnané / chyba) \\[2pt]
+Príklad:   CMP R0, R1       ; 01: R0<R1, 10: R0==R1, 11: R0>R1 (00: reset/chyba)
+}{Režim porovnania registrov bez zmeny dát.}{Aktualizuje 2-bitové pole FREG.CMP (bity [5:4]) a príznaky ZF, CF, OF bez zmeny registrov.}{Umožňuje rýchle podmienené vetvenie.}
+\InstructionPage{JMP}{01001}{Skok}{Nepodmienený skok}{%
+\small
+Signatúra: JMP target(IMM|REG) : PC = target \\
+Operácia:  PC <- target \\[2pt]
+Príklad:   JMP R0           ; Bezpodmienečný skok na adresu v R0
+}{Podporuje 16-bitový lokálny alebo plný 24-bitový skok cez \reg{PTREG}.}{Príznaky zostávajú nezmenené.}{Atomické načítanie Program Counter v minimálnom počte cyklov.}
+\InstructionPage{JCR}{01010}{Skok}{Podmienený skok pri prenose}{%
+\small
+Signatúra: JCR target(IMM|REG) : if FREG.CF == 1 then PC = target \\
+Operácia:  if FREG.CF == 1 then PC <- target \\[2pt]
+Príklad:   JCR R2           ; Skok na adresu R2, ak je nastavený Carry
+}{Cieľová adresa určená posunom alebo absolútne.}{Príznaky sú iba čítané.}{Základný stavebný prvok viacnásobnej presnej aritmetiky.}
+\InstructionPage{JNZ}{01011}{Skok}{Podmienený skok pri nenulovom stave}{%
+\small
+Signatúra: JNZ target(IMM|REG) : if FREG.ZF == 0 then PC = target \\
+Operácia:  if FREG.ZF == 0 then PC <- target \\[2pt]
+Príklad:   JNZ R3           ; Skok na adresu R3, ak ZF == 0 (nie je nula)
+}{Vysoko efektívny skok pre programové slučky a počítadlá.}{Príznaky zostávajú nezmenené.}{Rýchle vyhodnotenie podmienky v mikroprograme.}
+\InstructionPage{JZ}{01100}{Skok}{Podmienený skok pri nulovom stave}{%
+\small
+Signatúra: JZ target(IMM|REG) : if FREG.ZF == 1 then PC = target \\
+Operácia:  if FREG.ZF == 1 then PC <- target \\[2pt]
+Príklad:   JZ R4            ; Skok na adresu R4, ak ZF == 1 (je nula)
+}{Vyhodnocuje rovnosť alebo ukončovacie podmienky.}{Príznaky zostávajú nezmenené.}{Optimalizované pre reťazcové a vyhľadávacie operácie.}
+\InstructionPage{AND}{01101}{Logika}{Bitový logický súčin (AND)}{%
+\small
+Signatúra: AND arg0(REG), arg1(REG) : arg0 = arg0 \& arg1 \\
+Operácia:  arg0 <- arg0 AND arg1 \\[2pt]
+Príklad:   AND R0, R1   ; R0 = R0 \& R1
+}{Registrové operandy (2 operandy).}{Nastavuje príznak nuly ZF; pretečenie vynulované.}{Kľúčová inštrukcia pre bitové maskovanie.}
+\InstructionPage{OR}{01110}{Logika}{Bitový logický súčet (OR)}{%
+\small
+Signatúra: OR arg0(REG), arg1(REG) : arg0 = arg0 | arg1 \\
+Operácia:  arg0 <- arg0 OR arg1 \\[2pt]
+Príklad:   OR R0, R1    ; R0 = R0 | R1
+}{Registrové operandy (2 operandy).}{Nastavuje ZF; prenosy sú deterministicky vynulované.}{Rýchle zlučovanie riadiacich príznakov.}
+\InstructionPage{NAND}{01111}{Logika}{Bitový logický zápor súčinu (NAND)}{%
+\small
+Signatúra: NAND arg0(REG), arg1(REG) : arg0 = \textasciitilde(arg0 \& arg1) \\
+Operácia:  arg0 <- NOT (arg0 AND arg1) \\[2pt]
+Príklad:   NAND R0, R1  ; R0 = \textasciitilde(R0 \& R1)
+}{Univerzálna logická báza (2 operandy).}{Nastavuje príznak ZF.}{Umožňuje kompaktnú realizáciu zákazníckych logických funkcií.}
+\InstructionPage{NOR}{10000}{Logika}{Bitový logický zápor súčtu (NOR)}{%
+\small
+Signatúra: NOR arg0(REG), arg1(REG) : arg0 = \textasciitilde(arg0 | arg1) \\
+Operácia:  arg0 <- NOT (arg0 OR arg1) \\[2pt]
+Príklad:   NOR R0, R1   ; R0 = \textasciitilde(R0 | R1)
+}{Invertovaná logická funkcia (2 operandy).}{Nastavuje príznak ZF.}{Rozširuje množinu rýchlych bitových transformácií.}
+\InstructionPage{NOT}{10001}{Logika}{Bitová inverzia (jednotkový doplnok)}{%
+\small
+Signatúra: NOT arg0(REG) : arg0 = \textasciitilde arg0 \\
+Operácia:  arg0 <- NOT arg0 \\[2pt]
+Príklad:   NOT R0       ; R0 = \textasciitilde R0 (1-bajtová inštrukcia)
+}{Jednobajtová inštrukcia ([7:3] opkód 10001, [2:0] Rd). Druhý bajt z pamäte sa nenačítava.}{Nastavuje príznak ZF.}{Vykoná sa v minimálnom počte mikrotaktov bez načítania druhého bajtu.}
+\InstructionPage{XOR}{10010}{Logika}{Bitová neverzia (XOR)}{%
+\small
+Signatúra: XOR arg0(REG), arg1(REG) : arg0 = arg0 \textasciicircum\ arg1 \\
+Operácia:  arg0 <- arg0 XOR arg1 \\[2pt]
+Príklad:   XOR R0, R1   ; R0 = R0 \textasciicircum\ R1 (pri R0==R1 vynuluje R0)
+}{Registrové operandy (2 operandy).}{Nastavuje príznak ZF.}{Základná inštrukcia pre paritu, CRC a kryptografiu.}
+\InstructionPage{XNOR}{10011}{Logika}{Bitová ekvivalencia}{%
+\small
+Signatúra: XNOR arg0(REG), arg1(REG) : arg0 = \textasciitilde(arg0 \textasciicircum\ arg1) \\
+Operácia:  arg0 <- NOT (arg0 XOR arg1) \\[2pt]
+Príklad:   XNOR R0, R1  ; R0 = \textasciitilde(R0 \textasciicircum\ R1)
+}{Porovnanie bitov na zhodu (2 operandy).}{Nastavuje príznak ZF.}{Rýchla paralelná kontrola ekvivalencie masiek.}
+\InstructionPage{INC}{10100}{Aritmetika}{Inkrementácia o 1}{%
+\small
+Signatúra: INC arg0(REG) : arg0 = arg0 + 1 \\
+Operácia:  arg0 <- arg0 + 1 \\[2pt]
+Príklad:   INC R0           ; R0 = R0 + 1 (inkrement registra)
+}{Rýchly krok počítadla cyklu.}{Nastavuje ZF, OF; prenos CF riadený cez \field{cfg}.}{Optimalizuje indexovanie v poliach.}
+\InstructionPage{DEC}{10101}{Aritmetika}{Dekrementácia o 1}{%
+\small
+Signatúra: DEC arg0(REG) : arg0 = arg0 - 1 \\
+Operácia:  arg0 <- arg0 - 1 \\[2pt]
+Príklad:   DEC R0           ; R0 = R0 - 1 (dekrement registra)
+}{Krok zostupného počítadla.}{Nastavuje ZF, OF.}{Kompaktná realizácia cyklov.}
 \InstructionPage{PUSH}{10110}{Zásobník}{Uloženie slova do zásobníka}{%
-stack <- src \\
-SREG <- SREG - 2%
+\small
+Signatúra: PUSH arg0(REG) : SREG -= 2, MEM[SREG] = arg0 \\
+Operácia:  SREG <- SREG - 2, MEM[SREG] <- arg0 \\[2pt]
+Príklad:   PUSH R0          ; Uložiť slovo R0 na vrchol zásobníka
 }{Zdroj: ľubovoľný register R0--R7 alebo systémový register.}{Aritmetické príznaky sa nemenia.}{Hardvérová podpora volaní funkcií a ukladania kontextu.}
 \InstructionPage{POP}{10111}{Zásobník}{Výber slova zo zásobníka}{%
-dst <- stack \\
-SREG <- SREG + 2%
+\small
+Signatúra: POP arg0(REG) : arg0 = MEM[SREG], SREG += 2 \\
+Operácia:  arg0 <- MEM[SREG], SREG <- SREG + 2 \\[2pt]
+Príklad:   POP R0           ; Vybrať slovo z vrcholu zásobníka do R0
 }{Cieľ: registre R0--R7 alebo stavové registre.}{Aritmetické príznaky sa nemenia.}{Symetrické obnovenie kontextu po prerušení.}
-\InstructionPage{BSL}{11000}{Posuny}{Barelový posun doľava}{dst <- src << amount}{Rozsah posunu: konštanta alebo hodnota v registri.}{Najvyšší vysunutý bit zachytený v FREG.DBIT (bit 13). Pri SMOD=1 sa do najnižšieho bitu vloží predchádzajúci DBIT; pri SMOD=0 sa dopĺňajú nuly.}{Efektívna cyklická a prúdová rotácia viacbajtových dát.}
-\InstructionPage{BSR}{11001}{Posuny}{Barelový posun doprava}{dst <- src >> amount}{Logický alebo aritmetický posun voliteľný cez \field{cfg}.}{Najnižší vysunutý bit uložený v DBIT (bit 13). Pri SMOD=1 sa do najvyššieho bitu vloží predchádzajúci DBIT; pri SMOD=0 sa dopĺňajú nuly.}{Prúdové škálovanie a delenie mocninami dvojky.}
-\InstructionPage{CSRM}{11010}{Systém}{Prístup k systémovým registrom}{special\_reg <- src OR dst <- special\_reg}{Prístup k registrom \reg{FREG}, \reg{PTREG}, \reg{SREG}.}{Príznaky sa aktualizujú pri modifikácii FREG.}{Privilegované prepínanie kontextu jadra.}
-\InstructionPage{RSV27}{11011}{Rezerva}{Hardvérové rozšírenie}{reserved}{Vyhradené pre budúce revízie architektúry LIM.}{Nedefinované.}{Rezervované.}
-\InstructionPage{RSV28}{11100}{Rezerva}{Hardvérové rozšírenie}{reserved}{Vyhradené pre budúce revízie architektúry LIM.}{Nedefinované.}{Rezervované.}
-\InstructionPage{RSV29}{11101}{Rezerva}{Hardvérové rozšírenie}{reserved}{Vyhradené pre budúce revízie architektúry LIM.}{Nedefinované.}{Rezervované.}
-\InstructionPage{RSV30}{11110}{Rezerva}{Hardvérové rozšírenie}{reserved}{Vyhradené pre budúce revízie architektúry LIM.}{Nedefinované.}{Rezervované.}
-\InstructionPage{RSV31}{11111}{Rezerva}{Hardvérové rozšírenie}{reserved}{Vyhradené pre budúce revízie architektúry LIM.}{Nedefinované.}{Rezervované.}
+\InstructionPage{BSL}{11000}{Posuny}{Barelový posun doľava}{%
+\small
+Signatúra: BSL arg0(REG), arg1(REG), arg2(IMM|REG) : arg0 = arg1 << arg2 \\
+Operácia:  arg0 <- arg1 << arg2 \\
+           FREG.DBIT <- vytlačený najvyšší bit (bit 15) \\
+           Pri SMOD=1 sa do LSB vloží predošlý DBIT; pri SMOD=0: 0 \\[2pt]
+Príklad:   BSL R0, R1, 1    ; Posun R1 doľava o 1 bit, výsledok do R0
+}{Rozsah posunu: konštanta alebo hodnota v registri.}{Najvyšší vysunutý bit zachytený v FREG.DBIT (bit 13). Pri SMOD=1 sa do najnižšieho bitu vloží predchádzajúci DBIT; pri SMOD=0 sa dopĺňajú nuly.}{Efektívna cyklická a prúdová rotácia viacbajtových dát.}
+\InstructionPage{BSR}{11001}{Posuny}{Barelový posun doprava}{%
+\small
+Signatúra: BSR arg0(REG), arg1(REG), arg2(IMM|REG) : arg0 = arg1 >> arg2 \\
+Operácia:  arg0 <- arg1 >> arg2 \\
+           FREG.DBIT <- vytlačený najnižší bit (bit 0) \\
+           Pri SMOD=1 sa do MSB vloží predošlý DBIT; pri SMOD=0: 0 \\[2pt]
+Príklad:   BSR R0, R1, 1    ; Posun R1 doprava o 1 bit, výsledok do R0
+}{Logický alebo aritmetický posun voliteľný cez \field{cfg}.}{Najnižší vysunutý bit uložený v DBIT (bit 13). Pri SMOD=1 sa do najvyššieho bitu vloží predchádzajúci DBIT; pri SMOD=0 sa dopĺňajú nuly.}{Prúdové škálovanie a delenie mocninami dvojky.}
+\InstructionPage{MSP}{11010}{Systém}{Manipulácia so špeciálnymi registrami (FREG, PTREG)}{%
+\small
+Signatúra: MSP sreg, [op], args : práca so špeciálnymi registrami \\
+Operácia:  
+  \textbf{Priamy zápis (bit 10 = 0):} \\
+  \quad sreg=00 (FREG):  FREG <- Rs[15:0] (oktet 1: [7:5]=Rs) \\
+  \quad sreg=01 (PTREG): PTREG <- (Rs\_hi $\ll$ 16) | Rs\_lo (oktet 1: [7:5]=Rs\_hi, [4:2]=Rs\_lo) \\
+  \textbf{Modifikácia (bit 10 = 1):} \\
+  \quad sreg=00 (FREG):  FREG <- FREG $\odot$ Rs (oktet 1: [7:6]=op \{AND,OR,XOR,XNOR\}, [5:3]=Rs) \\
+  \quad sreg=01 (PTREG): PTREG <- PTREG $\pm$ Rs (oktet 1: [7]=op \{ADD,SUB\}, [6:4]=Rs) \\[2pt]
+Príklad:   MSP FREG, R0         ; Priamy zápis do FREG hodnoty R0 \\
+           MSP PTREG, R0, R1    ; Nastavenie 24-bitového PTREG = \{R0, R1\} \\
+           MSP FREG, OR, R2     ; Nastavenie masiek: FREG = FREG | R2 \\
+           MSP PTREG, ADD, R3   ; Posun ukazovateľa: PTREG = PTREG + R3
+}{Špeciálne registre FREG (00) a 24-bitový PTREG (01). Podporuje priamu inicializáciu, bitové masky FREG a lokálnu aritmetiku PTREG.}{Príznaky FREG sa modifikujú priamo alebo maskou. Aritmetika PTREG generuje príznak prenosu CF cez ALU.}{Univerzálny privilegovaný riadiaci primitív systémovej úrovne.}
+\InstructionPage{RSV27}{11011}{Rezerva}{Hardvérové rozšírenie}{%
+\small
+Signatúra: RSV27 : rezervované \\
+Operácia:  Reserved for LIM architecture hardware extensions
+}{Vyhradené pre budúce revízie architektúry LIM.}{Nedefinované.}{Rezervované.}
+\InstructionPage{RSV28}{11100}{Rezerva}{Hardvérové rozšírenie}{%
+\small
+Signatúra: RSV28 : rezervované \\
+Operácia:  Reserved for LIM architecture hardware extensions
+}{Vyhradené pre budúce revízie architektúry LIM.}{Nedefinované.}{Rezervované.}
+\InstructionPage{RSV29}{11101}{Rezerva}{Hardvérové rozšírenie}{%
+\small
+Signatúra: RSV29 : rezervované \\
+Operácia:  Reserved for LIM architecture hardware extensions
+}{Vyhradené pre budúce revízie architektúry LIM.}{Nedefinované.}{Rezervované.}
+\InstructionPage{RSV30}{11110}{Rezerva}{Hardvérové rozšírenie}{%
+\small
+Signatúra: RSV30 : rezervované \\
+Operácia:  Reserved for LIM architecture hardware extensions
+}{Vyhradené pre budúce revízie architektúry LIM.}{Nedefinované.}{Rezervované.}
+\InstructionPage{RSV31}{11111}{Rezerva}{Hardvérové rozšírenie}{%
+\small
+Signatúra: RSV31 : rezervované \\
+Operácia:  Reserved for LIM architecture hardware extensions
+}{Vyhradené pre budúce revízie architektúry LIM.}{Nedefinované.}{Rezervované.}
 
 \clearpage
 \section{Fyzické rozhranie a rozloženie vývodov (34-vývodové puzdro)}

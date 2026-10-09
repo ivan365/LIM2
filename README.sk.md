@@ -77,7 +77,7 @@
 * **`CF` (1):** Príznak prenosu / výpožičky (Carry Flag).
 * **`OF` (2):** Príznak pretečenia (Overflow Flag).
 * **`EM` (3):** Hardvérová chyba matematických operácií (Error Math: delenie nulou).
-* **`CMP` (4–5):** Výsledok 2-bitového hardvérového komparátora (`<`, `=`, `>`).
+* **`CMP` (4–5):** Výsledok hardvérového komparátora `cmp_flags` (`00`: počiatočný reset / neporovnané / chyba; `01`: operand-1 < operand-2; `10`: operand-1 == operand-2; `11`: operand-1 > operand-2).
 * **`CLK` (6–7):** Režim deličky hodinovej frekvencie.
 * **`PIE` (8):** Povolenie programových prerušení.
 * **`MIE` (9):** Povolenie maskovateľných prerušení.
@@ -99,10 +99,10 @@
 | **00010** | `0x02` | **`SUB`** | Aritmetika | 16-bitové odčítanie s automatickým reťazením výpožičky cez `ALU_RESIDUAL` |
 | **00011** | `0x03` | **`MUL`** | Aritmetika | Celočíselné násobenie; horných 16 bitov zachytených v `ALU_RESIDUAL` |
 | **00100** | `0x04` | **`DIV`** | Aritmetika | Celočíselné delenie; zvyšok (modulo) uložený v `ALU_RESIDUAL` |
-| **00101** | `0x05` | **`LMR`** | Pamäť | Načítanie slova z pamäte do registra (podpora 24-bitového `PTREG`) |
-| **00110** | `0x06` | **`LRM`** | Pamäť | Zápis slova registra do systémovej pamäte |
+| **00101** | `0x05` | **`LMR`** | Pamäť | Načítanie bajtu/slova do registra (zdroj: 0=Imm, 1=Ptr, 2=PTREG, 3=Dvojica registrov 24-bit; veľkosť: 8/16 bit) |
+| **00110** | `0x06` | **`LRM`** | Pamäť | Zápis bajtu/slova do pamäte (cieľ: 0=Inline, 1=Ptr, 2=PTREG, 3=Dvojica registrov 24-bit; veľkosť: 8/16 bit) |
 | **00111** | `0x07` | **`LRR`** | Presun | Rýchle kopírovanie medzi registrami cez obchádzku `MUX 1` $\to$ `MUX 2` |
-| **01000** | `0x08` | **`CMP`** | Porovnanie | Hardvérové porovnanie; aktualizuje `FREG.CMP`, `ZF`, `CF`, `OF` bez zmeny dát |
+| **01000** | `0x08` | **`CMP`** | Porovnanie | Hardvérové porovnanie; aktualizuje `FREG.CMP` (`01`: `<`, `10`: `=`, `11`: `>`), `ZF`, `CF`, `OF` bez zmeny dát |
 | **01001** | `0x09` | **`JMP`** | Skok | Nepodmienený skok (16-bitový lokálny alebo 24-bitový cez `PTREG`) |
 | **01010** | `0x0A` | **`JCR`** | Skok | Podmienený skok pri príznaku prenosu (`CF == 1`) |
 | **01011** | `0x0B` | **`JNZ`** | Skok | Podmienený skok pri nenulovom stave (`ZF == 0`) |
@@ -120,7 +120,7 @@
 | **10111** | `0x17` | **`POP`** | Zásobník | Výber slova z 24-bitového zásobníka (`SREG <- SREG + 2`) |
 | **11000** | `0x18` | **`BSL`** | Posuny | Barelový posun doľava (nulovanie alebo cyklická rotácia cez `DBIT` pri `SMOD=1`) |
 | **11001** | `0x19` | **`BSR`** | Posuny | Barelový posun doprava (nulovanie alebo cyklická rotácia cez `DBIT` pri `SMOD=1`) |
-| **11010** | `0x1A` | **`CSRM`** | Systém | Prístup k systémovým registrom (`FREG`, `PTREG`, `SREG`) |
+| **11010** | `0x1A` | **`MSP`** | Systém | Manipulácia so špeciálnymi registrami (`FREG`, `PTREG`) |
 | **11011** | `0x1B` | **`RSV27`** | Rezerva | Slot pre vektorové inštrukcie (SIMD) |
 | **11100** | `0x1C` | **`RSV28`** | Rezerva | Slot pre rozšírené adresovanie |
 | **11101** | `0x1D` | **`RSV29`** | Rezerva | Slot koprocesora s pohyblivou rádovou čiarkou (FPU) |
@@ -194,6 +194,194 @@ Ukončenie obsluhy obnoví pôvodný kontext procesora zo zásobníka:
 1. $\text{FREG} \leftarrow \text{Memory}[\text{SREG}], \quad \text{SREG} \leftarrow \text{SREG} + 2$ (automaticky vynuluje `INTR` späť na `0` a obnoví `MIE`).
 2. $\text{PC} \leftarrow \text{Memory}[\text{SREG}], \quad \text{SREG} \leftarrow \text{SREG} + 2$.
 Vykonávanie prerušeného toku inštrukcií plynule pokračuje v nasledujúcom takte bez akejkoľvek straty údajov.
+
+---
+
+## 📐 Jednotná filozofia formátu inštrukcií (Destination First)
+
+V architektúre procesora LIM M2 je zavedený striktný a jednotný koncept poradia operandov:
+
+> **Najprv sa vždy uvádza cieľový príjemca (KAM / Destination), a až potom vstupné operandy (ODKIAĽ / Sources).**
+
+* **Aritmetika (3 operandy):** `ADD Rd, Rs1, Rs2` znamená $\text{Rd} = \text{Rs1} + \text{Rs2}$ (napríklad `ADD R0, R1, R2` vypočíta $R0 = R1 + R2$). Rovnako pre: `SUB`, `MUL`, `DIV`.
+* **Logika (2 operandy):** `AND Rd, Rs` znamená $\text{Rd} = \text{Rd} \ \& \ \text{Rs}$ (napríklad `AND R0, R1` vypočíta $R0 = R0 \ \& \ R1$). Rovnako pre: `OR`, `NAND`, `NOR`, `XOR`, `XNOR`.
+* **Bitová inverzia NOT (1 operand, 1-bajtová inštrukcia):** `NOT Rd` znamená $\text{Rd} = \sim\text{Rd}$ (napríklad `NOT R0` vypočíta $R0 = \sim R0$). Kóduje sa v 1 bajte (`[7:3]` opkód, `[2:0]` Rd), druhý bajt z pamäte sa nenačítava.
+* **Medziregistrový presun:** `LRR Rd, Rs` znamená prenos z bodu B (zdroj `Rs`) do bodu A (príjemca `Rd`): $\text{Rd} = \text{Rs}$ (napríklad `LRR R0, R1` vykoná $R0 = R1$).
+* **Načítanie z pamäte:** `LMR Rd, ...` ukladá načítané dáta do prvého argumentu `Rd`.
+
+---
+
+## 📥 Architektúra inštrukcie LMR (Load Memory to Register)
+
+Inštrukcia **`LMR`** (`Opcode 00101` / `0x05`) slúži na načítanie dát z externého prostredia a pamäte do interných používateľských registrov procesora (`R0`–`R7`). Vyznačuje sa konfigurovateľným kódovaním a hardvérovou podporou 24-bitového adresovania (až 16 MB).
+
+### 1. Bitový formát inštrukcie
+Inštrukcia pozostáva z dvoch základných oktetov (bajtov):
+
+```text
+Oktet 0 (Opkód a Režim):
+ 7   6   5   4   3   2   1   0
++---+---+---+---+---+---+---+---+
+| 0   0   1   0   1 |  SRC  |SZ |
++---+---+---+---+---+---+---+---+
+ \_____ 5 bitov ___/ \_2b._/ \1b/
+
+Oktet 1 (Registrové argumenty):
+ 7   6   5   4   3   2   1   0
++---+---+---+---+---+---+---+---+
+|  Arg1 (R_hi/Dst)  |   Arg2    | 0   0 |
++---+---+---+---+---+---+---+---+
+ \_____ 3 bity _____/ \_ 3 bity _/ \_2b._/
+```
+
+* **Veľkosť dát (`SZ`, bit 0 oktetu 0):**
+  * `0`: Načítanie **1 bajtu** (8 bitov). Spodný bajt cieľového registra prevezme hodnotu, horný bajt sa vynuluje (`{8'b0, data[7:0]}`).
+  * `1`: Načítanie **2 bajtov** (16 bitov / strojové slovo).
+* **Zdroj dát (`SRC`, bity [2:1] oktetu 0):**
+  * `00` (`0`): **Priame dáta (Immediate Data)** — dáta sa nachádzajú v pamäti priamo za kódom inštrukcie (`[PC]`). Čítač inštrukcií `PC` sa automaticky posunie o $1$ alebo $2$ bajty.
+  * `01` (`1`): **Priamy ukazovateľ (Immediate Pointer)** — bezprostredne za inštrukciou je uložená absolútna adresa (`[[PC]]`), z ktorej sa vykoná výber dát z pamäte.
+  * `10` (`2`): **Ukazovateľ `PTREG`** — čítanie prebieha podľa 24-bitovej systémovej adresy z registra `PTREG`. Pri aktívnom príznaku autoincrementu `FREG.AIP` (bit 12) sa `PTREG` automaticky zvýši o veľkosť výberu (+1 alebo +2), čo umožňuje prúdové načítanie polí.
+  * `11` (`3`): **Dvojica používateľských registrov (24-bitové adresovanie cez 32-bitové číslo)** — používateľ zvolí dva 16-bitové registre (`Arg1` a `Arg2`), ktoré spolu vytvárajú 32-bitové zložené číslo, z ktorého sa v praxi adresovania využíva dolných 24 bitov:
+    * **`Arg1` (bity [7:5] oktetu 1):** nesie **horné bity adresy**. Tento register je zároveň cieľovým registrom určenia: po výbere dát z pamäte sa horné bity adresy v ňom **prepíšu načítanými dátami**!
+    * **`Arg2` (bity [4:2] oktetu 1):** nesie **dolných 16 bitov adresy** a uchováva si svoju pôvodnú hodnotu.
+    * Fyzická 24-bitová adresa sa syntetizuje hardvérovo:
+      $$\text{EA}[23:0] = ((\text{Arg1}[15:0] \ll 16) \mid \text{Arg2}[15:0]) \;\&\; \text{0xFFFFFF}$$
+    * Načítané dáta sa uložia do `Arg1`.
+
+---
+
+## 📤 Architektúra inštrukcie LRM (Load Register to Memory)
+
+Inštrukcia **`LRM`** (`Opcode 00110` / `0x06`) zabezpečuje symetrické ukladanie dát z registrov procesora do systémovej pamäte alebo externého adresného priestoru. Zničenie (prepísanie) dát alebo kódu na cieľovej adrese je plnou zodpovednosťou programátora!
+
+### 1. Bitový formát inštrukcie
+Inštrukcia pozostáva z dvoch základných oktetov (bajtov):
+
+```text
+Oktet 0 (Opkód a Režim cieľa):
+ 7   6   5   4   3   2   1   0
++---+---+---+---+---+---+---+---+
+| 0   0   1   1   0 |  DST  |SZ |
++---+---+---+---+---+---+---+---+
+ \_____ 5 bitov ___/ \_2b._/ \1b/
+
+Oktet 1 (Registrové argumenty):
+ 7   6   5   4   3   2   1   0
++---+---+---+---+---+---+---+---+
+|  Arg1 (Rs/R_hi)   |   Arg2    | 0   0 |
++---+---+---+---+---+---+---+---+
+ \_____ 3 bity _____/ \_ 3 bity _/ \_2b._/
+```
+
+* **Veľkosť ukladaných dát (`SZ`, bit 0 oktetu 0):**
+  * `0`: Zápis **1 bajtu** (8 bitov). Do pamäte sa zapíše dolný bajt zdrojového registra (`Rs[7:0]`).
+  * `1`: Zápis **2 bajtov** (16 bitov / strojové slovo `Rs[15:0]`).
+* **Režim cieľa (`DST`, bity [2:1] oktetu 0):**
+  * `00` (`0`): **Priamo do pamäte / kódu za inštrukciou (Inline Memory)** — dáta sa zapisujú priamo do oblasti pamäte nasledujúcej bezprostredne za opkódom inštrukcie (`[PC]`). Čítač inštrukcií `PC` sa automaticky posunie o $1$ alebo $2$ bajty. Slúži na samomodifikujúci sa kód a inicializáciu vložených vyrovnávacích pamätí. Prepísanie inštrukcií je na zodpovednosti programátora.
+  * `01` (`1`): **Priamy ukazovateľ (Immediate Pointer)** — hneď za inštrukciou sa nachádza 16-bitová absolútna adresa (`[[PC]]`), na ktorú sa zapíše hodnota z `Arg1` (`Rs`).
+  * `10` (`2`): **Ukazovateľ `PTREG`** — zápis prebieha podľa 24-bitovej fyzickej adresy z registra `PTREG`. Pri aktívnom príznaku autoinkrementu `FREG.AIP` (bit 12) sa `PTREG` automaticky zvýši o veľkosť dát (+1 alebo +2), čo zabezpečuje prúdový zápis polí.
+  * `11` (`3`): **Dvojica používateľských registrov (24-bitové adresovanie cez 32-bitové číslo)**:
+    * **`Arg1` (bity [7:5] oktetu 1):** nesie **horné bity adresy** a súčasne je **zdrojom dát** (`Rs`), ktoré sa zapisujú do pamäte.
+    * **`Arg2` (bity [4:2] oktetu 1):** nesie **dolných 16 bitov adresy** (`Rs_lo`).
+    * Fyzická 24-bitová adresa cieľa sa generuje hardvérovo:
+      $$\text{EA}[23:0] = ((\text{Arg1}[15:0] \ll 16) \mid \text{Arg2}[15:0]) \;\&\; \text{0xFFFFFF}$$
+    * Zápis hodnoty `Arg1` sa vykoná na adresu $\text{EA}$. Prepísanie cieľovej pamäte plne riadi programátor.
+
+---
+
+## 🔄 Architektúra inštrukcie LRR (Load Register to Register)
+
+Inštrukcia **`LRR`** (`Opcode 00111` / `0x07`) predstavuje základnú bleskovú inštrukciu medziregistrového presunu dát medzi registrami všeobecného určenia (`R0`–`R7`) z bodu B (zdroj `Rs`) do bodu A (príjemca `Rd`).
+
+### 1. Bitový formát inštrukcie
+Inštrukcia pozostáva z dvoch oktetov (16 bitov):
+
+```text
+Oktet 0 (Opkód a Rezerva):
+ 7   6   5   4   3   2   1   0
++---+---+---+---+---+---+---+---+
+| 0   0   1   1   1 | 0   0   0 |
++---+---+---+---+---+---+---+---+
+ \_____ 5 bitov ___/ \_ 3 bity _/
+
+Oktet 1 (Registrové argumenty):
+ 7   6   5   4   3   2   1   0
++---+---+---+---+---+---+---+---+
+|  Arg1 (Rd, KAM)   | Arg2 (Rs, ODKIAĽ)| 0   0 |
++---+---+---+---+---+---+---+---+
+ \_____ 3 bity _____/ \_ 3 bity ______/ \_2b._/
+```
+
+* **Cieľový register (`Arg1` / `Rd`, bity [7:5] oktetu 1):** bod A (kam sa zapisujú dáta).
+* **Zdrojový register (`Arg2` / `Rs`, bity [4:2] oktetu 1):** bod B (odkiaľ sa čítajú dáta).
+* **Sémantika operácie:**
+  $$\text{Rd} \leftarrow \text{Rs}$$
+  Napríklad: `LRR R0, R1` $\implies R0 = R1$ (obsah registra `R1` sa skopíruje do `R0`).
+* **Hardvérová implementácia:** Dáta prechádzajú cez priamu premosťovaciu multiplexorovú cestu `MUX 1` $\to$ `MUX 2` priamo do `DEST-DMUX` za 1 takt bez zaťaženia ALU. Príznaky registra `FREG` zostávajú nedotknuté.
+
+---
+
+## 💻 Referenčná príručka inštrukcií pre programátora (ISA Reference)
+
+Architektúra LIM M2 dodržiava prísnu sémantiku **«Cieľ na prvom mieste» (Destination First)**. Vo všetkých viacooperandových inštrukciách je prvým argumentom (`arg0`) vždy cieľový register, do ktorého sa ukladá výsledok operácie.
+
+V assembleri a v budúcom kompilátore sú univerzálne registre označené ako `R0`, `R1`, `R2`, `R3`, `R4`, `R5`, `R6`, `R7`.
+
+### 1. Presun dát a pamäť
+| Mnemotechnika | Signatúra programátora | Príklad kódu | Popis |
+|---|---|---|---|
+| **`LRR`** | `LRR arg0(REG), arg1(REG) : arg0 = arg1` | `LRR R0, R1 ; R0 = R1` | Rýchle kopírovanie medzi registrami (bez zmeny príznakov). |
+| **`LMR`** | `LMR arg0(REG), arg1(SRC_MODE) : arg0 = MEM[...]` | `LMR R0, R1, R2 ; R0 = MEM[{R0, R2}]` | Načítanie z pamäte do registra (Immediate, Pointer, PTREG alebo 24-bit pár registrov). |
+| **`LRM`** | `LRM arg0(REG), arg1(DST_MODE) : MEM[...] = arg0` | `LRM R0, R1 ; MEM[{R0, R1}] = R0` | Uloženie hodnoty registra do pamäte (Inline, Pointer, PTREG alebo pár registrov). |
+| **`PUSH`** | `PUSH arg0(REG) : SREG -= 2, MEM[SREG] = arg0` | `PUSH R0 ; Uloženie R0 do zásobníka` | Dekrement ukazovateľa zásobníka SREG o 2 a zápis slova. |
+| **`POP`** | `POP arg0(REG) : arg0 = MEM[SREG], SREG += 2` | `POP R0 ; Výber slova zo zásobníka do R0` | Čítanie slova zo zásobníka do registra a inkrement SREG o 2. |
+
+### 2. Aritmetika a porovnanie
+| Mnemotechnika | Signatúra programátora | Príklad kódu | Popis |
+|---|---|---|---|
+| **`ADD`** | `ADD arg0(REG), arg1(REG), arg2(REG) : arg0 = arg1 + arg2` | `ADD R0, R1, R2 ; R0 = R1 + R2` | Sčítanie dvoch 16-bitových čísel s aktualizáciou príznakov ZF, CF, OF. |
+| **`SUB`** | `SUB arg0(REG), arg1(REG), arg2(REG) : arg0 = arg1 - arg2` | `SUB R0, R1, R2 ; R0 = R1 - R2` | Odčítanie operandov s nastavením príznakov výpožičky/nuly. |
+| **`MUL`** | `MUL arg0(REG), arg1(REG), arg2(REG) : arg0 = arg1 * arg2` | `MUL R0, R1, R2 ; R0 = R1 * R2` | Bezznamienkové násobenie 16x16 bitov (vyššie bity vo FREG/DBIT). |
+| **`DIV`** | `DIV arg0(REG), arg1(REG), arg2(REG) : arg0 = arg1 / arg2` | `DIV R0, R1, R2 ; R0 = R1 / R2` | Celočíselné delenie (delenie nulou vyvolá výnimku VEC 0). |
+| **`INC`** | `INC arg0(REG) : arg0 = arg0 + 1` | `INC R0 ; R0 = R0 + 1` | Rýchly inkrement počítadla registra o jednotku. |
+| **`DEC`** | `DEC arg0(REG) : arg0 = arg0 - 1` | `DEC R0 ; R0 = R0 - 1` | Rýchly dekrement hodnoty registra o jednotku. |
+| **`CMP`** | `CMP arg0(REG), arg1(REG) : compare(arg0, arg1)` | `CMP R0, R1 ; Porovnanie R0 a R1` | Hardvérové porovnanie bez zmeny dát. Nastavuje `FREG.CMP` (`01`: R0<R1, `10`: R0==R1, `11`: R0>R1; `00`: reset/chyba) a príznaky ZF, CF. |
+
+### 3. Bitová logika
+| Mnemotechnika | Signatúra programátora | Príklad kódu | Popis |
+|---|---|---|---|
+| **`AND`** | `AND arg0(REG), arg1(REG) : arg0 = arg0 & arg1` | `AND R0, R1 ; R0 = R0 & R1` | Bitový logický súčin (2 operandy). |
+| **`OR`** | `OR arg0(REG), arg1(REG) : arg0 = arg0 \| arg1` | `OR R0, R1 ; R0 = R0 \| R1` | Bitový logický súčet (2 operandy). |
+| **`XOR`** | `XOR arg0(REG), arg1(REG) : arg0 = arg0 ^ arg1` | `XOR R0, R1 ; R0 = R0 ^ R1` | Bitová non-ekvivalencia (2 operandy, nulovanie pri R0==R1). |
+| **`NOT`** | `NOT arg0(REG) : arg0 = ~arg0` | `NOT R0 ; R0 = ~R0` | 1-bajtová inštrukcia (`[7:3]` opkód, `[2:0]` Rd): bitová inverzia. |
+| **`NAND`** | `NAND arg0(REG), arg1(REG) : arg0 = ~(arg0 & arg1)` | `NAND R0, R1 ; R0 = ~(R0 & R1)` | Bitový zápor súčinu NAND (2 operandy). |
+| **`NOR`** | `NOR arg0(REG), arg1(REG) : arg0 = ~(arg0 \| arg1)` | `NOR R0, R1 ; R0 = ~(R0 \| R1)` | Bitový zápor súčtu NOR (2 operandy). |
+| **`XNOR`** | `XNOR arg0(REG), arg1(REG) : arg0 = ~(arg0 ^ arg1)` | `XNOR R0, R1 ; R0 = ~(R0 ^ R1)` | Bitová ekvivalencia (2 operandy). |
+
+### 4. Bitové posuny (s podporou SMOD a DBIT)
+| Mnemotechnika | Signatúra programátora | Príklad kódu | Popis |
+|---|---|---|---|
+| **`SHL`** | `SHL arg0(REG), arg1(REG), arg2(IMM\|REG) : arg0 = arg1 << arg2` | `SHL R0, R1, 1 ; Posun R1 doľava` | Logický/kruhový posun doľava. Pri zapnutom `SMOD` vysunutý bit prechádza do `DBIT`, vstupný sa berie z `DBIT`. |
+| **`SHR`** | `SHR arg0(REG), arg1(REG), arg2(IMM\|REG) : arg0 = arg1 >> arg2` | `SHR R0, R1, 1 ; Posun R1 doprava` | Logický/kruhový posun doprava. Pri vypnutom `SMOD` sa dopĺňajú nuly. |
+
+### 5. Skoky a podprogramy
+| Mnemotechnika | Signatúra programátora | Príklad kódu | Popis |
+|---|---|---|---|
+| **`JMP`** | `JMP target(IMM\|REG) : PC = target` | `JMP R0 ; Bezpodmienečný skok` | Bezpodmienečný skok na adresu v registri alebo konštante. |
+| **`JZ`** | `JZ target(IMM\|REG) : if FREG.ZF == 1 then PC = target` | `JZ loop_end ; Skok ak ZF == 1` | Podmienený skok pri nulovom výsledku predchádzajúcej operácie. |
+| **`CALL`** | `CALL target(IMM\|REG) : SREG -= 2, MEM[SREG] = PC, PC = target` | `CALL func ; Volanie podprogramu` | Uloženie návratovej adresy do zásobníka a skok na procedúru. |
+| **`RET`** | `RET : PC = MEM[SREG], SREG += 2` | `RET ; Návrat z procedúry` | Vybratie návratovej adresy zo zásobníka do PC. |
+
+### 6. Riadenie, prerušenia a systémové registre
+| Mnemotechnika | Signatúra programátora | Príklad kódu | Popis |
+|---|---|---|---|
+| **`NOP`** | `NOP : No Operation` | `NOP ; Vynechanie taktu` | Prázdny takt procesora. |
+| **`HALT`** | `HALT : Zastavenie jadra do prerušenia` | `HALT ; Čakanie na hardvérovú udalosť` | Prechod jadra do úsporného režimu čakania na prerušenie. |
+| **`CLI`** | `CLI : FREG.MIE = 0` | `CLI ; Zákaz prerušení` | Atomické nulovanie príznaku povolenia prerušení (kritická sekcia). |
+| **`STI`** | `STI : FREG.MIE = 1` | `STI ; Povolenie prerušení` | Atomické nastavenie príznaku povolenia prerušení. |
+| **`INTR`** | `INTR vec(IMM) : Hardvérové/softvérové prerušenie` | `INTR 4 ; Softvérové prerušenie VEC 4` | Vyvolanie vektora prerušenia s uložením PC a FREG do zásobníka. |
+| **`RETI`** | `RETI : FREG = MEM[SREG], PC = MEM[SREG+2], SREG += 4` | `RETI ; Návrat z obsluhy` | Atomické obnovenie FREG (vynulovanie INTR na 0) a PC zo zásobníka. |
+| **`MSP`** | `MSP sreg, [op], args : práca so špeciálnymi registrami` | `MSP FREG, OR, R0 ; FREG = FREG \| R0` | Priamy zápis FREG/PTREG, bitové masky FREG (AND/OR/XOR/XNOR) alebo lokálny posun PTREG (ADD/SUB). |
 
 ---
 

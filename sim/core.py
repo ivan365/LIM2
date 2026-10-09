@@ -268,6 +268,8 @@ class RegisterBank:
 
     def get(self, key: Union[str, int]) -> int:
         """Получить значение регистра."""
+        if hasattr(key, "__index__") and not isinstance(key, (str, bool)):
+            key = int(key)
         if isinstance(key, int):
             if 0 <= key < len(self._indexed_names):
                 return self.get(self._indexed_names[key])
@@ -284,6 +286,8 @@ class RegisterBank:
 
     def set(self, key: Union[str, int], value: int):
         """Записать значение в регистр (автоматически маскируется)."""
+        if hasattr(key, "__index__") and not isinstance(key, (str, bool)):
+            key = int(key)
         if isinstance(key, int):
             if 0 <= key < len(self._indexed_names):
                 self.set(self._indexed_names[key], value)

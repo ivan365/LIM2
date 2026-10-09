@@ -148,7 +148,7 @@ A defining cornerstone of the LIM M2 datapath is the \textbf{total elimination o
 
 \begin{limnote}{Instruction Code Allocation}
 The LIM M2 instruction set architecture utilizes a contiguous 5-bit primary opcode space:
-\texttt{NOP}=0, \texttt{ADD}=1, \ldots, \texttt{CSRM}=26. Opcode values 27--31 are reserved for next-generation hardware extensions.
+\texttt{NOP}=0, \texttt{ADD}=1, \ldots, \texttt{MSP}=26. Opcode values 27--31 are reserved for next-generation hardware extensions.
 \end{limnote}
 
 \subsection{Notational Conventions}
@@ -164,6 +164,16 @@ cfg & 3-bit operational mode configuration field \\
 ZF, CF, OF & Hardware status flags (Zero, Carry, and Overflow) within \reg{FREG} \\
 \bottomrule
 \end{tabularx}
+
+\subsection{Unified Instruction Syntax Philosophy}
+The LIM M2 processor architecture strictly enforces an orthogonal operand convention: \textbf{the destination operand (target, "where to") is always declared first, followed by input source operands ("where from")}. This ensures clean, deterministic code structure across all instructions:
+\begin{itemize}
+  \item \textbf{Arithmetic Operations (3 Operands):} \texttt{ADD Rd, Rs1, Rs2} denotes $\text{Rd} \leftarrow \text{Rs1} + \text{Rs2}$ (e.g., \texttt{ADD R0, R1, R2} computes $R0 = R1 + R2$); similarly for \texttt{SUB}, \texttt{MUL}, \texttt{DIV}.
+  \item \textbf{Logic Operations (2 Operands):} \texttt{AND Rd, Rs} denotes $\text{Rd} \leftarrow \text{Rd} \ \text{AND}\ \text{Rs}$ (e.g., \texttt{AND R0, R1} computes $R0 = R0 \ \& \ R1$); similarly for \texttt{OR}, \texttt{NAND}, \texttt{NOR}, \texttt{XOR}, \texttt{XNOR}.
+  \item \textbf{Bitwise Inversion NOT (1 Operand, 1-byte instruction):} \texttt{NOT Rd} denotes $\text{Rd} \leftarrow \sim\text{Rd}$ (e.g., \texttt{NOT R0} computes $R0 = \sim R0$). Encoded in exactly 1 byte (\texttt{[7:3]} opcode, \texttt{[2:0]} Rd), no second byte is fetched from memory.
+  \item \textbf{Register-to-Register Transfers:} \texttt{LRR Rd, Rs} executes a direct point-to-point copy from source (point B, \reg{Rs}) to destination (point A, \reg{Rd}): $\text{Rd} \leftarrow \text{Rs}$ (e.g., \texttt{LRR R0, R1} computes $R0 = R1$).
+  \item \textbf{Memory Loads (LMR):} the primary register argument \reg{Rd} designates the processor register receiving loaded data.
+\end{itemize}
 
 \section{Processor Overview}
 The \textbf{LIM M2} is a versatile, high-throughput 16-bit microprogrammed processor engineered for integer-intensive computation. Architectural highlights include:
@@ -389,7 +399,7 @@ Bit & Mnemonic & Functional Description \\
 1    & CF   & Carry Flag: Captures arithmetic carry/borrow out of the most significant bit. \\
 2    & OF   & Overflow Flag: Two's complement signed overflow indicator. \\
 3    & EM   & Error Math: Hardware trap indicator for mathematical faults (e.g., divide-by-zero). \\
-4--5 & CMP  & Compare Result: Two-bit hardware comparator status ($<$, $=$, $>$). \\
+4--5 & CMP  & Compare Result: Hardware comparator status (00: reset/none/error, 01: less, 10: equal, 11: greater). \\
 6--7 & CLK  & Clock Mode: Frequency prescaler and core clock domain configuration. \\
 8    & PIE  & Program Interrupt Enable: Master mask for software interrupts. \\
 9    & MIE  & Master Interrupt Enable: Hardware external interrupt enable. \\
@@ -434,8 +444,8 @@ No. & Code & Mnemonic & Class & Functional Summary \\
 2  & 00010 & SUB  & Arithmetic  & Subtraction with automatic multi-word borrow chaining \\
 3  & 00011 & MUL  & Arithmetic  & Integer multiplication with upper word residual latching \\
 4  & 00100 & DIV  & Arithmetic  & Integer division with remainder latched in ALU residual \\
-5  & 00101 & LMR  & Memory      & Load memory word into register \\
-6  & 00110 & LRM  & Memory      & Store register word into memory \\
+5  & 00101 & LMR  & Memory      & Load byte/word into register (src 0--3, size 8/16-bit) \\
+6  & 00110 & LRM  & Memory      & Store register byte/word into memory (dst 0--3, size 8/16-bit) \\
 7  & 00111 & LRR  & Transfer    & Low-latency register-to-register copy via bypass MUX \\
 8  & 01000 & CMP  & Compare     & Arithmetic compare without modifying operand registers \\
 9  & 01001 & JMP  & Branch      & Unconditional branch (direct, indirect, 24-bit pointer) \\
@@ -455,7 +465,7 @@ No. & Code & Mnemonic & Class & Functional Summary \\
 23 & 10111 & POP  & Stack       & Pop word from execution stack into destination \\
 24 & 11000 & BSL  & Shift       & Barrel shift left with configurable fill \\
 25 & 11001 & BSR  & Shift       & Barrel shift right with discarded bit capture \\
-26 & 11010 & CSRM & System      & Privileged control and status register access \\
+26 & 11010 & MSP  & System      & Manage special registers (FREG, PTREG) \\
 27 & 11011 & RSV27 & Reserved   & Reserved for vector/SIMD processing extensions \\
 28 & 11100 & RSV28 & Reserved   & Reserved for extended addressing modes \\
 29 & 11101 & RSV29 & Reserved   & Reserved for floating-point coprocessor \\
@@ -468,64 +478,244 @@ No. & Code & Mnemonic & Class & Functional Summary \\
 \section{Detailed Instruction Specifications}
 The following pages detail the formal execution profiles for all 32 opcode allocations.
 
-\InstructionPage{NOP}{00000}{Control}{No Operation and Arithmetic Chain Flush}{%
-PC <- PC + instruction\_length \\
-ALU\_RESIDUAL <- 0 \\
-FREG.CF <- 0 \\
-FREG.OF <- 0%
+\InstructionPage{NOP}{00000}{Control}{Hardware No-Operation and Pipeline Flush}{%
+\small
+Syntax:    NOP \\
+Operation: PC <- PC + 1, ALU\_RESIDUAL <- 0, FREG.CF <- 0, FREG.OF <- 0 \\[2pt]
+Example:   NOP              ; Flush ALU carry chain, align cycles
 }{No operands required; \field{cfg} field reserved for delay calibration.}{Clears carry (CF), overflow (OF), and borrow tracking flags; preserves other flags.}{Performs pipeline cycle alignment and flushes the internal ALU residual accumulator, terminating any chained multi-word carry/borrow sequence before starting new independent calculations.}
 \InstructionPage{ADD}{00001}{Arithmetic}{Addition with Automatic Multi-Word Carry Chaining}{%
-sum\_full <- srcA + srcB + ALU\_RESIDUAL \\
-dst <- sum\_full[15:0] \\
-ALU\_RESIDUAL <- (sum\_full > 0xFFFF ? 1 : 0)%
+\small
+Syntax:    ADD arg0(REG), arg1(REG), arg2(REG) : arg0 = arg1 + arg2 \\
+Operation: sum <- arg1 + arg2 + ALU\_RESIDUAL \\
+           arg0 <- sum[15:0], ALU\_RESIDUAL <- (sum > 0xFFFF ? 1 : 0) \\[2pt]
+Example:   ADD R0, R1, R2   ; R0 = R1 + R2 (registers R0--R7)
 }{GPRs R0--R7, accumulators ACCA/ACCB, or immediate operands.}{Sets carry flag CF and overflow OF if sum exceeds $2^{16}-1$; updates ZF based on dst.}{Delivers seamless multi-word arithmetic (32, 48, 64+ bits). If the addition exceeds 16 bits ($>2^{16}-1$), the carry (+1) is latched into the internal ALU residual register and automatically added during the subsequent ADD operation without requiring distinct ADC opcodes. The lower 16 bits are deterministically stored in dst. The chain is reset via NOP or overwritten by a new operation.}
 \InstructionPage{SUB}{00010}{Arithmetic}{Subtraction with Automatic Multi-Word Borrow Chaining}{%
-diff\_full <- srcA - srcB - ALU\_RESIDUAL \\
-dst <- diff\_full[15:0] \\
-ALU\_RESIDUAL <- (diff\_full < 0 ? 1 : 0)%
+\small
+Syntax:    SUB arg0(REG), arg1(REG), arg2(REG) : arg0 = arg1 - arg2 \\
+Operation: diff <- arg1 - arg2 - ALU\_RESIDUAL \\
+           arg0 <- diff[15:0], ALU\_RESIDUAL <- (diff < 0 ? 1 : 0) \\[2pt]
+Example:   SUB R0, R1, R2   ; R0 = R1 - R2 (registers R0--R7)
 }{GPRs R0--R7, constants, or accumulators ACCA/ACCB.}{Sets borrow flag (CF) and OF on negative result ($< 0$); updates ZF.}{Enables continuous multi-word subtraction. When a borrow occurs ($< 0$), the borrow ($-1$) is retained in the internal ALU register and automatically subtracted during the next SUB operation. The lower 16-bit word is deterministically preserved in dst. Inserting a NOP breaks the chain for independent subtraction.}
 \InstructionPage{MUL}{00011}{Arithmetic}{Multiplication with Upper Word Residual Retention}{%
-prod <- srcA * srcB \\
-dst <- prod[15:0] \\
-ALU\_RESIDUAL <- prod[31:16]%
+\small
+Syntax:    MUL arg0(REG), arg1(REG), arg2(REG) : arg0 = arg1 * arg2 \\
+Operation: prod <- arg1 * arg2 \\
+           arg0 <- prod[15:0], ALU\_RESIDUAL <- prod[31:16] \\[2pt]
+Example:   MUL R0, R1, R2   ; R0 = R1 * R2 (upper 16 bits in ALU\_RESIDUAL)
 }{GPRs R0--R7, accumulators ACCA/ACCB.}{Updates ZF; sets OF/CF if the upper 16 bits of the product (prod[31:16]) are non-zero.}{For 32-bit products exceeding the 16-bit register width, the low 16 bits are placed into dst, while the upper 16 bits are retained in the internal ALU residual register. In a subsequent addition, this residual is automatically accumulated (hardware MAC support / bigint multiplication). The upper word can also be extracted by adding the register to itself after clearing. Executing NOP flushes the residual register.}
 \InstructionPage{DIV}{00100}{Arithmetic}{Division with Remainder Latched in ALU Residual}{%
-dst <- srcA / srcB \\
-ALU\_RESIDUAL <- srcA \% srcB%
+\small
+Syntax:    DIV arg0(REG), arg1(REG), arg2(REG) : arg0 = arg1 / arg2 \\
+Operation: arg0 <- arg1 / arg2 \\
+           ALU\_RESIDUAL <- arg1 \% arg2 \\[2pt]
+Example:   DIV R0, R1, R2   ; R0 = R1 / R2 (remainder modulo in ALU\_RESIDUAL)
 }{GPRs R0--R7, accumulators ACCA/ACCB.}{Sets EM (Error Math) flag on division by zero without core stall; updates ZF.}{Stores the integer quotient in dst while preserving the remainder (modulo) in the internal ALU residual register for immediate reuse in subsequent operations or clearing via NOP.}
-\InstructionPage{LMR}{00101}{Memory}{Load Word from Memory to Register}{dst\_reg <- MEM[address]}{Addressing: direct, indirect via \reg{PTREG}, or base-plus-offset.}{Preserves all status flags.}{Supports automated hardware pointer increment when AIP is set.}
-\InstructionPage{LRM}{00110}{Memory}{Store Register Word to Memory}{MEM[address] <- src\_reg}{Addressing mode configured via \field{cfg} and pointer register \reg{PTREG}.}{Preserves all status flags.}{Direct transfer from register file to memory bus without intermediate staging.}
-\InstructionPage{LRR}{00111}{Transfer}{Low-Latency Register-to-Register Copy}{dst\_reg <- src\_reg}{Arguments specify source and destination registers.}{Preserves all status flags.}{Routes via the dedicated MUX 1 $\to$ MUX 2 bypass, leaving the ALU unblocked.}
-\InstructionPage{CMP}{01000}{Compare}{Hardware Operand Comparison}{FREG.CMP <- compare(srcA, srcB)}{Register or immediate comparison modes.}{Updates 2-bit FREG.CMP field and flags ZF, CF, OF without modifying registers.}{Enables swift condition evaluation without data corruption.}
-\InstructionPage{JMP}{01001}{Branch}{Unconditional Program Branch}{PC <- target}{Supports 16-bit relative, direct absolute, or full 24-bit jump via \reg{PTREG}.}{Preserves all status flags.}{Atomic reload of the Program Counter in minimal clock cycles.}
-\InstructionPage{JCR}{01010}{Branch}{Conditional Branch on Carry}{if FREG.CF == 1 then PC <- target}{Target specified via relative displacement or absolute address.}{Flags read without modification.}{Foundational primitive for multi-word extended precision arithmetic loops.}
-\InstructionPage{JNZ}{01011}{Branch}{Conditional Branch on Non-Zero}{if FREG.ZF == 0 then PC <- target}{High-efficiency branch for loop counters and iterative structures.}{Preserves all status flags.}{Fast-path condition evaluation in microcode.}
-\InstructionPage{JZ}{01100}{Branch}{Conditional Branch on Zero}{if FREG.ZF == 1 then PC <- target}{Evaluates termination or equality conditions.}{Preserves all status flags.}{Optimized for string matching and search algorithms.}
-\InstructionPage{AND}{01101}{Logic}{Bitwise Logical AND}{dst <- srcA AND srcB}{Register operands or immediate bitmasks.}{Updates Zero Flag (ZF); resets overflow status.}{Essential for bitmask extraction and masking.}
-\InstructionPage{OR}{01110}{Logic}{Bitwise Logical OR}{dst <- srcA OR srcB}{Register operands or bitfield insertion.}{Updates ZF; carry/overflow deterministically cleared.}{Rapid combination of control bitfields.}
-\InstructionPage{NAND}{01111}{Logic}{Bitwise Logical NAND}{dst <- NOT (srcA AND srcB)}{Universal logic primitive.}{Updates ZF.}{Enables compact implementation of custom Boolean functions.}
-\InstructionPage{NOR}{10000}{Logic}{Bitwise Logical NOR}{dst <- NOT (srcA OR srcB)}{Inverted logic primitive.}{Updates ZF.}{Broadens fast bitwise logic transformations.}
-\InstructionPage{NOT}{10001}{Logic}{Bitwise Inversion (One's Complement)}{dst <- NOT src}{High-speed unary inversion.}{Updates ZF.}{Executes in minimal microcycles.}
-\InstructionPage{XOR}{10010}{Logic}{Bitwise Exclusive OR}{dst <- srcA XOR srcB}{Used for bit flipping and rapid register zeroing.}{Updates ZF.}{Foundational for parity, CRC, and cryptographic ciphers.}
-\InstructionPage{XNOR}{10011}{Logic}{Bitwise Equivalence}{dst <- NOT (srcA XOR srcB)}{Bit-by-bit identity testing.}{Updates ZF.}{Fast parallel mask equivalence validation.}
-\InstructionPage{INC}{10100}{Arithmetic}{Atomic Increment by 1}{dst <- src + 1}{Fast loop iterator step.}{Updates ZF, OF; Carry Flag preserved or updated based on \field{cfg}.}{Optimizes array index advancing.}
-\InstructionPage{DEC}{10101}{Arithmetic}{Atomic Decrement by 1}{dst <- src - 1}{Fast downward counter step.}{Updates ZF, OF.}{Compact loop termination construct.}
+\InstructionPage{LMR}{00101}{Memory}{Load External Data and Memory into Register}{%
+\small
+Syntax:    LMR arg0(REG), <SRC\_MODE> : arg0 = MEM[...] \\
+Modes:     SRC=0: LMR R0, [PC+]          ; Imm Data (1--2 bytes) \\
+           SRC=1: LMR R0, [[PC+]]        ; Imm Pointer \\
+           SRC=2: LMR R0, [PTREG]        ; Pointer reg (AIP auto-inc) \\
+           SRC=3: LMR R0(R\_hi), R1(R\_lo) ; 24-bit composite address \\
+Operation: arg0 <- MEM[EA] (upper address bits in R0 overwritten) \\[2pt]
+Example:   LMR R0, R1       ; EA=(R0<<16)|R1, load MEM[EA] into R0
+}{%
+\textbf{Octet 0:} bit $[8]$ (\field{SZ}) specifies operand width ($0 = 1$ byte, $1 = 2$ bytes / word); bits $[10:9]$ (\field{SRC}) select the data source ($0$ --- immediate literal following instruction, $1$ --- immediate pointer following instruction, $2$ --- indirect via 24-bit pointer register \reg{PTREG}, $3$ --- indirect via register pair).\\
+\textbf{Octet 1:} bits $[7:5]$ select register \reg{Arg1} (\reg{R\_hi} / destination), bits $[4:2]$ select register \reg{Arg2} (\reg{R\_lo}). Under $\field{SRC} = 3$, the user specifies two 16-bit registers forming a 32-bit number, of which 24 bits are used in practice for physical addressing: \reg{Arg1} holds upper address bits and \reg{Arg2} holds lower 16 address bits. Notably, \reg{Arg1} also acts as the destination register: upon memory retrieval, the upper address bits in \reg{Arg1} are overwritten with the loaded data.%
+}{All flags in status register \reg{FREG} are preserved without alteration.}{%
+The \texttt{LMR} instruction is the fundamental ingestion pathway bringing external data and memory into the LIM M2 general-purpose register file ($R0$--$R7$). The architecture unifies four orthogonal modes with native 24-bit addressing:\\
+1. Under $\field{SRC} = 0$, immediate literals ($1$ or $2$ bytes) are fetched directly from the instruction stream with automated \reg{PC} advancement.\\
+2. Under $\field{SRC} = 1$, an immediate pointer is read from code space, followed by data dereferencing.\\
+3. Under $\field{SRC} = 2$, memory is addressed via the dedicated 24-bit pointer register \reg{PTREG}. If the auto-increment flag \texttt{FREG.AIP} (bit 12) is active, \reg{PTREG} automatically advances by $+1$ or $+2$ in hardware, enabling single-cycle streaming array ingestion without software loop overhead.\\
+4. Under $\field{SRC} = 3$, the user selects two 16-bit registers (\reg{Arg1} and \reg{Arg2}) forming a 32-bit value, of which 24 bits are used for memory addressing. The user specifies that the upper address bits are placed in \reg{Arg1} and the lower 16 bits in \reg{Arg2}. In this mode, register \reg{Arg1} (which held the upper address bits) also serves as the destination register: the retrieved data is saved into \reg{Arg1}, overwriting its previous high-address value, while \reg{Arg2} continues to retain the lower 16 address bits.%
+}
+\InstructionPage{LRM}{00110}{Memory}{Store Register Data into Memory and External Devices}{%
+\small
+Syntax:    LRM arg0(REG), <DST\_MODE> : MEM[...] = arg0 \\
+Modes:     DST=0: LRM R0, [PC+]          ; Inline code memory \\
+           DST=1: LRM R0, [[PC+]]        ; Imm Pointer \\
+           DST=2: LRM R0, [PTREG]        ; Pointer reg (AIP auto-inc) \\
+           DST=3: LRM R0(R\_hi), R1(R\_lo) ; 24-bit composite address \\
+Operation: MEM[EA] <- arg0[15:0] (or low byte if SZ=0) \\[2pt]
+Example:   LRM R0, R1       ; EA=(R0<<16)|R1, store R0 into MEM[EA]
+}{%
+\textbf{Octet 0:} bit $[8]$ (\field{SZ}) specifies operand width ($0 = 1$ byte, $1 = 2$ bytes / word); bits $[10:9]$ (\field{DST}) select the destination target ($0$ --- inline memory directly following instruction, $1$ --- immediate pointer following instruction, $2$ --- indirect via 24-bit pointer register \reg{PTREG}, $3$ --- indirect via register pair).\\
+\textbf{Octet 1:} bits $[7:5]$ select source register \reg{Arg1} (\reg{Rs} / \reg{R\_hi}), bits $[4:2]$ select register \reg{Arg2} (\reg{R\_lo}). Under $\field{DST} = 3$, two registers form a 32-bit composite word of which 24 bits are used for physical addressing (\reg{Arg1} holds upper address bits and source data, \reg{Arg2} holds lower 16 bits). Overwriting existing data at the destination is the programmer's responsibility.%
+}{All flags in status register \reg{FREG} are preserved without alteration.}{%
+The \texttt{LRM} instruction is the fundamental egress pathway transferring register data from the LIM M2 general-purpose register file ($R0$--$R7$) to memory and memory-mapped I/O peripherals. The architecture unifies four orthogonal addressing modes:\\
+1. Under $\field{DST} = 0$, the processor stores $1$ or $2$ bytes directly into memory following the instruction (\reg{PC}) with automated \reg{PC} advancement. This mode enables self-modifying routines and inline buffer writes; data destruction at the target address is the programmer's responsibility.\\
+2. Under $\field{DST} = 1$, an immediate 16-bit pointer is read from code space, and data is stored to that dereferenced address.\\
+3. Under $\field{DST} = 2$, memory is addressed via the dedicated 24-bit pointer register \reg{PTREG}. If the auto-increment flag \texttt{FREG.AIP} (bit 12) is active, \reg{PTREG} automatically advances by $+1$ or $+2$ in hardware, enabling single-cycle streaming array transfers without loop overhead.\\
+4. Under $\field{DST} = 3$, two 16-bit registers are paired: \reg{Arg1} and \reg{Arg2} form a 32-bit composite integer, whose lower 24 bits specify the physical address ($\text{Addr}[23:0]$). Data from \reg{Arg1} is stored to the synthesized address, granting direct write access across the full 16 MB address space.%
+}
+\InstructionPage{LRR}{00111}{Transfer}{Register-to-Register Transfer (Copy from point B to point A)}{%
+\small
+Syntax:    LRR arg0(REG), arg1(REG) : arg0 = arg1 \\
+Operation: arg0 <- arg1 (direct copy from source to destination) \\[2pt]
+Example:   LRR R0, R1       ; R0 = R1 (value of R1 copied to R0)
+}{%
+\textbf{Octet 0:} opcode $00111_2$ (\texttt{0x07}), bits $[10:8]$ reserved ($000_2$).\\
+\textbf{Octet 1:} bits $[7:5]$ define destination register \reg{Arg1} (\reg{Rd}, point A, receiving data); bits $[4:2]$ define source register \reg{Arg2} (\reg{Rs}, point B, providing data); bits $[1:0]$ set to $00_2$. When executed, \reg{Rs} is copied to \reg{Rd} in 1 microcycle.%
+}{Preserves all status flags.}{%
+The \texttt{LRR} instruction provides the foundational register-to-register move mechanism across general-purpose registers ($R0$--$R7$). It executes a direct transfer from source (point B) to destination (point A) via the dedicated hardware \textbf{MUX 1} $\to$ \textbf{MUX 2} bypass datapath without stalling the ALU and without affecting \reg{FREG} flags.%
+}
+\InstructionPage{CMP}{01000}{Compare}{Hardware Operand Comparison}{%
+\small
+Syntax:    CMP arg0(REG), arg1(REG) : compare(arg0, arg1) \\
+Operation: if arg0 < arg1 then FREG.CMP <- 01b (less) \\
+           if arg0 == arg1 then FREG.CMP <- 10b (equal) \\
+           if arg0 > arg1 then FREG.CMP <- 11b (greater) \\
+           (state 00b --- initial reset / no comparison / error) \\[2pt]
+Example:   CMP R0, R1       ; 01: R0<R1, 10: R0==R1, 11: R0>R1 (00: reset/error)
+}{Compares registers non-destructively.}{Updates 2-bit FREG.CMP field (bits [5:4]) as well as ZF, CF, OF flags.}{Enables swift condition evaluation without data corruption.}
+\InstructionPage{JMP}{01001}{Branch}{Unconditional Program Branch}{%
+\small
+Syntax:    JMP target(IMM|REG) : PC = target \\
+Operation: PC <- target \\[2pt]
+Example:   JMP R0           ; Unconditional jump to address in R0
+}{Supports 16-bit relative, direct absolute, or full 24-bit jump via \reg{PTREG}.}{Preserves all status flags.}{Atomic reload of the Program Counter in minimal clock cycles.}
+\InstructionPage{JCR}{01010}{Branch}{Conditional Branch on Carry}{%
+\small
+Syntax:    JCR target(IMM|REG) : if FREG.CF == 1 then PC = target \\
+Operation: if FREG.CF == 1 then PC <- target \\[2pt]
+Example:   JCR R2           ; Jump to address R2 if Carry Flag is set
+}{Target specified via relative displacement or absolute address.}{Flags read without modification.}{Foundational primitive for multi-word extended precision arithmetic loops.}
+\InstructionPage{JNZ}{01011}{Branch}{Conditional Branch on Non-Zero}{%
+\small
+Syntax:    JNZ target(IMM|REG) : if FREG.ZF == 0 then PC = target \\
+Operation: if FREG.ZF == 0 then PC <- target \\[2pt]
+Example:   JNZ R3           ; Jump to address R3 if ZF == 0 (non-zero)
+}{High-efficiency branch for loop counters and iterative structures.}{Preserves all status flags.}{Fast-path condition evaluation in microcode.}
+\InstructionPage{JZ}{01100}{Branch}{Conditional Branch on Zero}{%
+\small
+Syntax:    JZ target(IMM|REG) : if FREG.ZF == 1 then PC = target \\
+Operation: if FREG.ZF == 1 then PC <- target \\[2pt]
+Example:   JZ R4            ; Jump to address R4 if ZF == 1 (zero)
+}{Evaluates termination or equality conditions.}{Preserves all status flags.}{Optimized for string matching and search algorithms.}
+\InstructionPage{AND}{01101}{Logic}{Bitwise Logical AND}{%
+\small
+Syntax:    AND arg0(REG), arg1(REG) : arg0 = arg0 \& arg1 \\
+Operation: arg0 <- arg0 AND arg1 \\[2pt]
+Example:   AND R0, R1   ; R0 = R0 \& R1
+}{Register operands (2 operands).}{Updates Zero Flag (ZF); resets overflow status.}{Essential for bitmask extraction and masking.}
+\InstructionPage{OR}{01110}{Logic}{Bitwise Logical OR}{%
+\small
+Syntax:    OR arg0(REG), arg1(REG) : arg0 = arg0 | arg1 \\
+Operation: arg0 <- arg0 OR arg1 \\[2pt]
+Example:   OR R0, R1    ; R0 = R0 | R1
+}{Register operands (2 operands).}{Updates ZF; carry/overflow deterministically cleared.}{Rapid combination of control bitfields.}
+\InstructionPage{NAND}{01111}{Logic}{Bitwise Logical NAND}{%
+\small
+Syntax:    NAND arg0(REG), arg1(REG) : arg0 = \textasciitilde(arg0 \& arg1) \\
+Operation: arg0 <- NOT (arg0 AND arg1) \\[2pt]
+Example:   NAND R0, R1  ; R0 = \textasciitilde(R0 \& R1)
+}{Universal logic primitive (2 operands).}{Updates ZF.}{Enables compact implementation of custom Boolean functions.}
+\InstructionPage{NOR}{10000}{Logic}{Bitwise Logical NOR}{%
+\small
+Syntax:    NOR arg0(REG), arg1(REG) : arg0 = \textasciitilde(arg0 | arg1) \\
+Operation: arg0 <- NOT (arg0 OR arg1) \\[2pt]
+Example:   NOR R0, R1   ; R0 = \textasciitilde(R0 | R1)
+}{Inverted logic primitive (2 operands).}{Updates ZF.}{Broadens fast bitwise logic transformations.}
+\InstructionPage{NOT}{10001}{Logic}{Bitwise Inversion (One's Complement)}{%
+\small
+Syntax:    NOT arg0(REG) : arg0 = \textasciitilde arg0 \\
+Operation: arg0 <- NOT arg0 \\[2pt]
+Example:   NOT R0       ; R0 = \textasciitilde R0 (1-byte instruction)
+}{Single-byte instruction ([7:3] opcode 10001, [2:0] Rd). No second byte fetched from memory.}{Updates ZF.}{Executes in minimal microcycles without fetching a second byte.}
+\InstructionPage{XOR}{10010}{Logic}{Bitwise Exclusive OR}{%
+\small
+Syntax:    XOR arg0(REG), arg1(REG) : arg0 = arg0 \textasciicircum\ arg1 \\
+Operation: arg0 <- arg0 XOR arg1 \\[2pt]
+Example:   XOR R0, R1   ; R0 = R0 \textasciicircum\ R1 (XOR R0, R0 clears R0)
+}{Register operands (2 operands).}{Updates ZF.}{Foundational for parity, CRC, and cryptographic ciphers.}
+\InstructionPage{XNOR}{10011}{Logic}{Bitwise Equivalence}{%
+\small
+Syntax:    XNOR arg0(REG), arg1(REG) : arg0 = \textasciitilde(arg0 \textasciicircum\ arg1) \\
+Operation: arg0 <- NOT (arg0 XOR arg1) \\[2pt]
+Example:   XNOR R0, R1  ; R0 = \textasciitilde(R0 \textasciicircum\ R1)
+}{Bit-by-bit identity testing (2 operands).}{Updates ZF.}{Fast parallel mask equivalence validation.}
+\InstructionPage{INC}{10100}{Arithmetic}{Atomic Increment by 1}{%
+\small
+Syntax:    INC arg0(REG) : arg0 = arg0 + 1 \\
+Operation: arg0 <- arg0 + 1 \\[2pt]
+Example:   INC R0           ; R0 = R0 + 1 (increment register)
+}{Fast loop iterator step.}{Updates ZF, OF; Carry Flag preserved or updated based on \field{cfg}.}{Optimizes array index advancing.}
+\InstructionPage{DEC}{10101}{Arithmetic}{Atomic Decrement by 1}{%
+\small
+Syntax:    DEC arg0(REG) : arg0 = arg0 - 1 \\
+Operation: arg0 <- arg0 - 1 \\[2pt]
+Example:   DEC R0           ; R0 = R0 - 1 (decrement register)
+}{Fast downward counter step.}{Updates ZF, OF.}{Compact loop termination construct.}
 \InstructionPage{PUSH}{10110}{Stack}{Push Word onto Execution Stack}{%
-stack <- src \\
-SREG <- SREG - 2%
+\small
+Syntax:    PUSH arg0(REG) : SREG -= 2, MEM[SREG] = arg0 \\
+Operation: SREG <- SREG - 2, MEM[SREG] <- arg0 \\[2pt]
+Example:   PUSH R0          ; Push word R0 onto execution stack
 }{Source: any GPR (R0--R7) or special status register.}{Preserves arithmetic flags.}{Hardware-assisted subroutine and context preservation.}
 \InstructionPage{POP}{10111}{Stack}{Pop Word from Execution Stack}{%
-dst <- stack \\
-SREG <- SREG + 2%
+\small
+Syntax:    POP arg0(REG) : arg0 = MEM[SREG], SREG += 2 \\
+Operation: arg0 <- MEM[SREG], SREG <- SREG + 2 \\[2pt]
+Example:   POP R0           ; Pop word from top of stack into R0
 }{Destination: any GPR or status register.}{Preserves arithmetic flags.}{Symmetric restoration of execution contexts.}
-\InstructionPage{BSL}{11000}{Shift}{Barrel Shift Left}{dst <- src << amount}{Shift count: immediate constant or dynamic register value.}{Ejected MSB latched into FREG.DBIT (bit 13). When SMOD=1, former DBIT is injected into LSB; when SMOD=0, vacant bits are zero-filled.}{Streamlined multi-word rotation and bitfield packing.}
-\InstructionPage{BSR}{11001}{Shift}{Barrel Shift Right}{dst <- src >> amount}{Logical or sign-extended arithmetic right shift selectable via \field{cfg}.}{Ejected LSB latched into DBIT (bit 13). When SMOD=1, former DBIT is injected into MSB; when SMOD=0, vacant bits are zero-filled.}{Fast streaming scaling and power-of-two division.}
-\InstructionPage{CSRM}{11010}{System}{Control and Status Register Access}{special\_reg <- src OR dst <- special\_reg}{Access to \reg{FREG}, \reg{PTREG}, and \reg{SREG}.}{Flags updated when FREG is modified.}{Privileged context switching and configuration primitive.}
-\InstructionPage{RSV27}{11011}{Reserved}{Architectural Extension Slot}{reserved}{Reserved for future LIM ISA revisions.}{Undefined.}{Reserved.}
-\InstructionPage{RSV28}{11100}{Reserved}{Architectural Extension Slot}{reserved}{Reserved for future LIM ISA revisions.}{Undefined.}{Reserved.}
-\InstructionPage{RSV29}{11101}{Reserved}{Architectural Extension Slot}{reserved}{Reserved for future LIM ISA revisions.}{Undefined.}{Reserved.}
-\InstructionPage{RSV30}{11110}{Reserved}{Architectural Extension Slot}{reserved}{Reserved for future LIM ISA revisions.}{Undefined.}{Reserved.}
-\InstructionPage{RSV31}{11111}{Reserved}{Architectural Extension Slot}{reserved}{Reserved for future LIM ISA revisions.}{Undefined.}{Reserved.}
+\InstructionPage{BSL}{11000}{Shift}{Barrel Shift Left}{%
+\small
+Syntax:    BSL arg0(REG), arg1(REG), arg2(IMM|REG) : arg0 = arg1 << arg2 \\
+Operation: arg0 <- arg1 << arg2 \\
+           FREG.DBIT <- ejected MSB (bit 15) \\
+           When SMOD=1: inject previous DBIT into LSB; when SMOD=0: 0 \\[2pt]
+Example:   BSL R0, R1, 1    ; Shift R1 left by 1 bit, store in R0
+}{Shift count: immediate constant or dynamic register value.}{Ejected MSB latched into FREG.DBIT (bit 13). When SMOD=1, former DBIT is injected into LSB; when SMOD=0, vacant bits are zero-filled.}{Streamlined multi-word rotation and bitfield packing.}
+\InstructionPage{BSR}{11001}{Shift}{Barrel Shift Right}{%
+\small
+Syntax:    BSR arg0(REG), arg1(REG), arg2(IMM|REG) : arg0 = arg1 >> arg2 \\
+Operation: arg0 <- arg1 >> arg2 \\
+           FREG.DBIT <- ejected LSB (bit 0) \\
+           When SMOD=1: inject previous DBIT into MSB; when SMOD=0: 0 \\[2pt]
+Example:   BSR R0, R1, 1    ; Shift R1 right by 1 bit, store in R0
+}{Logical or sign-extended arithmetic right shift selectable via \field{cfg}.}{Ejected LSB latched into DBIT (bit 13). When SMOD=1, former DBIT is injected into MSB; when SMOD=0, vacant bits are zero-filled.}{Fast streaming scaling and power-of-two division.}
+\InstructionPage{MSP}{11010}{System}{Manage Special Registers (FREG, PTREG)}{%
+\small
+Syntax:    MSP sreg, [op], args : special register operations \\
+Operation: 
+  \textbf{Direct Load (Bit 10 = 0):} \\
+  \quad sreg=00 (FREG):  FREG <- Rs[15:0] (Octet 1: [7:5]=Rs) \\
+  \quad sreg=01 (PTREG): PTREG <- (Rs\_hi $\ll$ 16) | Rs\_lo (Octet 1: [7:5]=Rs\_hi, [4:2]=Rs\_lo) \\
+  \textbf{Modify/Operate (Bit 10 = 1):} \\
+  \quad sreg=00 (FREG):  FREG <- FREG $\odot$ Rs (Octet 1: [7:6]=op \{AND,OR,XOR,XNOR\}, [5:3]=Rs) \\
+  \quad sreg=01 (PTREG): PTREG <- PTREG $\pm$ Rs (Octet 1: [7]=op \{ADD,SUB\}, [6:4]=Rs) \\[2pt]
+Example:   MSP FREG, R0         ; Direct load FREG = R0 \\
+           MSP PTREG, R0, R1    ; Load 24-bit PTREG = \{R0, R1\} \\
+           MSP FREG, OR, R2     ; Apply bitmask: FREG = FREG | R2 \\
+           MSP PTREG, ADD, R3   ; Pointer displacement: PTREG = PTREG + R3
+}{Special registers FREG (00) and 24-bit PTREG (01). Supports direct initialization, bitmask manipulation for FREG, and local pointer arithmetic for PTREG.}{FREG flags modified directly or by mask. PTREG arithmetic updates CF carry/borrow via the ALU.}{Universal privileged control primitive for system architectures.}
+\InstructionPage{RSV27}{11011}{Reserved}{Architectural Extension Slot}{%
+\small
+Syntax:    RSV27 : reserved \\
+Operation: Reserved for LIM architecture hardware extensions
+}{Reserved for future LIM ISA revisions.}{Undefined.}{Reserved.}
+\InstructionPage{RSV28}{11100}{Reserved}{Architectural Extension Slot}{%
+\small
+Syntax:    RSV28 : reserved \\
+Operation: Reserved for LIM architecture hardware extensions
+}{Reserved for future LIM ISA revisions.}{Undefined.}{Reserved.}
+\InstructionPage{RSV29}{11101}{Reserved}{Architectural Extension Slot}{%
+\small
+Syntax:    RSV29 : reserved \\
+Operation: Reserved for LIM architecture hardware extensions
+}{Reserved for future LIM ISA revisions.}{Undefined.}{Reserved.}
+\InstructionPage{RSV30}{11110}{Reserved}{Architectural Extension Slot}{%
+\small
+Syntax:    RSV30 : reserved \\
+Operation: Reserved for LIM architecture hardware extensions
+}{Reserved for future LIM ISA revisions.}{Undefined.}{Reserved.}
+\InstructionPage{RSV31}{11111}{Reserved}{Architectural Extension Slot}{%
+\small
+Syntax:    RSV31 : reserved \\
+Operation: Reserved for LIM architecture hardware extensions
+}{Reserved for future LIM ISA revisions.}{Undefined.}{Reserved.}
 
 \clearpage
 \section{Physical Package and Pinout (34-Pin Form Factor)}
