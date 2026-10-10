@@ -73,10 +73,10 @@
   \draw[thick,fill=limmint] (9.8,0) rectangle (12.6,1.05);
   \draw[thick,fill=gray!20] (12.6,0) rectangle (14.6,1.05);
   \node[text=white,font=\bfseries\tiny,align=center] at (2.0,0.52) {OPCODE (5b)\\#1};
-  \node[text=white,font=\bfseries\tiny,align=center] at (5.3,0.52) {CFG (3b)\\#2};
+  \node[text=white,font=\bfseries\tiny,align=center] at (5.3,0.52) {#2};
   \node[font=\bfseries\tiny,align=center] at (8.4,0.52) {Arg1 [7:5]};
   \node[font=\bfseries\tiny,align=center] at (11.2,0.52) {Arg2 [4:2]};
-  \node[font=\bfseries\tiny,align=center] at (13.6,0.52) {RSV/Arg3 [1:0]};
+  \node[font=\bfseries\tiny,align=center] at (13.6,0.52) {RSV [1:0]};
   % Divider ticks Octet 0
   \draw[line width=0.7pt, limblue] (0,1.05) -- (0,1.22);
   \draw[line width=0.7pt, limblue] (4.0,1.05) -- (4.0,1.22);
@@ -99,8 +99,81 @@
   \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (12.6,1.06) {1};
   \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (14.6,1.06) {0};
   % Footers
-  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.3,-0.05) {Octet 0: Opcode + CFG};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.3,-0.05) {Octet 0: Opcode + #2};
   \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (10.8,-0.05) {Octet 1: #4 (Length: 2 bytes)};
+\end{tikzpicture}\par\vspace{1.5mm}%
+}
+
+\newcommand{\BitDiagramArithmetic}[3]{%
+\noindent\begin{tikzpicture}[x=0.9cm,y=0.55cm]
+  \draw[thick,fill=limblue] (0,0) rectangle (4.0,1.05);
+  \draw[thick,fill=limcyan] (4.0,0) rectangle (6.6,1.05);
+  \draw[thick,fill=limlight] (7.0,0) rectangle (9.8,1.05);
+  \draw[thick,fill=limmint] (9.8,0) rectangle (12.6,1.05);
+  \draw[thick,fill=gray!20] (12.6,0) rectangle (14.6,1.05);
+  \node[text=white,font=\bfseries\tiny,align=center] at (2.0,0.52) {OPCODE (5b)\\#1};
+  \node[text=white,font=\bfseries\tiny,align=center] at (5.3,0.52) {Rd [2:0]\\#2};
+  \node[font=\bfseries\tiny,align=center] at (8.4,0.52) {Rs1 [7:5]};
+  \node[font=\bfseries\tiny,align=center] at (11.2,0.52) {Rs2 [4:2]};
+  \node[font=\bfseries\tiny,align=center] at (13.6,0.52) {RSV\\00};
+  % Divider ticks Octet 0
+  \draw[line width=0.7pt, limblue] (0,1.05) -- (0,1.22);
+  \draw[line width=0.7pt, limblue] (4.0,1.05) -- (4.0,1.22);
+  \draw[line width=0.7pt, limblue] (6.6,1.05) -- (6.6,1.22);
+  % Divider ticks Octet 1
+  \draw[line width=0.7pt, limblue] (7.0,1.05) -- (7.0,1.22);
+  \draw[line width=0.7pt, limblue] (9.8,1.05) -- (9.8,1.22);
+  \draw[line width=0.7pt, limblue] (12.6,1.05) -- (12.6,1.22);
+  \draw[line width=0.7pt, limblue] (14.6,1.05) -- (14.6,1.22);
+  % Bit labels Octet 0
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (0,1.06) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (4.0,1.06) {3};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (4.0,1.06) {2};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (6.6,1.06) {0};
+  % Bit labels Octet 1
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (7.0,1.06) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (9.8,1.06) {5};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (9.8,1.06) {4};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (12.6,1.06) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (12.6,1.06) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (14.6,1.06) {0};
+  % Footers
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.3,-0.05) {Octet 0: Opcode + Rd (1st Arg)};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (10.8,-0.05) {Octet 1: Rs1 [7:5], Rs2 [4:2], 00 [1:0] (2 bytes)};
+\end{tikzpicture}\par\vspace{1.5mm}%
+}
+
+\newcommand{\BitDiagramTwoRegs}[4]{%
+\noindent\begin{tikzpicture}[x=0.9cm,y=0.55cm]
+  \draw[thick,fill=limblue] (0,0) rectangle (4.0,1.05);
+  \draw[thick,fill=limcyan] (4.0,0) rectangle (6.6,1.05);
+  \draw[thick,fill=limlight] (7.0,0) rectangle (10.0,1.05);
+  \draw[thick,fill=gray!20] (10.0,0) rectangle (14.6,1.05);
+  \node[text=white,font=\bfseries\tiny,align=center] at (2.0,0.52) {OPCODE (5b)\\#1};
+  \node[text=white,font=\bfseries\tiny,align=center] at (5.3,0.52) {#2 (3b)\\#3};
+  \node[font=\bfseries\tiny,align=center] at (8.5,0.52) {#4 [7:5]};
+  \node[font=\bfseries\tiny,align=center] at (12.3,0.52) {RSV [4:0] \enspace (00000)};
+  % Divider ticks Octet 0
+  \draw[line width=0.7pt, limblue] (0,1.05) -- (0,1.22);
+  \draw[line width=0.7pt, limblue] (4.0,1.05) -- (4.0,1.22);
+  \draw[line width=0.7pt, limblue] (6.6,1.05) -- (6.6,1.22);
+  % Divider ticks Octet 1
+  \draw[line width=0.7pt, limblue] (7.0,1.05) -- (7.0,1.22);
+  \draw[line width=0.7pt, limblue] (10.0,1.05) -- (10.0,1.22);
+  \draw[line width=0.7pt, limblue] (14.6,1.05) -- (14.6,1.22);
+  % Bit labels Octet 0
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (0,1.06) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (4.0,1.06) {3};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (4.0,1.06) {2};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (6.6,1.06) {0};
+  % Bit labels Octet 1
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (7.0,1.06) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (10.0,1.06) {5};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (10.0,1.06) {4};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (14.6,1.06) {0};
+  % Footers
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.3,-0.05) {Octet 0: Opcode + #2};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (10.8,-0.05) {Octet 1: #4 [7:5] (Length: 2 bytes)};
 \end{tikzpicture}\par\vspace{1.5mm}%
 }
 
@@ -568,7 +641,12 @@ Every machine instruction begins with a fixed-size header, followed by dynamic o
 \end{tikzpicture}
 \end{center}
 
-The 3-bit \field{CFG} field specifies one of 8 orthogonal execution modes, or directly designates the target register \reg{Rd} for single-byte unary and shift instructions, avoiding unnecessary memory fetches.
+The lower 3 bits of the initial octet (\bits{[2:0]}) serve a dual, deterministic architectural role:
+\begin{itemize}
+  \item In register operations (arithmetic, unary, logic, shift, register move, stack), bits $[2:0]$ directly encode the \textbf{first register operand} (\reg{Rd} or \reg{Rs1}), enabling full 8-register addressing (\texttt{R0}--\texttt{R7}) without unnecessary decoding overhead.
+  \item In instructions requiring hardware mode selection or memory/special-register selectors (\texttt{LMR}, \texttt{LRM}, \texttt{MSP}, \texttt{JMP}, \texttt{JCR}, \texttt{JNZ}, \texttt{JZ}), bits $[2:0]$ serve as the configuration/mode selector (\field{CFG} / \field{MOD} / \field{SRC} / \field{DST}).
+  \item In zero-operand control instructions (\texttt{NOP}, \texttt{HALT}, \texttt{CLI}, \texttt{STI}, \texttt{RET}), these bits are set to \bits{000}.
+\end{itemize}
 
 \subsection{Class I: Single-Byte Instructions (1 Byte, 0 Extra Octets)}
 Control commands (\texttt{NOP}, \texttt{HALT}, \texttt{CLI}, \texttt{STI}, \texttt{RET}) and unary register operations (\texttt{NOT}, \texttt{INC}, \texttt{DEC}) execute from a single fetched byte without requesting a second byte from memory:
@@ -595,13 +673,13 @@ Control commands (\texttt{NOP}, \texttt{HALT}, \texttt{CLI}, \texttt{STI}, \text
 \end{center}
 
 \subsection{Class II: Three-Operand Arithmetic Instructions (2 Bytes)}
-Arithmetic instructions (\texttt{ADD}, \texttt{SUB}, \texttt{MUL}, \texttt{DIV}) adhere to the universal syntax paradigm: \textbf{destination first, then operands}:
+Arithmetic instructions (\texttt{ADD}, \texttt{SUB}, \texttt{MUL}, \texttt{DIV}, \texttt{MOD}) adhere to the universal syntax paradigm: \textbf{destination first, then operands}:
 $$\texttt{ADD Rd, Rs1, Rs2} \quad \implies \quad \text{Rd} \leftarrow \text{Rs1} + \text{Rs2} + \reg{ALU\_RESIDUAL}$$
-Octet 0 contains the opcode (\bits{[7:3]}) and \field{CFG} = \bits{000}. Octet 1 encodes three operand indices:
+$$\texttt{MOD Rd, Rs1, Rs2} \quad \implies \quad \text{Rd} \leftarrow \text{Rs1} \pmod{\text{Rs2}}$$
+The first instruction argument (destination register \reg{Rd}) is encoded directly in the lower 3 bits of Octet 0, allowing full 3-bit addressing (\texttt{R0}--\texttt{R7}) for all three operands:
 \begin{itemize}
-  \item Bits $[7:5]$: Destination register \reg{Rd} (\texttt{R0}--\texttt{R7}).
-  \item Bits $[4:2]$: First source register \reg{Rs1} (\texttt{R0}--\texttt{R7}).
-  \item Bits $[1:0]$: Second source register \reg{Rs2} (lower 2 bits, \texttt{R0}--\texttt{R3}).
+  \item \textbf{Octet 0:} Bits $[7:3]$ --- Opcode (5 bits); Bits $[2:0]$ --- Destination register \reg{Rd} (3 bits, \texttt{R0}--\texttt{R7}, 1st argument).
+  \item \textbf{Octet 1:} Bits $[7:5]$ --- First source operand \reg{Rs1} (3 bits, \texttt{R0}--\texttt{R7}); Bits $[4:2]$ --- Second source operand \reg{Rs2} (3 bits, \texttt{R0}--\texttt{R7}); Bits $[1:0]$ --- Reserved (\bits{00}).
 \end{itemize}
 
 \begin{center}
@@ -612,10 +690,10 @@ Octet 0 contains the opcode (\bits{[7:3]}) and \field{CFG} = \bits{000}. Octet 1
   \draw[thick,fill=limmint] (10.0,0) rectangle (12.8,1.1);
   \draw[thick,fill=gray!20] (12.8,0) rectangle (15.2,1.1);
   \node[text=white,font=\bfseries\tiny,align=center] at (2.1,0.55) {OPCODE (5b)\\bits [7:3]};
-  \node[text=white,font=\bfseries\tiny,align=center] at (5.5,0.55) {CFG=000\\bits [2:0]};
-  \node[font=\bfseries\tiny,align=center] at (8.6,0.55) {Rd [7:5]\\(destination)};
-  \node[font=\bfseries\tiny,align=center] at (11.4,0.55) {Rs1 [4:2]\\(source 1)};
-  \node[font=\bfseries\tiny,align=center] at (14.0,0.55) {Rs2 [1:0]\\(source 2)};
+  \node[text=white,font=\bfseries\tiny,align=center] at (5.5,0.55) {Rd [2:0]\\(dest, 1st arg)};
+  \node[font=\bfseries\tiny,align=center] at (8.6,0.55) {Rs1 [7:5]\\(source 1)};
+  \node[font=\bfseries\tiny,align=center] at (11.4,0.55) {Rs2 [4:2]\\(source 2)};
+  \node[font=\bfseries\tiny,align=center] at (14.0,0.55) {RSV [1:0]\\00};
   % Ticks & labels Octet 0
   \draw[line width=0.7pt, limblue] (0,1.1) -- (0,1.28);
   \draw[line width=0.7pt, limblue] (4.2,1.1) -- (4.2,1.28);
@@ -635,8 +713,8 @@ Octet 0 contains the opcode (\bits{[7:3]}) and \field{CFG} = \bits{000}. Octet 1
   \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (12.8,1.12) {2};
   \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (12.8,1.12) {1};
   \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (15.2,1.12) {0};
-  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.4,-0.08) {Octet 0: Opcode (Byte 1)};
-  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (11.2,-0.08) {Octet 1: Operand Registers (Byte 2)};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.4,-0.08) {Octet 0: Opcode + Rd (1st arg)};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (11.2,-0.08) {Octet 1: Rs1 [7:5], Rs2 [4:2], RSV [1:0]};
 \end{tikzpicture}
 \end{center}
 
@@ -644,8 +722,8 @@ Octet 0 contains the opcode (\bits{[7:3]}) and \field{CFG} = \bits{000}. Octet 1
 Logic instructions (\texttt{AND}, \texttt{OR}, \texttt{NAND}, \texttt{NOR}, \texttt{XOR}, \texttt{XNOR}) take two operand registers:
 $$\texttt{AND Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rd} \ \text{AND} \ \text{Rs}$$
 \begin{itemize}
-  \item Octet 0: Opcode in bits $[7:3]$, bits $[2:0] = 000_2$.
-  \item Octet 1: Bits $[7:5]$ define destination \reg{Rd}; bits $[4:2]$ define source \reg{Rs}; bits $[1:0]$ are reserved ($00_2$).
+  \item \textbf{Octet 0:} Bits $[7:3]$ --- Opcode; Bits $[2:0]$ --- Destination register \reg{Rd} (\texttt{R0}--\texttt{R7}, 1st argument).
+  \item \textbf{Octet 1:} Bits $[7:5]$ --- Second register operand \reg{Rs} (\texttt{R0}--\texttt{R7}); Bits $[4:0]$ --- Reserved ($00000_2$).
 \end{itemize}
 
 \begin{center}
@@ -653,13 +731,11 @@ $$\texttt{AND Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rd} \ \tex
   \draw[thick,fill=limblue] (0,0) rectangle (4.2,1.1);
   \draw[thick,fill=limcyan] (4.2,0) rectangle (6.8,1.1);
   \draw[thick,fill=limlight] (7.2,0) rectangle (10.5,1.1);
-  \draw[thick,fill=limmint] (10.5,0) rectangle (13.8,1.1);
-  \draw[thick,fill=gray!20] (13.8,0) rectangle (15.2,1.1);
+  \draw[thick,fill=gray!20] (10.5,0) rectangle (15.2,1.1);
   \node[text=white,font=\bfseries\tiny,align=center] at (2.1,0.55) {OPCODE (5b)\\bits [7:3]};
-  \node[text=white,font=\bfseries\tiny,align=center] at (5.5,0.55) {CFG=000\\bits [2:0]};
-  \node[font=\bfseries\tiny,align=center] at (8.85,0.55) {Rd [7:5]\\(dest)};
-  \node[font=\bfseries\tiny,align=center] at (12.15,0.55) {Rs [4:2]\\(source)};
-  \node[font=\bfseries\tiny,align=center] at (14.5,0.55) {RSV\\00};
+  \node[text=white,font=\bfseries\tiny,align=center] at (5.5,0.55) {Rd [2:0]\\(dest, 1st arg)};
+  \node[font=\bfseries\tiny,align=center] at (8.85,0.55) {Rs [7:5]\\(operand 2)};
+  \node[font=\bfseries\tiny,align=center] at (12.85,0.55) {RSV [4:0] \enspace (00000)};
   % Ticks & labels Octet 0
   \draw[line width=0.7pt, limblue] (0,1.1) -- (0,1.28);
   \draw[line width=0.7pt, limblue] (4.2,1.1) -- (4.2,1.28);
@@ -671,29 +747,26 @@ $$\texttt{AND Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rd} \ \tex
   % Ticks & labels Octet 1
   \draw[line width=0.7pt, limblue] (7.2,1.1) -- (7.2,1.28);
   \draw[line width=0.7pt, limblue] (10.5,1.1) -- (10.5,1.28);
-  \draw[line width=0.7pt, limblue] (13.8,1.1) -- (13.8,1.28);
   \draw[line width=0.7pt, limblue] (15.2,1.1) -- (15.2,1.28);
   \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (7.2,1.12) {7};
   \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (10.5,1.12) {5};
   \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (10.5,1.12) {4};
-  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (13.8,1.12) {2};
-  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (13.8,1.12) {1};
   \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (15.2,1.12) {0};
-  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.4,-0.08) {Octet 0: Opcode};
-  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (11.2,-0.08) {Octet 1: Rd [7:5], Rs [4:2], RSV [1:0]};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.4,-0.08) {Octet 0: Opcode + Rd};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (11.2,-0.08) {Octet 1: Rs [7:5], RSV [4:0]};
 \end{tikzpicture}
 \end{center}
 
 \subsection{Class IV: Register-to-Register Move (LRR, 2 Bytes)}
 Instruction \texttt{LRR Rd, Rs} copies from source (point B, \reg{Rs}) to destination (point A, \reg{Rd}):
 $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
-Data moves via the dedicated bypass path \textbf{MUX 1} $\to$ \textbf{MUX 2} bypassing the ALU in 1 cycle without affecting flags. Encoding: Octet 0: opcode \bits{00111}, Octet 1: \bits{Rd[7:5] | Rs[4:2] | 00[1:0]}.
+Data moves via the dedicated bypass path \textbf{MUX 1} $\to$ \textbf{MUX 2} bypassing the ALU in 1 cycle without affecting flags. Encoding: Octet 0 contains opcode \bits{00111} and destination register \reg{Rd} (\bits{[2:0]}). Octet 1 contains source register \reg{Rs} (\bits{[7:5]}) and reserved bits (\bits{[4:0]} = \bits{00000}).
 
 \subsection{Class V: Hardware Comparator (CMP, 2 Bytes)}
 Instruction \texttt{CMP Rs1, Rs2} non-destructively compares two register values:
 \begin{itemize}
-  \item Octet 0: Opcode \bits{01000}, configuration \bits{000}.
-  \item Octet 1: Bits $[7:5]$ select \reg{Rs1}, bits $[4:2]$ select \reg{Rs2}, bits $[1:0]$ hold \bits{00}.
+  \item \textbf{Octet 0:} Opcode \bits{01000}, bits $[2:0]$ specify the first source operand \reg{Rs1} (1st argument).
+  \item \textbf{Octet 1:} Bits $[7:5]$ specify the second source operand \reg{Rs2}; bits $[4:0]$ are reserved (\bits{00000}).
 \end{itemize}
 The comparison updates the 2-bit field \reg{FREG.CMP} (bits $[5:4]$):
 \begin{center}
@@ -747,8 +820,8 @@ Shift instructions \texttt{BSL Rd, shift} and \texttt{BSR Rd, shift} are physica
 \subsection{Class VII: Stack Operations (PUSH, POP, 2 Bytes)}
 Stack instructions push/pop registers via the 24-bit stack pointer \reg{SREG}:
 \begin{itemize}
-  \item Octet 0: Opcode (\texttt{PUSH}: \bits{10110}, \texttt{POP}: \bits{10111}), bits $[2:0] = 000$.
-  \item Octet 1: Bits $[7:5]$ select register \reg{Rs}/\reg{Rd}; bits $[4:0]$ are $00000_2$.
+  \item \textbf{Octet 0:} Opcode (\texttt{PUSH}: \bits{10110}, \texttt{POP}: \bits{10111}), bits $[2:0]$ directly designate operand register (\reg{Rs} for push, \reg{Rd} for pop, 1st argument).
+  \item \textbf{Octet 1:} Bits $[7:0]$ are reserved ($00000000_2$).
 \end{itemize}
 
 \subsection{Class VIII: Special Register Manipulation (MSP, 2 Bytes)}
@@ -861,7 +934,7 @@ No. & Code & Mnemonic & Class & Functional Summary \\
 24 & 11000 & BSL  & Shift       & Barrel shift left with configurable fill \\
 25 & 11001 & BSR  & Shift       & Barrel shift right with discarded bit capture \\
 26 & 11010 & MSP  & System      & Manage special registers (FREG, PTREG) \\
-27 & 11011 & RSV27 & Reserved   & Reserved for vector/SIMD processing extensions \\
+27 & 11011 & MOD  & Arithmetic  & Integer remainder operation (modulo) \\
 28 & 11100 & RSV28 & Reserved   & Reserved for extended addressing modes \\
 29 & 11101 & RSV29 & Reserved   & Reserved for floating-point coprocessor \\
 30 & 11110 & RSV30 & Reserved   & Reserved for hardware cryptographic acceleration \\
@@ -889,9 +962,9 @@ Operation: sum <- arg1 + arg2 + ALU\_RESIDUAL \\
            arg0 <- sum[15:0], ALU\_RESIDUAL <- (sum > 0xFFFF ? 1 : 0) \\[2pt]
 Example:   ADD R0, R1, R2   ; R0 = R1 + R2 (registers R0--R7)
 }{%
-\BitDiagramTwoBytes{00001}{000}{Rd [7:5] \enspace | \enspace Rs1 [4:2] \enspace | \enspace Rs2 [1:0]}{Rd [7:5], Rs1 [4:2], Rs2 [1:0]}%
-\textbf{Octet 0:} Opcode \bits{00001}, configuration \field{cfg} = \bits{000}.\\
-\textbf{Octet 1:} Bits $[7:5]$ select destination register \reg{Rd} (\texttt{R0}--\texttt{R7}, where sum is saved); bits $[4:2]$ select first addend \reg{Rs1}; bits $[1:0]$ select second addend \reg{Rs2}. Instruction length: exactly 2 bytes.%
+\BitDiagramArithmetic{00001}{Rd [2:0]}{Rd [2:0], Rs1 [7:5], Rs2 [4:2]}%
+\textbf{Octet 0:} Opcode \bits{00001}, bits $[2:0]$ select destination register \reg{Rd} (\texttt{R0}--\texttt{R7}, 1st argument).\\
+\textbf{Octet 1:} Bits $[7:5]$ select first addend \reg{Rs1} (\texttt{R0}--\texttt{R7}); bits $[4:2]$ select second addend \reg{Rs2} (\texttt{R0}--\texttt{R7}); bits $[1:0]$ are reserved (\bits{00}). Instruction length: exactly 2 bytes.%
 }{Sets carry flag CF and overflow OF if sum exceeds $2^{16}-1$; updates ZF based on dst.}{Delivers seamless multi-word arithmetic (32, 48, 64+ bits). If the addition exceeds 16 bits ($>2^{16}-1$), the carry (+1) is latched into the internal ALU residual register and automatically added during the subsequent ADD operation without requiring distinct ADC opcodes. The lower 16 bits are deterministically stored in dst. The chain is reset via NOP or overwritten by a new operation.}
 \InstructionPage{SUB}{00010}{Arithmetic}{Subtraction with Automatic Multi-Word Borrow Chaining}{%
 \small
@@ -900,9 +973,9 @@ Operation: diff <- arg1 - arg2 - ALU\_RESIDUAL \\
            arg0 <- diff[15:0], ALU\_RESIDUAL <- (diff < 0 ? 1 : 0) \\[2pt]
 Example:   SUB R0, R1, R2   ; R0 = R1 - R2 (registers R0--R7)
 }{%
-\BitDiagramTwoBytes{00010}{000}{Rd [7:5] \enspace | \enspace Rs1 [4:2] \enspace | \enspace Rs2 [1:0]}{Rd [7:5], Rs1 [4:2], Rs2 [1:0]}%
-\textbf{Octet 0:} Opcode \bits{00010}, configuration \field{cfg} = \bits{000}.\\
-\textbf{Octet 1:} Bits $[7:5]$ select destination register \reg{Rd} (where difference is saved); bits $[4:2]$ select minuend \reg{Rs1}; bits $[1:0]$ select subtrahend \reg{Rs2}. Instruction length: exactly 2 bytes.%
+\BitDiagramArithmetic{00010}{Rd [2:0]}{Rd [2:0], Rs1 [7:5], Rs2 [4:2]}%
+\textbf{Octet 0:} Opcode \bits{00010}, bits $[2:0]$ select destination register \reg{Rd} (\texttt{R0}--\texttt{R7}, 1st argument).\\
+\textbf{Octet 1:} Bits $[7:5]$ select minuend \reg{Rs1} (\texttt{R0}--\texttt{R7}); bits $[4:2]$ select subtrahend \reg{Rs2} (\texttt{R0}--\texttt{R7}); bits $[1:0]$ are reserved (\bits{00}). Instruction length: exactly 2 bytes.%
 }{Sets borrow flag (CF) and OF on negative result ($< 0$); updates ZF.}{Enables continuous multi-word subtraction. When a borrow occurs ($< 0$), the borrow ($-1$) is retained in the internal ALU register and automatically subtracted during the next SUB operation. The lower 16-bit word is deterministically preserved in dst. Inserting a NOP breaks the chain for independent subtraction.}
 \InstructionPage{MUL}{00011}{Arithmetic}{Multiplication with Upper Word Residual Retention}{%
 \small
@@ -911,9 +984,9 @@ Operation: prod <- arg1 * arg2 \\
            arg0 <- prod[15:0], ALU\_RESIDUAL <- prod[31:16] \\[2pt]
 Example:   MUL R0, R1, R2   ; R0 = R1 * R2 (upper 16 bits in ALU\_RESIDUAL)
 }{%
-\BitDiagramTwoBytes{00011}{000}{Rd [7:5] \enspace | \enspace Rs1 [4:2] \enspace | \enspace Rs2 [1:0]}{Rd [7:5], Rs1 [4:2], Rs2 [1:0]}%
-\textbf{Octet 0:} Opcode \bits{00011}, configuration \field{cfg} = \bits{000}.\\
-\textbf{Octet 1:} Bits $[7:5]$ select destination register \reg{Rd} (lower 16 bits of product); bits $[4:2]$ select first factor \reg{Rs1}; bits $[1:0]$ select second factor \reg{Rs2}. Upper 16 bits are automatically retained in \reg{ALU\_RESIDUAL}. Instruction length: 2 bytes.%
+\BitDiagramArithmetic{00011}{Rd [2:0]}{Rd [2:0], Rs1 [7:5], Rs2 [4:2]}%
+\textbf{Octet 0:} Opcode \bits{00011}, bits $[2:0]$ select destination register \reg{Rd} (\texttt{R0}--\texttt{R7}, 1st argument).\\
+\textbf{Octet 1:} Bits $[7:5]$ select first factor \reg{Rs1} (\texttt{R0}--\texttt{R7}); bits $[4:2]$ select second factor \reg{Rs2} (\texttt{R0}--\texttt{R7}); bits $[1:0]$ are reserved (\bits{00}). Upper 16 bits are automatically retained in \reg{ALU\_RESIDUAL}. Instruction length: 2 bytes.%
 }{Updates ZF; sets OF/CF if the upper 16 bits of the product (prod[31:16]) are non-zero.}{For 32-bit products exceeding the 16-bit register width, the low 16 bits are placed into dst, while the upper 16 bits are retained in the internal ALU residual register. In a subsequent addition, this residual is automatically accumulated (hardware MAC support / bigint multiplication). The upper word can also be extracted by adding the register to itself after clearing. Executing NOP flushes the residual register.}
 \InstructionPage{DIV}{00100}{Arithmetic}{Division with Remainder Latched in ALU Residual}{%
 \small
@@ -922,9 +995,9 @@ Operation: arg0 <- arg1 / arg2 \\
            ALU\_RESIDUAL <- arg1 \% arg2 \\[2pt]
 Example:   DIV R0, R1, R2   ; R0 = R1 / R2 (remainder modulo in ALU\_RESIDUAL)
 }{%
-\BitDiagramTwoBytes{00100}{000}{Rd [7:5] \enspace | \enspace Rs1 [4:2] \enspace | \enspace Rs2 [1:0]}{Rd [7:5], Rs1 [4:2], Rs2 [1:0]}%
-\textbf{Octet 0:} Opcode \bits{00100}, configuration \field{cfg} = \bits{000}.\\
-\textbf{Octet 1:} Bits $[7:5]$ select destination register \reg{Rd} (integer quotient); bits $[4:2]$ select dividend \reg{Rs1}; bits $[1:0]$ select divisor \reg{Rs2}. Remainder (modulo) is automatically latched in \reg{ALU\_RESIDUAL}. Instruction length: 2 bytes.%
+\BitDiagramArithmetic{00100}{Rd [2:0]}{Rd [2:0], Rs1 [7:5], Rs2 [4:2]}%
+\textbf{Octet 0:} Opcode \bits{00100}, bits $[2:0]$ select destination register \reg{Rd} (\texttt{R0}--\texttt{R7}, 1st argument).\\
+\textbf{Octet 1:} Bits $[7:5]$ select dividend \reg{Rs1} (\texttt{R0}--\texttt{R7}); bits $[4:2]$ select divisor \reg{Rs2} (\texttt{R0}--\texttt{R7}); bits $[1:0]$ are reserved (\bits{00}). Remainder (modulo) is automatically latched in \reg{ALU\_RESIDUAL}. Instruction length: 2 bytes.%
 }{Sets EM (Error Math) flag on division by zero without core stall; updates ZF.}{Stores the integer quotient in dst while preserving the remainder (modulo) in the internal ALU residual register for immediate reuse in subsequent operations or clearing via NOP.}
 \InstructionPage{LMR}{00101}{Memory}{Load External Data and Memory into Register}{%
 \small
@@ -972,9 +1045,9 @@ Syntax:    LRR arg0(REG), arg1(REG) : arg0 = arg1 \\
 Operation: arg0 <- arg1 (direct copy from source to destination) \\[2pt]
 Example:   LRR R0, R1       ; R0 = R1 (value of R1 copied to R0)
 }{%
-\BitDiagramTwoBytes{00111}{000}{Rd [7:5] \enspace | \enspace Rs [4:2] \enspace | \enspace 00 [1:0]}{Rd [7:5] (point A), Rs [4:2] (point B)}%
-\textbf{Octet 0:} opcode $00111_2$ (\texttt{0x07}), bits $[10:8]$ reserved ($000_2$).\\
-\textbf{Octet 1:} bits $[7:5]$ define destination register \reg{Arg1} (\reg{Rd}, point A, receiving data); bits $[4:2]$ define source register \reg{Arg2} (\reg{Rs}, point B, providing data); bits $[1:0]$ set to $00_2$. When executed, \reg{Rs} is copied to \reg{Rd} in 1 microcycle.%
+\BitDiagramTwoRegs{00111}{Rd}{Point A}{Rs}%
+\textbf{Octet 0:} Opcode $00111_2$ (\texttt{0x07}), bits $[2:0]$ select destination register \reg{Rd} (\texttt{R0}--\texttt{R7}, point A, 1st argument).\\
+\textbf{Octet 1:} Bits $[7:5]$ select source register \reg{Rs} (\texttt{R0}--\texttt{R7}, point B); bits $[4:0]$ are reserved ($00000_2$). When executed, \reg{Rs} is copied to \reg{Rd} in 1 microcycle. Instruction length: 2 bytes.%
 }{Preserves all status flags.}{%
 The \texttt{LRR} instruction provides the foundational register-to-register move mechanism across general-purpose registers ($R0$--$R7$). It executes a direct transfer from source (point B) to destination (point A) via the dedicated hardware \textbf{MUX 1} $\to$ \textbf{MUX 2} bypass datapath without stalling the ALU and without affecting \reg{FREG} flags.%
 }
@@ -987,9 +1060,9 @@ Operation: if arg0 < arg1 then FREG.CMP <- 01b (less) \\
            (state 00b --- initial reset / no comparison / error) \\[2pt]
 Example:   CMP R0, R1       ; 01: R0<R1, 10: R0==R1, 11: R0>R1 (00: reset/error)
 }{%
-\BitDiagramTwoBytes{01000}{000}{Rs1 [7:5] \enspace | \enspace Rs2 [4:2] \enspace | \enspace 00 [1:0]}{Rs1 [7:5], Rs2 [4:2]}%
-\textbf{Octet 0:} Opcode \bits{01000}, configuration \field{cfg} = \bits{000}.\\
-\textbf{Octet 1:} Bits $[7:5]$ select first operand \reg{Rs1}; bits $[4:2]$ select second operand \reg{Rs2}; bits $[1:0]$ hold \bits{00}.\\
+\BitDiagramTwoRegs{01000}{Rs1}{1st Arg}{Rs2}%
+\textbf{Octet 0:} Opcode \bits{01000}, bits $[2:0]$ specify first operand \reg{Rs1} (1st argument).\\
+\textbf{Octet 1:} Bits $[7:5]$ specify second operand \reg{Rs2}; bits $[4:0]$ are reserved ($00000_2$).\\
 The result updates the \reg{FREG.CMP} field (bits $[5:4]$): \bits{01} ($\text{Rs1} < \text{Rs2}$), \bits{10} ($\text{Rs1} = \text{Rs2}$), \bits{11} ($\text{Rs1} > \text{Rs2}$), \bits{00} (reset/error). Register contents are unchanged. Instruction length: 2 bytes.%
 }{Updates 2-bit FREG.CMP field (bits [5:4]) as well as ZF, CF, OF flags.}{Enables swift condition evaluation without data corruption.}
 \InstructionPage{JMP}{01001}{Branch}{Unconditional Program Branch}{%
@@ -1034,9 +1107,9 @@ Syntax:    AND arg0(REG), arg1(REG) : arg0 = arg0 \& arg1 \\
 Operation: arg0 <- arg0 AND arg1 \\[2pt]
 Example:   AND R0, R1   ; R0 = R0 \& R1
 }{%
-\BitDiagramTwoBytes{01101}{000}{Rd [7:5] \enspace | \enspace Rs [4:2] \enspace | \enspace 00 [1:0]}{Rd [7:5] (dest), Rs [4:2] (operand)}%
-\textbf{Octet 0:} Opcode \bits{01101}, configuration \field{cfg} = \bits{000}.\\
-\textbf{Octet 1:} Bits $[7:5]$ select destination \reg{Rd} ($\text{Rd} \leftarrow \text{Rd} \ \& \ \text{Rs}$); bits $[4:2]$ select source \reg{Rs}; bits $[1:0]$ hold \bits{00}. Instruction length: 2 bytes.%
+\BitDiagramTwoRegs{01101}{Rd}{Dest}{Rs}%
+\textbf{Octet 0:} Opcode \bits{01101}, bits $[2:0]$ select destination register \reg{Rd} (\texttt{R0}--\texttt{R7}, 1st argument).\\
+\textbf{Octet 1:} Bits $[7:5]$ select source register \reg{Rs} (\texttt{R0}--\texttt{R7}); bits $[4:0]$ are reserved ($00000_2$). Instruction length: 2 bytes.%
 }{Updates Zero Flag (ZF); resets overflow status.}{Essential for bitmask extraction and masking.}
 \InstructionPage{OR}{01110}{Logic}{Bitwise Logical OR}{%
 \small
@@ -1044,9 +1117,9 @@ Syntax:    OR arg0(REG), arg1(REG) : arg0 = arg0 | arg1 \\
 Operation: arg0 <- arg0 OR arg1 \\[2pt]
 Example:   OR R0, R1    ; R0 = R0 | R1
 }{%
-\BitDiagramTwoBytes{01110}{000}{Rd [7:5] \enspace | \enspace Rs [4:2] \enspace | \enspace 00 [1:0]}{Rd [7:5] (dest), Rs [4:2] (operand)}%
-\textbf{Octet 0:} Opcode \bits{01110}, configuration \field{cfg} = \bits{000}.\\
-\textbf{Octet 1:} Bits $[7:5]$ select destination \reg{Rd} ($\text{Rd} \leftarrow \text{Rd} \ | \ \text{Rs}$); bits $[4:2]$ select source \reg{Rs}; bits $[1:0]$ hold \bits{00}. Instruction length: 2 bytes.%
+\BitDiagramTwoRegs{01110}{Rd}{Dest}{Rs}%
+\textbf{Octet 0:} Opcode \bits{01110}, bits $[2:0]$ select destination register \reg{Rd} (\texttt{R0}--\texttt{R7}, 1st argument).\\
+\textbf{Octet 1:} Bits $[7:5]$ select source register \reg{Rs} (\texttt{R0}--\texttt{R7}); bits $[4:0]$ are reserved ($00000_2$). Instruction length: 2 bytes.%
 }{Updates ZF; carry/overflow deterministically cleared.}{Rapid combination of control bitfields.}
 \InstructionPage{NAND}{01111}{Logic}{Bitwise Logical NAND}{%
 \small
@@ -1054,9 +1127,9 @@ Syntax:    NAND arg0(REG), arg1(REG) : arg0 = \textasciitilde(arg0 \& arg1) \\
 Operation: arg0 <- NOT (arg0 AND arg1) \\[2pt]
 Example:   NAND R0, R1  ; R0 = \textasciitilde(R0 \& R1)
 }{%
-\BitDiagramTwoBytes{01111}{000}{Rd [7:5] \enspace | \enspace Rs [4:2] \enspace | \enspace 00 [1:0]}{Rd [7:5] (dest), Rs [4:2] (operand)}%
-\textbf{Octet 0:} Opcode \bits{01111}, configuration \field{cfg} = \bits{000}.\\
-\textbf{Octet 1:} Bits $[7:5]$ select destination \reg{Rd}; bits $[4:2]$ select source \reg{Rs}; bits $[1:0]$ hold \bits{00}. Length: 2 bytes.%
+\BitDiagramTwoRegs{01111}{Rd}{Dest}{Rs}%
+\textbf{Octet 0:} Opcode \bits{01111}, bits $[2:0]$ select destination register \reg{Rd} (\texttt{R0}--\texttt{R7}, 1st argument).\\
+\textbf{Octet 1:} Bits $[7:5]$ select source register \reg{Rs} (\texttt{R0}--\texttt{R7}); bits $[4:0]$ are reserved ($00000_2$). Length: 2 bytes.%
 }{Updates ZF.}{Enables compact implementation of custom Boolean functions.}
 \InstructionPage{NOR}{10000}{Logic}{Bitwise Logical NOR}{%
 \small
@@ -1064,9 +1137,9 @@ Syntax:    NOR arg0(REG), arg1(REG) : arg0 = \textasciitilde(arg0 | arg1) \\
 Operation: arg0 <- NOT (arg0 OR arg1) \\[2pt]
 Example:   NOR R0, R1   ; R0 = \textasciitilde(R0 | R1)
 }{%
-\BitDiagramTwoBytes{10000}{000}{Rd [7:5] \enspace | \enspace Rs [4:2] \enspace | \enspace 00 [1:0]}{Rd [7:5] (dest), Rs [4:2] (operand)}%
-\textbf{Octet 0:} Opcode \bits{10000}, configuration \field{cfg} = \bits{000}.\\
-\textbf{Octet 1:} Bits $[7:5]$ select destination \reg{Rd}; bits $[4:2]$ select source \reg{Rs}; bits $[1:0]$ hold \bits{00}. Length: 2 bytes.%
+\BitDiagramTwoRegs{10000}{Rd}{Dest}{Rs}%
+\textbf{Octet 0:} Opcode \bits{10000}, bits $[2:0]$ select destination register \reg{Rd} (\texttt{R0}--\texttt{R7}, 1st argument).\\
+\textbf{Octet 1:} Bits $[7:5]$ select source register \reg{Rs} (\texttt{R0}--\texttt{R7}); bits $[4:0]$ are reserved ($00000_2$). Length: 2 bytes.%
 }{Updates ZF.}{Broadens fast bitwise logic transformations.}
 \InstructionPage{NOT}{10001}{Logic}{Bitwise Inversion (One's Complement)}{%
 \small
@@ -1083,9 +1156,9 @@ Syntax:    XOR arg0(REG), arg1(REG) : arg0 = arg0 \textasciicircum\ arg1 \\
 Operation: arg0 <- arg0 XOR arg1 \\[2pt]
 Example:   XOR R0, R1   ; R0 = R0 \textasciicircum\ R1 (XOR R0, R0 clears R0)
 }{%
-\BitDiagramTwoBytes{10010}{000}{Rd [7:5] \enspace | \enspace Rs [4:2] \enspace | \enspace 00 [1:0]}{Rd [7:5] (dest), Rs [4:2] (operand)}%
-\textbf{Octet 0:} Opcode \bits{10010}, configuration \field{cfg} = \bits{000}.\\
-\textbf{Octet 1:} Bits $[7:5]$ select destination \reg{Rd} ($\text{Rd} \leftarrow \text{Rd} \oplus \text{Rs}$); bits $[4:2]$ select source \reg{Rs}; bits $[1:0]$ hold \bits{00}. Instruction length: 2 bytes.%
+\BitDiagramTwoRegs{10010}{Rd}{Dest}{Rs}%
+\textbf{Octet 0:} Opcode \bits{10010}, bits $[2:0]$ select destination register \reg{Rd} (\texttt{R0}--\texttt{R7}, 1st argument).\\
+\textbf{Octet 1:} Bits $[7:5]$ select source register \reg{Rs} (\texttt{R0}--\texttt{R7}); bits $[4:0]$ are reserved ($00000_2$). Instruction length: 2 bytes.%
 }{Updates ZF.}{Foundational for parity, CRC, and cryptographic ciphers.}
 \InstructionPage{XNOR}{10011}{Logic}{Bitwise Equivalence}{%
 \small
@@ -1093,9 +1166,9 @@ Syntax:    XNOR arg0(REG), arg1(REG) : arg0 = \textasciitilde(arg0 \textasciicir
 Operation: arg0 <- NOT (arg0 XOR arg1) \\[2pt]
 Example:   XNOR R0, R1  ; R0 = \textasciitilde(R0 \textasciicircum\ R1)
 }{%
-\BitDiagramTwoBytes{10011}{000}{Rd [7:5] \enspace | \enspace Rs [4:2] \enspace | \enspace 00 [1:0]}{Rd [7:5] (dest), Rs [4:2] (operand)}%
-\textbf{Octet 0:} Opcode \bits{10011}, configuration \field{cfg} = \bits{000}.\\
-\textbf{Octet 1:} Bits $[7:5]$ select destination \reg{Rd}; bits $[4:2]$ select source \reg{Rs}; bits $[1:0]$ hold \bits{00}. Length: 2 bytes.%
+\BitDiagramTwoRegs{10011}{Rd}{Dest}{Rs}%
+\textbf{Octet 0:} Opcode \bits{10011}, bits $[2:0]$ select destination register \reg{Rd} (\texttt{R0}--\texttt{R7}, 1st argument).\\
+\textbf{Octet 1:} Bits $[7:5]$ select source register \reg{Rs} (\texttt{R0}--\texttt{R7}); bits $[4:0]$ are reserved ($00000_2$). Length: 2 bytes.%
 }{Updates ZF.}{Fast parallel mask equivalence validation.}
 \InstructionPage{INC}{10100}{Arithmetic}{Atomic Increment by 1}{%
 \small
@@ -1121,9 +1194,9 @@ Syntax:    PUSH arg0(REG) : SREG -= 2, MEM[SREG] = arg0 \\
 Operation: SREG <- SREG - 2, MEM[SREG] <- arg0 \\[2pt]
 Example:   PUSH R0          ; Push word R0 onto execution stack
 }{%
-\BitDiagramTwoBytes{10110}{000}{Rs [7:5] \enspace | \enspace RSV [4:0]}{Rs [7:5] (source)}%
-\textbf{Octet 0:} Opcode \bits{10110}, configuration \field{cfg} = \bits{000}.\\
-\textbf{Octet 1:} Bits $[7:5]$ select source register \reg{Rs} (\texttt{R0}--\texttt{R7}); bits $[4:0]$ hold $00000_2$. Instruction length: 2 bytes.%
+\BitDiagramTwoRegs{10110}{Rs}{R0--R7}{RSV}%
+\textbf{Octet 0:} Opcode \bits{10110}, bits $[2:0]$ directly designate source register \reg{Rs} (\texttt{R0}--\texttt{R7}, 1st argument).\\
+\textbf{Octet 1:} Bits $[7:0]$ are reserved ($00000000_2$). Instruction length: 2 bytes.%
 }{Preserves arithmetic flags.}{Hardware-assisted subroutine and context preservation.}
 \InstructionPage{POP}{10111}{Stack}{Pop Word from Execution Stack}{%
 \small
@@ -1131,9 +1204,9 @@ Syntax:    POP arg0(REG) : arg0 = MEM[SREG], SREG += 2 \\
 Operation: arg0 <- MEM[SREG], SREG <- SREG + 2 \\[2pt]
 Example:   POP R0           ; Pop word from top of stack into R0
 }{%
-\BitDiagramTwoBytes{10111}{000}{Rd [7:5] \enspace | \enspace RSV [4:0]}{Rd [7:5] (dest)}%
-\textbf{Octet 0:} Opcode \bits{10111}, configuration \field{cfg} = \bits{000}.\\
-\textbf{Octet 1:} Bits $[7:5]$ select destination register \reg{Rd} (\texttt{R0}--\texttt{R7}); bits $[4:0]$ hold $00000_2$. Instruction length: 2 bytes.%
+\BitDiagramTwoRegs{10111}{Rd}{R0--R7}{RSV}%
+\textbf{Octet 0:} Opcode \bits{10111}, bits $[2:0]$ directly designate destination register \reg{Rd} (\texttt{R0}--\texttt{R7}, 1st argument).\\
+\textbf{Octet 1:} Bits $[7:0]$ are reserved ($00000000_2$). Instruction length: 2 bytes.%
 }{Preserves arithmetic flags.}{Symmetric restoration of execution contexts.}
 \InstructionPage{BSL}{11000}{Shift}{Iterative Hardware Shift Left}{%
 \small
@@ -1228,14 +1301,16 @@ Example:   MSP FREG, R0         ; Direct load FREG = R0 \\
 \textbf{Octet 0:} Opcode \bits{11010}. Bit $[10]$ sets mode ($0$ = Load, $1$ = Modify). Bits $[9:8]$ select register ($00$ = \reg{FREG}, $01$ = \reg{PTREG}).\\
 \textbf{Octet 1:} Under load ($[10]=0$), selects \reg{Rs} for \reg{FREG} or pair \reg{Rs\_hi}, \reg{Rs\_lo} for \reg{PTREG}. Under modification ($[10]=1$), bits $[7:6]$ encode operation (for \reg{FREG}: AND, OR, XOR, XNOR; for \reg{PTREG}: ADD, SUB), and bits $[5:3]$ select single register \reg{Rs}. Instruction length: 2 bytes.%
 }{FREG flags modified directly or by mask. PTREG arithmetic updates CF carry/borrow via the ALU.}{Universal privileged control primitive for system architectures.}
-\InstructionPage{RSV27}{11011}{Reserved}{Architectural Extension Slot}{%
+\InstructionPage{MOD}{11011}{Arithmetic}{Integer Modulo Operation}{%
 \small
-Syntax:    RSV27 : reserved \\
-Operation: Reserved for LIM architecture hardware extensions
+Syntax:    MOD arg0, arg1, arg2 : arg0 = arg1 \% arg2 \\
+Operation: dst <- arg1 \% arg2 \\[2pt]
+Example:   MOD R0, R1, R2   ; R0 = R1 \% R2 (integer remainder)
 }{%
-\BitDiagramOneByte{11011}{000}%
-Reserved for future LIM ISA revisions. Length: 1 byte.%
-}{Undefined.}{Reserved.}
+\BitDiagramArithmetic{11011}{Rd [2:0]}{Rd [2:0], Rs1 [7:5], Rs2 [4:2]}%
+\textbf{Octet 0:} Opcode \bits{11011}, bits $[2:0]$ designate destination register \reg{Rd} (\texttt{R0}--\texttt{R7}, 1st argument).\\
+\textbf{Octet 1:} Bits $[7:5]$ designate dividend \reg{Rs1} (\texttt{R0}--\texttt{R7}); bits $[4:2]$ designate divisor \reg{Rs2} (\texttt{R0}--\texttt{R7}); bits $[1:0]$ are reserved (\bits{00}). Length: 2 bytes.%
+}{Division by zero asserts hardware error flag EM (Error Math) without core lockup; updates ZF.}{Calculates the integer remainder (modulo) of dividing Rs1 by Rs2 and stores the result directly into destination register Rd without overwriting temporary accumulator registers.}
 \InstructionPage{RSV28}{11100}{Reserved}{Architectural Extension Slot}{%
 \small
 Syntax:    RSV28 : reserved \\

@@ -99,12 +99,12 @@ The LIM M2 processor implements a clean, orthogonal instruction encoding scheme 
   * **Unary (1 byte, 1 operand):** `NOT Rd`, `INC Rd`, `DEC Rd`
   * **Register transfer:** `LRR Rd, Rs` $\implies \text{Rd} = \text{Rs}$ (copy point B $\to$ point A)
   * **Comparator:** `CMP Rs1, Rs2` $\implies$ sets `FREG.CMP` (`01`: `<`, `10`: `=`, `11`: `>`, `00`: reset/error)
-* **Dynamic operand decoding:** Driven by the 5-bit opcode and 3-bit `CFG` modifier field in Octet 0.
+* **Direct first argument & modifier encoding:** Driven by the 5-bit opcode in Octet 0 bits `[7:3]`, while bits `[2:0]` directly encode the first register argument (`Rd` / `Rs1` / `Rs`) across arithmetic, logic, transfer, compare, and stack operations, or control/addressing modifiers (`CFG` / `MOD` / `SZ:Mode`) where applicable.
 
 ### Universal Instruction Layout
 ```
 +------------------------+-------------------+------------------------------------------+
-|      OPCODE [7:3]      |     CFG [2:0]     | Operands & Arguments (Dynamic Length)    |
+|      OPCODE [7:3]      |   Rd / CFG [2:0]  | Operands & Arguments (Dynamic Length)    |
 |        (5 bits)        |     (3 bits)      |             (0 to 3 octets)              |
 +------------------------+-------------------+------------------------------------------+
   Bit 7                3   Bit 2           0   Byte 1 ... Byte 3 (Optional)
@@ -120,31 +120,31 @@ The LIM M2 processor implements a clean, orthogonal instruction encoding scheme 
    ```
 
 2. **Class II: Three-Operand Arithmetic (2 Bytes)**
-   * `ADD`, `SUB`, `MUL`, `DIV` (`Rd = Rs1 op Rs2`)
+   * `ADD`, `SUB`, `MUL`, `DIV`, `MOD` (`Rd = Rs1 op Rs2`)
    ```
-   Octet 0: [ OPCODE (5b) | CFG=000 (3b) ]
-   Octet 1: [ Rd [7:5] (Dest) | Rs1 [4:2] (Src 1) | Rs2 [1:0] (Src 2) ]
+   Octet 0: [ OPCODE (5b) | Rd [2:0] (Destination) ]
+   Octet 1: [ Rs1 [7:5] (Src 1) | Rs2 [4:2] (Src 2) | RSV=00 [1:0] ]
    ```
 
 3. **Class III: Two-Operand Logic (2 Bytes)**
    * `AND`, `OR`, `NAND`, `NOR`, `XOR`, `XNOR` (`Rd = Rd op Rs`)
    ```
-   Octet 0: [ OPCODE (5b) | CFG=000 (3b) ]
-   Octet 1: [ Rd [7:5] (Dest/Src 1) | Rs [4:2] (Src 2) | RSV=00 [1:0] ]
+   Octet 0: [ OPCODE (5b) | Rd [2:0] (Dest / Src 1) ]
+   Octet 1: [ Rs [7:5] (Src 2) | RSV=00000 [4:0] ]
    ```
 
 4. **Class IV: Register-to-Register Transfer (2 Bytes)**
-   * `LRR Rd, Rs`: fast direct copy from point B (`Rs`) to point A (`Rd`) via `MUX 1` $\to$ `MUX 2` bypass (1 cycle, `FREG` untouched).
+   * `LRR Rd, Rs`: fast direct copy from source (`Rs`) to destination (`Rd`) via `MUX 1` $\to$ `MUX 2` bypass (1 cycle, `FREG` untouched).
    ```
-   Octet 0: [ 00111 (5b) | CFG=000 (3b) ]
-   Octet 1: [ Rd [7:5] (Point A / Dest) | Rs [4:2] (Point B / Src) | RSV=00 [1:0] ]
+   Octet 0: [ 00111 (5b) | Rd [2:0] (Destination) ]
+   Octet 1: [ Rs [7:5] (Source) | RSV=00000 [4:0] ]
    ```
 
 5. **Class V: Hardware Comparator (2 Bytes)**
    * `CMP Rs1, Rs2`: non-destructive compare setting `FREG.CMP` (`01`: `<`, `10`: `=`, `11`: `>`, `00`: reset/error).
    ```
-   Octet 0: [ 01000 (5b) | CFG=000 (3b) ]
-   Octet 1: [ Rs1 [7:5] (Src 1) | Rs2 [4:2] (Src 2) | RSV=00 [1:0] ]
+   Octet 0: [ 01000 (5b) | Rs1 [2:0] (Operand 1) ]
+   Octet 1: [ Rs2 [7:5] (Operand 2) | RSV=00000 [4:0] ]
    ```
 
 6. **Class VI: Hardware Shift Register (2 Bytes, Iterative D-Flip-Flop Chain)**
@@ -159,8 +159,8 @@ The LIM M2 processor implements a clean, orthogonal instruction encoding scheme 
 7. **Class VII: Stack Operations (2 Bytes)**
    * `PUSH Rs` and `POP Rd`: word transfers via 24-bit stack pointer `SREG`.
    ```
-   Octet 0: [ OPCODE (5b) | CFG=000 (3b) ]
-   Octet 1: [ Reg [7:5] (Rs / Rd) | RSV=00000 [4:0] ]
+   Octet 0: [ OPCODE (5b) | Rs / Rd [2:0] (Reg R0-R7) ]
+   Octet 1: [ RSV=00000000 [7:0] ]
    ```
 
 8. **Class VIII: Manage Special Registers (2 Bytes)**
@@ -215,7 +215,7 @@ The LIM M2 processor implements a clean, orthogonal instruction encoding scheme 
 | **11000** | `0x18` | **`BSL`** | Shift | Barrel Shift Left (zero-fill or cyclic rotate via `DBIT` if `SMOD=1`) |
 | **11001** | `0x19` | **`BSR`** | Shift | Barrel Shift Right (zero-fill or cyclic rotate via `DBIT` if `SMOD=1`) |
 | **11010** | `0x1A` | **`MSP`** | System | Manage Special Registers (`FREG`, `PTREG`) |
-| **11011** | `0x1B` | **`RSV27`** | Reserved | Vector / SIMD hardware extensions slot |
+| **11011** | `0x1B` | **`MOD`** | Arithmetic | Integer remainder (modulo): `Rd = Rs1 % Rs2` |
 | **11100** | `0x1C` | **`RSV28`** | Reserved | Extended addressing coprocessor slot |
 | **11101** | `0x1D` | **`RSV29`** | Reserved | Floating-Point Unit (FPU) slot |
 | **11110** | `0x1E` | **`RSV30`** | Reserved | Hardware cryptography accelerator slot |

@@ -99,12 +99,12 @@ Procesor LIM M2 implementuje čistú, ortogonálnu schému kódovania inštrukci
   * **Unárne (1 bajt, 1 operand):** `NOT Rd`, `INC Rd`, `DEC Rd`
   * **Presun:** `LRR Rd, Rs` $\implies \text{Rd} = \text{Rs}$ (kopírovanie z bodu B do bodu A)
   * **Komparátor:** `CMP Rs1, Rs2` $\implies$ nastavuje `FREG.CMP` (`01`: `<`, `10`: `=`, `11`: `>`, `00`: reset/chyba)
-* **Dynamické dekódovanie operandov:** Riadené 5-bitovým opkódom a 3-bitovým modifikátorom `CFG` v oktete 0.
+* **Priame kódovanie prvého argumentu a modifikátorov:** 5-bitový opkód v bitoch `[7:3]` oktetu 0, a bity `[2:0]` priamo kódujú prvý registrový argument (`Rd` / `Rs1` / `Rs`) v aritmetike, logike, presunoch, porovnávaní a zásobníkových operáciách, alebo modifikátory adresácie/riadenia (`CFG` / `MOD` / `SZ:Mode`), kde je to aplikovateľné.
 
 ### Univerzálna bitová šablóna
 ```
 +------------------------+-------------------+------------------------------------------+
-|      OPCODE [7:3]      |     CFG [2:0]     | Operandy a argumenty (dynamická dĺžka)   |
+|      OPCODE [7:3]      |   Rd / CFG [2:0]  | Operandy a argumenty (dynamická dĺžka)   |
 |        (5 bitov)       |     (3 bity)      |             (0 až 3 oktety)              |
 +------------------------+-------------------+------------------------------------------+
   Bit 7                3   Bit 2           0   Bajt 1 ... Bajt 3 (voliteľné)
@@ -120,31 +120,31 @@ Procesor LIM M2 implementuje čistú, ortogonálnu schému kódovania inštrukci
    ```
 
 2. **Trieda II: Trojoperandová aritmetika (2 bajty)**
-   * `ADD`, `SUB`, `MUL`, `DIV` (`Rd = Rs1 op Rs2`)
+   * `ADD`, `SUB`, `MUL`, `DIV`, `MOD` (`Rd = Rs1 op Rs2`)
    ```
-   Oktet 0: [ OPCODE (5b) | CFG=000 (3b) ]
-   Oktet 1: [ Rd [7:5] (Cieľ) | Rs1 [4:2] (Zdroj 1) | Rs2 [1:0] (Zdroj 2) ]
+   Oktet 0: [ OPCODE (5b) | Rd [2:0] (Cieľ) ]
+   Oktet 1: [ Rs1 [7:5] (Zdroj 1) | Rs2 [4:2] (Zdroj 2) | RSV=00 [1:0] ]
    ```
 
 3. **Trieda III: Dvojoperandová logika (2 bajty)**
    * `AND`, `OR`, `NAND`, `NOR`, `XOR`, `XNOR` (`Rd = Rd op Rs`)
    ```
-   Oktet 0: [ OPCODE (5b) | CFG=000 (3b) ]
-   Oktet 1: [ Rd [7:5] (Cieľ/Op1) | Rs [4:2] (Zdroj 2) | RSV=00 [1:0] ]
+   Oktet 0: [ OPCODE (5b) | Rd [2:0] (Cieľ/Op1) ]
+   Oktet 1: [ Rs [7:5] (Zdroj 2) | RSV=00000 [4:0] ]
    ```
 
 4. **Trieda IV: Medziregistrový presun LRR (2 bajty)**
    * `LRR Rd, Rs`: priame kopírovanie zo zdroja (bod B, `Rs`) do cieľa (bod A, `Rd`) cez premosťovací kanál `MUX 1` $\to$ `MUX 2` (1 cyklus, `FREG` sa nemení).
    ```
-   Oktet 0: [ 00111 (5b) | CFG=000 (3b) ]
-   Oktet 1: [ Rd [7:5] (Bod A / Kam) | Rs [4:2] (Bod B / Odkiaľ) | RSV=00 [1:0] ]
+   Oktet 0: [ 00111 (5b) | Rd [2:0] (Cieľ) ]
+   Oktet 1: [ Rs [7:5] (Zdroj) | RSV=00000 [4:0] ]
    ```
 
 5. **Trieda V: Hardvérový komparátor CMP (2 bajty)**
    * `CMP Rs1, Rs2`: nedeštruktívne porovnanie s nastavením `FREG.CMP` (`01`: `<`, `10`: `=`, `11`: `>`, `00`: reset/chyba).
    ```
-   Oktet 0: [ 01000 (5b) | CFG=000 (3b) ]
-   Oktet 1: [ Rs1 [7:5] (Operand 1) | Rs2 [4:2] (Operand 2) | RSV=00 [1:0] ]
+   Oktet 0: [ 01000 (5b) | Rs1 [2:0] (Operand 1) ]
+   Oktet 1: [ Rs2 [7:5] (Operand 2) | RSV=00000 [4:0] ]
    ```
 
 6. **Trieda VI: Hardvérový posun na D-klopných obvodoch (2 bajty, taktovaný cyklus)**
@@ -159,8 +159,8 @@ Procesor LIM M2 implementuje čistú, ortogonálnu schému kódovania inštrukci
 7. **Trieda VII: Operácie so zásobníkom (2 bajty)**
    * `PUSH Rs` a `POP Rd`: slovný prenos so zásobníkom cez 24-bitový ukazovateľ `SREG`.
    ```
-   Oktet 0: [ OPCODE (5b) | CFG=000 (3b) ]
-   Oktet 1: [ Reg [7:5] (Rs / Rd) | RSV=00000 [4:0] ]
+   Oktet 0: [ OPCODE (5b) | Rs / Rd [2:0] (Register R0--R7) ]
+   Oktet 1: [ RSV=00000000 [7:0] ]
    ```
 
 8. **Trieda VIII: Manipulácia so špeciálnymi registrami (2 bajty)**
@@ -215,7 +215,7 @@ Procesor LIM M2 implementuje čistú, ortogonálnu schému kódovania inštrukci
 | **11000** | `0x18` | **`BSL`** | Posuny | Barelový posun doľava (nulovanie alebo cyklická rotácia cez `DBIT` pri `SMOD=1`) |
 | **11001** | `0x19` | **`BSR`** | Posuny | Barelový posun doprava (nulovanie alebo cyklická rotácia cez `DBIT` pri `SMOD=1`) |
 | **11010** | `0x1A` | **`MSP`** | Systém | Manipulácia so špeciálnymi registrami (`FREG`, `PTREG`) |
-| **11011** | `0x1B` | **`RSV27`** | Rezerva | Slot pre vektorové inštrukcie (SIMD) |
+| **11011** | `0x1B` | **`MOD`** | Aritmetika | Výpočet zvyšku po delení (modulo): `Rd = Rs1 % Rs2` |
 | **11100** | `0x1C` | **`RSV28`** | Rezerva | Slot pre rozšírené adresovanie |
 | **11101** | `0x1D` | **`RSV29`** | Rezerva | Slot koprocesora s pohyblivou rádovou čiarkou (FPU) |
 | **11110** | `0x1E` | **`RSV30`** | Rezerva | Slot pre kryptografický akcelerátor |

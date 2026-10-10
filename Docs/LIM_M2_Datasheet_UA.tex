@@ -104,6 +104,79 @@
 \end{tikzpicture}\par\vspace{1.5mm}%
 }
 
+\newcommand{\BitDiagramArithmetic}[3]{%
+\noindent\begin{tikzpicture}[x=0.9cm,y=0.55cm]
+  \draw[thick,fill=limblue] (0,0) rectangle (4.0,1.05);
+  \draw[thick,fill=limcyan] (4.0,0) rectangle (6.6,1.05);
+  \draw[thick,fill=limlight] (7.0,0) rectangle (9.8,1.05);
+  \draw[thick,fill=limmint] (9.8,0) rectangle (12.6,1.05);
+  \draw[thick,fill=gray!20] (12.6,0) rectangle (14.6,1.05);
+  \node[text=white,font=\bfseries\tiny,align=center] at (2.0,0.52) {OPCODE (5б)\\#1};
+  \node[text=white,font=\bfseries\tiny,align=center] at (5.3,0.52) {Rd [2:0]\\#2};
+  \node[font=\bfseries\tiny,align=center] at (8.4,0.52) {Rs1 [7:5]};
+  \node[font=\bfseries\tiny,align=center] at (11.2,0.52) {Rs2 [4:2]};
+  \node[font=\bfseries\tiny,align=center] at (13.6,0.52) {RSV\\00};
+  % Divider ticks Octet 0
+  \draw[line width=0.7pt, limblue] (0,1.05) -- (0,1.22);
+  \draw[line width=0.7pt, limblue] (4.0,1.05) -- (4.0,1.22);
+  \draw[line width=0.7pt, limblue] (6.6,1.05) -- (6.6,1.22);
+  % Divider ticks Octet 1
+  \draw[line width=0.7pt, limblue] (7.0,1.05) -- (7.0,1.22);
+  \draw[line width=0.7pt, limblue] (9.8,1.05) -- (9.8,1.22);
+  \draw[line width=0.7pt, limblue] (12.6,1.05) -- (12.6,1.22);
+  \draw[line width=0.7pt, limblue] (14.6,1.05) -- (14.6,1.22);
+  % Bit labels Octet 0
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (0,1.06) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (4.0,1.06) {3};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (4.0,1.06) {2};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (6.6,1.06) {0};
+  % Bit labels Octet 1
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (7.0,1.06) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (9.8,1.06) {5};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (9.8,1.06) {4};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (12.6,1.06) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (12.6,1.06) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (14.6,1.06) {0};
+  % Footers
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.3,-0.05) {Октет 0: Опкод + Rd (1-й арг)};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (10.8,-0.05) {Октет 1: Rs1 [7:5], Rs2 [4:2], 00 [1:0] (2 байти)};
+\end{tikzpicture}\par\vspace{1.5mm}%
+}
+
+\newcommand{\BitDiagramTwoRegs}[4]{%
+\noindent\begin{tikzpicture}[x=0.9cm,y=0.55cm]
+  \draw[thick,fill=limblue] (0,0) rectangle (4.0,1.05);
+  \draw[thick,fill=limcyan] (4.0,0) rectangle (6.6,1.05);
+  \draw[thick,fill=limlight] (7.0,0) rectangle (10.0,1.05);
+  \draw[thick,fill=gray!20] (10.0,0) rectangle (14.6,1.05);
+  \node[text=white,font=\bfseries\tiny,align=center] at (2.0,0.52) {OPCODE (5б)\\#1};
+  \node[text=white,font=\bfseries\tiny,align=center] at (5.3,0.52) {#2 (3б)\\#3};
+  \node[font=\bfseries\tiny,align=center] at (8.5,0.52) {#4 [7:5]};
+  \node[font=\bfseries\tiny,align=center] at (12.3,0.52) {RSV [4:0] \enspace (00000)};
+  % Divider ticks Octet 0
+  \draw[line width=0.7pt, limblue] (0,1.05) -- (0,1.22);
+  \draw[line width=0.7pt, limblue] (4.0,1.05) -- (4.0,1.22);
+  \draw[line width=0.7pt, limblue] (6.6,1.05) -- (6.6,1.22);
+  % Divider ticks Octet 1
+  \draw[line width=0.7pt, limblue] (7.0,1.05) -- (7.0,1.22);
+  \draw[line width=0.7pt, limblue] (10.0,1.05) -- (10.0,1.22);
+  \draw[line width=0.7pt, limblue] (14.6,1.05) -- (14.6,1.22);
+  % Bit labels Octet 0
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (0,1.06) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (4.0,1.06) {3};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (4.0,1.06) {2};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (6.6,1.06) {0};
+  % Bit labels Octet 1
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (7.0,1.06) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (10.0,1.06) {5};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (10.0,1.06) {4};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (14.6,1.06) {0};
+  % Footers
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.3,-0.05) {Октет 0: Опкод + #2};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (10.8,-0.05) {Октет 1: #4 [7:5] (Довжина: 2 байти)};
+\end{tikzpicture}\par\vspace{1.5mm}%
+}
+
 \newcommand{\BitDiagramShift}[3]{%
 \noindent\begin{tikzpicture}[x=0.9cm,y=0.55cm]
   \draw[thick,fill=limblue] (0,0) rectangle (4.0,1.05);
@@ -568,13 +641,18 @@ FREG & 16 бітів & Регістр стану та керування (Proces
 \end{tikzpicture}
 \end{center}
 
-Поле \field{CFG} (3 біти) визначає один із 8 можливих режимів роботи команди, або (в однобайтових чи зсувних інструкціях) безпосередньо кодує цільовий регістр \reg{Rd}, усуваючи необхідність вибірки додаткового байта.
+Молодші 3 біти першого октету (\bits{[2:0]}) мають подвійне детерміноване призначення:
+\begin{itemize}
+  \item В операціях з регістрами (арифметика, унарні команди, логіка, зсуви, пересилання, стек) біти $[2:0]$ безпосередньо кодують \textbf{перший регістровий аргумент} (\reg{Rd} або \reg{Rs1}), що дозволяє адресувати повний набір із 8 регістрів \texttt{R0}--\texttt{R7} без додаткових накладних витрат.
+  \item У командах, які потребують вибору апаратного режиму чи селектора пам'яті/спецрегістрів (\texttt{LMR}, \texttt{LRM}, \texttt{MSP}, \texttt{JMP}, \texttt{JCR}, \texttt{JNZ}, \texttt{JZ}), біти $[2:0]$ виступають конфігуратором режиму (\field{CFG} / \field{MOD} / \field{SRC} / \field{DST}).
+  \item У безаргументних керуючих інструкціях (\texttt{NOP}, \texttt{HALT}, \texttt{CLI}, \texttt{STI}, \texttt{RET}) ці біти містять \bits{000}.
+\end{itemize}
 
 \subsection{Клас I: Однобайтові інструкції (1 байт, 0 додаткових октет)}
 Інструкції керування (\texttt{NOP}, \texttt{HALT}, \texttt{CLI}, \texttt{STI}, \texttt{RET}) та унарні регістрові операції (\texttt{NOT}, \texttt{INC}, \texttt{DEC}) зчитуються за рівно один такт вибірки. Другий байт із шини пам'яті не запитується:
 \begin{itemize}
-  \item Для безаргументних команд поле \field{CFG} містить \bits{000}.
-  \item Для унарних команд (\texttt{INC Rd}, \texttt{DEC Rd}, \texttt{NOT Rd}) молодші 3 біти (\bits{[2:0]}) містять індекс цільового регістра \reg{Rd} (\texttt{R0}--\texttt{R7}).
+  \item Для безаргументних команд молодші 3 біти містять \bits{000}.
+  \item Для унарних команд (\texttt{INC Rd}, \texttt{DEC Rd}, \texttt{NOT Rd}) молодші 3 біти (\bits{[2:0]}) містять індекс цільового регістра \reg{Rd} (\texttt{R0}--\texttt{R7}, єдиний аргумент).
 \end{itemize}
 
 \begin{center}
@@ -595,13 +673,13 @@ FREG & 16 бітів & Регістр стану та керування (Proces
 \end{center}
 
 \subsection{Клас II: Трьохоперандні арифметичні інструкції (2 байти)}
-Команди обчислень (\texttt{ADD}, \texttt{SUB}, \texttt{MUL}, \texttt{DIV}) суворо реалізують архітектурну парадигму \textbf{«спочатку приймач, потім доданки»}:
+Команди обчислень (\texttt{ADD}, \texttt{SUB}, \texttt{MUL}, \texttt{DIV}, \texttt{MOD}) суворо реалізують архітектурну парадигму \textbf{«спочатку приймач, потім доданки»}:
 $$\texttt{ADD Rd, Rs1, Rs2} \quad \implies \quad \text{Rd} \leftarrow \text{Rs1} + \text{Rs2} + \reg{ALU\_RESIDUAL}$$
-Перший октет містить код операції (\bits{[7:3]}) та нульову конфігурацію (\bits{[2:0] = 000}). Другий октет упаковує індекси трьох операндів:
+$$\texttt{MOD Rd, Rs1, Rs2} \quad \implies \quad \text{Rd} \leftarrow \text{Rs1} \pmod{\text{Rs2}}$$
+Перший аргумент команди (цільовий регістр призначення \reg{Rd}) розміщується безпосередньо в молодших 3 бітах першого октету, що дозволяє адресувати повні 8 регістрів \texttt{R0}--\texttt{R7} для всіх трьох операндів:
 \begin{itemize}
-  \item Біти $[7:5]$: цільовий регістр призначення \reg{Rd} (3 біти, \texttt{R0}--\texttt{R7}).
-  \item Біти $[4:2]$: перший операнд-джерело \reg{Rs1} (3 біти, \texttt{R0}--\texttt{R7}).
-  \item Біти $[1:0]$: другий операнд-джерело \reg{Rs2} (молодші 2 біти регістра \texttt{R0}--\texttt{R3}).
+  \item \textbf{Октет 0:} біти $[7:3]$ --- код операції (5 бітів); біти $[2:0]$ --- цільовий регістр призначення \reg{Rd} (3 біти, \texttt{R0}--\texttt{R7}, перший аргумент).
+  \item \textbf{Октет 1:} біти $[7:5]$ --- перший операнд-джерело \reg{Rs1} (3 біти, \texttt{R0}--\texttt{R7}); біти $[4:2]$ --- другий операнд-джерело \reg{Rs2} (3 біти, \texttt{R0}--\texttt{R7}); біти $[1:0]$ --- резерв (\bits{00}).
 \end{itemize}
 
 \begin{center}
@@ -612,10 +690,10 @@ $$\texttt{ADD Rd, Rs1, Rs2} \quad \implies \quad \text{Rd} \leftarrow \text{Rs1}
   \draw[thick,fill=limmint] (10.0,0) rectangle (12.8,1.1);
   \draw[thick,fill=gray!20] (12.8,0) rectangle (15.2,1.1);
   \node[text=white,font=\bfseries\tiny,align=center] at (2.1,0.55) {OPCODE (5б)\\біт [7:3]};
-  \node[text=white,font=\bfseries\tiny,align=center] at (5.5,0.55) {CFG=000\\біт [2:0]};
-  \node[font=\bfseries\tiny,align=center] at (8.6,0.55) {Rd [7:5]\\(приймач)};
-  \node[font=\bfseries\tiny,align=center] at (11.4,0.55) {Rs1 [4:2]\\(джерело 1)};
-  \node[font=\bfseries\tiny,align=center] at (14.0,0.55) {Rs2 [1:0]\\(джерело 2)};
+  \node[text=white,font=\bfseries\tiny,align=center] at (5.5,0.55) {Rd [2:0]\\(куди, 1-й арг)};
+  \node[font=\bfseries\tiny,align=center] at (8.6,0.55) {Rs1 [7:5]\\(звідки 1)};
+  \node[font=\bfseries\tiny,align=center] at (11.4,0.55) {Rs2 [4:2]\\(звідки 2)};
+  \node[font=\bfseries\tiny,align=center] at (14.0,0.55) {RSV [1:0]\\00};
   % Ticks & labels Octet 0
   \draw[line width=0.7pt, limblue] (0,1.1) -- (0,1.28);
   \draw[line width=0.7pt, limblue] (4.2,1.1) -- (4.2,1.28);
@@ -635,8 +713,8 @@ $$\texttt{ADD Rd, Rs1, Rs2} \quad \implies \quad \text{Rd} \leftarrow \text{Rs1}
   \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (12.8,1.12) {2};
   \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (12.8,1.12) {1};
   \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (15.2,1.12) {0};
-  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.4,-0.08) {Октет 0: Опкод (байт 1)};
-  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (11.2,-0.08) {Октет 1: Регістри операндів (байт 2)};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.4,-0.08) {Октет 0: Опкод + Rd (1-й арг)};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (11.2,-0.08) {Октет 1: Rs1 [7:5], Rs2 [4:2], RSV [1:0]};
 \end{tikzpicture}
 \end{center}
 
@@ -644,8 +722,8 @@ $$\texttt{ADD Rd, Rs1, Rs2} \quad \implies \quad \text{Rd} \leftarrow \text{Rs1}
 Логічні операції (\texttt{AND}, \texttt{OR}, \texttt{NAND}, \texttt{NOR}, \texttt{XOR}, \texttt{XNOR}) мають рівно два операнди:
 $$\texttt{AND Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rd} \ \text{AND} \ \text{Rs}$$
 \begin{itemize}
-  \item Октет 0: опкод у бітах $[7:3]$, біти $[2:0] = 000_2$.
-  \item Октет 1: біти $[7:5]$ задають цільовий регістр-приймач \reg{Rd}; біти $[4:2]$ задають другий регістр-операнд \reg{Rs}; біти $[1:0]$ зарезервовані ($00_2$).
+  \item \textbf{Октет 0:} біти $[7:3]$ --- код операції; біти $[2:0]$ --- цільовий регістр-приймач \reg{Rd} (\texttt{R0}--\texttt{R7}, перший аргумент).
+  \item \textbf{Октет 1:} біти $[7:5]$ --- другий регістр-операнд \reg{Rs} (\texttt{R0}--\texttt{R7}); біти $[4:0]$ --- зарезервовані ($00000_2$).
 \end{itemize}
 
 \begin{center}
@@ -653,13 +731,11 @@ $$\texttt{AND Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rd} \ \tex
   \draw[thick,fill=limblue] (0,0) rectangle (4.2,1.1);
   \draw[thick,fill=limcyan] (4.2,0) rectangle (6.8,1.1);
   \draw[thick,fill=limlight] (7.2,0) rectangle (10.5,1.1);
-  \draw[thick,fill=limmint] (10.5,0) rectangle (13.8,1.1);
-  \draw[thick,fill=gray!20] (13.8,0) rectangle (15.2,1.1);
+  \draw[thick,fill=gray!20] (10.5,0) rectangle (15.2,1.1);
   \node[text=white,font=\bfseries\tiny,align=center] at (2.1,0.55) {OPCODE (5б)\\бит [7:3]};
-  \node[text=white,font=\bfseries\tiny,align=center] at (5.5,0.55) {CFG=000\\бит [2:0]};
-  \node[font=\bfseries\tiny,align=center] at (8.85,0.55) {Rd [7:5]\\(приймач)};
-  \node[font=\bfseries\tiny,align=center] at (12.15,0.55) {Rs [4:2]\\(операнд)};
-  \node[font=\bfseries\tiny,align=center] at (14.5,0.55) {RSV\\00};
+  \node[text=white,font=\bfseries\tiny,align=center] at (5.5,0.55) {Rd [2:0]\\(приймач, 1-й арг)};
+  \node[font=\bfseries\tiny,align=center] at (8.85,0.55) {Rs [7:5]\\(операнд 2)};
+  \node[font=\bfseries\tiny,align=center] at (12.85,0.55) {RSV [4:0] \enspace (00000)};
   % Ticks & labels Octet 0
   \draw[line width=0.7pt, limblue] (0,1.1) -- (0,1.28);
   \draw[line width=0.7pt, limblue] (4.2,1.1) -- (4.2,1.28);
@@ -671,29 +747,26 @@ $$\texttt{AND Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rd} \ \tex
   % Ticks & labels Octet 1
   \draw[line width=0.7pt, limblue] (7.2,1.1) -- (7.2,1.28);
   \draw[line width=0.7pt, limblue] (10.5,1.1) -- (10.5,1.28);
-  \draw[line width=0.7pt, limblue] (13.8,1.1) -- (13.8,1.28);
   \draw[line width=0.7pt, limblue] (15.2,1.1) -- (15.2,1.28);
   \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (7.2,1.12) {7};
   \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (10.5,1.12) {5};
   \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (10.5,1.12) {4};
-  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (13.8,1.12) {2};
-  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (13.8,1.12) {1};
   \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (15.2,1.12) {0};
-  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.4,-0.08) {Октет 0: Опкод};
-  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (11.2,-0.08) {Октет 1: Rd [7:5], Rs [4:2], RSV [1:0]};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.4,-0.08) {Октет 0: Опкод + Rd};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (11.2,-0.08) {Октет 1: Rs [7:5], RSV [4:0]};
 \end{tikzpicture}
 \end{center}
 
 \subsection{Клас IV: Міжрегістрове переміщення LRR (2 байти)}
 Інструкція \texttt{LRR Rd, Rs} копіює дані з джерела (точка Б, \reg{Rs}) у приймач (точка А, \reg{Rd}):
 $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
-Переміщення здійснюється через прямий апаратний обхідний тракт \textbf{MUX 1} $\to$ \textbf{MUX 2} повз АЛП за один мікротакт, без зміни регістра прапорців \reg{FREG}. Формат октетів: Октет 0: опкод \bits{00111}, Октет 1: \bits{Rd[7:5] | Rs[4:2] | 00[1:0]}.
+Переміщення здійснюється через прямий апаратний обхідний тракт \textbf{MUX 1} $\to$ \textbf{MUX 2} повз АЛП за один мікротакт, без зміни регістра прапорців \reg{FREG}. Формат октетів: Октет 0 містить опкод \bits{00111} та цільовий регістр \reg{Rd} (\bits{[2:0]}), Октет 1 містить регістр-джерело \reg{Rs} (\bits{[7:5]}) та резерв (\bits{[4:0]} = \bits{00000}).
 
 \subsection{Клас V: Апаратний компаратор CMP (2 байти)}
 Інструкція \texttt{CMP Rs1, Rs2} порівнює значення регістрів без руйнування вмісту:
 \begin{itemize}
-  \item Октет 0: опкод \bits{01000}, конфігурація \bits{000}.
-  \item Октет 1: біти $[7:5]$ задають \reg{Rs1}, біти $[4:2]$ задають \reg{Rs2}, біти $[1:0]$ містять \bits{00}.
+  \item \textbf{Октет 0:} код операції \bits{01000}, біти $[2:0]$ задають перший операнд-джерело \reg{Rs1} (перший аргумент).
+  \item \textbf{Октет 1:} біти $[7:5]$ задають другий операнд-джерело \reg{Rs2}; біти $[4:0]$ містять \bits{00000}.
 \end{itemize}
 Результат порівняння фіксується у спеціалізованому 2-бітному апаратному полі регістра стану \reg{FREG.CMP} (біти $[5:4]$):
 \begin{center}
@@ -747,8 +820,8 @@ $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
 \subsection{Клас VII: Операції зі стеком (PUSH, POP)}
 Команди стека зберігають регістр у пам'ять за 24-бітним вказівником \reg{SREG}:
 \begin{itemize}
-  \item Октет 0: опкод (\texttt{PUSH}: \bits{10110}, \texttt{POP}: \bits{10111}), біти $[2:0] = 000$.
-  \item Октет 1: біти $[7:5]$ задають регістр (\reg{Rs} при збереженні, \reg{Rd} при вилученні); біти $[4:0]$ містять $00000_2$.
+  \item \textbf{Октет 0:} код операції (\texttt{PUSH}: \bits{10110}, \texttt{POP}: \bits{10111}), біти $[2:0]$ прямо задають регістр операнда (\reg{Rs} при збереженні, \reg{Rd} при вилученні, перший аргумент).
+  \item \textbf{Октет 1:} біти $[7:0]$ містять $00000000_2$ (резерв).
 \end{itemize}
 
 \subsection{Клас VIII: Маніпуляція спеціальними регістрами (MSP)}
@@ -871,7 +944,7 @@ $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
 24 & 11000 & BSL  & Зсуви      & Барельний зсув ліворуч із налаштовуваним бітом \\
 25 & 11001 & BSR  & Зсуви      & Барельний зсув праворуч із фіксацією в DBIT \\
 26 & 11010 & MSP  & Система    & Маніпуляція службовими регістрами (FREG, PTREG) \\
-27 & 11011 & RSV27 & Резерв    & Зарезервовано для векторних інструкцій \\
+27 & 11011 & MOD  & Арифметика & Обчислення залишку від цілочисельного ділення (modulo) \\
 28 & 11100 & RSV28 & Резерв    & Зарезервовано для розширеної адресації \\
 29 & 11101 & RSV29 & Резерв    & Зарезервовано для операцій із рухомою комою \\
 30 & 11110 & RSV30 & Резерв    & Зарезервовано для апаратної криптографії \\
@@ -899,9 +972,9 @@ $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
            arg0 <- sum[15:0], ALU\_RESIDUAL <- (sum > 0xFFFF ? 1 : 0) \\[2pt]
 Приклад:   ADD R0, R1, R2   ; R0 = R1 + R2 (регістри R0--R7)
 }{%
-\BitDiagramTwoBytes{00001}{000}{Rd [7:5] \enspace | \enspace Rs1 [4:2] \enspace | \enspace Rs2 [1:0]}{Rd [7:5], Rs1 [4:2], Rs2 [1:0]}%
-\textbf{Октет 0:} код операції \bits{00001}, конфігурація \field{cfg} = \bits{000}.\\
-\textbf{Октет 1:} біти $[7:5]$ задають цільовий регістр \reg{Rd} (\texttt{R0}--\texttt{R7}, куди записується результат); біти $[4:2]$ задають перший доданок \reg{Rs1}; біти $[1:0]$ задають другий доданок \reg{Rs2}. Довжина команди: рівно 2 байти.%
+\BitDiagramArithmetic{00001}{Rd [2:0]}{Rd [2:0], Rs1 [7:5], Rs2 [4:2]}%
+\textbf{Октет 0:} код операції \bits{00001}, біти $[2:0]$ задають цільовий регістр призначення \reg{Rd} (\texttt{R0}--\texttt{R7}, перший аргумент).\\
+\textbf{Октет 1:} біти $[7:5]$ задають перший доданок \reg{Rs1} (\texttt{R0}--\texttt{R7}); біти $[4:2]$ задають другий доданок \reg{Rs2} (\texttt{R0}--\texttt{R7}); біти $[1:0]$ --- резерв (\bits{00}). Довжина команди: рівно 2 байти.%
 }{Встановлює прапорець переносу CF та переповнення OF при перевищенні $2^{16}-1$; оновлює ZF за значенням dst.}{Забезпечує наскрізну багатобайтову арифметику (32, 48, 64+ бітів). Якщо результат суми перевищує 16 бітів ($>2^{16}-1$), перенос (+1) фіксується у внутрішньому регістрі АЛП та автоматично додається під час наступної операції ADD без потреби в окремих інструкціях ADC. Молодші 16 бітів детерміновано зберігаються в dst. Ланцюг скидається командою NOP або перезаписується новою математичною операцією.}
 \InstructionPage{SUB}{00010}{Арифметика}{Віднімання з автоматичним каскадуванням позики}{%
 \small
@@ -910,9 +983,9 @@ $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
            arg0 <- diff[15:0], ALU\_RESIDUAL <- (diff < 0 ? 1 : 0) \\[2pt]
 Приклад:   SUB R0, R1, R2   ; R0 = R1 - R2 (регістри R0--R7)
 }{%
-\BitDiagramTwoBytes{00010}{000}{Rd [7:5] \enspace | \enspace Rs1 [4:2] \enspace | \enspace Rs2 [1:0]}{Rd [7:5], Rs1 [4:2], Rs2 [1:0]}%
-\textbf{Октет 0:} код операції \bits{00010}, конфігурація \field{cfg} = \bits{000}.\\
-\textbf{Октет 1:} біти $[7:5]$ задають цільовий регістр \reg{Rd} (куди зберігається різниця); біти $[4:2]$ задають зменшуване \reg{Rs1}; біти $[1:0]$ задають від'ємник \reg{Rs2}. Довжина команди: рівно 2 байти.%
+\BitDiagramArithmetic{00010}{Rd [2:0]}{Rd [2:0], Rs1 [7:5], Rs2 [4:2]}%
+\textbf{Октет 0:} код операції \bits{00010}, біти $[2:0]$ задають цільовий регістр призначення \reg{Rd} (\texttt{R0}--\texttt{R7}, перший аргумент).\\
+\textbf{Октет 1:} біти $[7:5]$ задають зменшуване \reg{Rs1} (\texttt{R0}--\texttt{R7}); біти $[4:2]$ задають від'ємник \reg{Rs2} (\texttt{R0}--\texttt{R7}); біти $[1:0]$ --- резерв (\bits{00}). Довжина команди: рівно 2 байти.%
 }{При різниці $< 0$ встановлює прапорець позики (Borrow / CF) та OF; оновлює ZF.}{Реалізує неперервне багатослівне віднімання. При виникненні від'ємної різниці ($< 0$) позика ($-1$) зберігається у внутрішньому регістрі АЛП, і в наступній операції SUB АЛП автоматично віднімає 1 зі старшого слова. Результат молодшого слова детерміновано фіксується в dst. Для початку нової незалежної різниці ланцюг переривається інструкцією NOP.}
 \InstructionPage{MUL}{00011}{Арифметика}{Цілочисельне множення зі збереженням старшої частини в регістрі АЛП}{%
 \small
@@ -921,9 +994,9 @@ $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
            arg0 <- prod[15:0], ALU\_RESIDUAL <- prod[31:16] \\[2pt]
 Приклад:   MUL R0, R1, R2   ; R0 = R1 * R2 (старша частина в ALU\_RESIDUAL)
 }{%
-\BitDiagramTwoBytes{00011}{000}{Rd [7:5] \enspace | \enspace Rs1 [4:2] \enspace | \enspace Rs2 [1:0]}{Rd [7:5], Rs1 [4:2], Rs2 [1:0]}%
-\textbf{Октет 0:} код операції \bits{00011}, конфігурація \field{cfg} = \bits{000}.\\
-\textbf{Октет 1:} біти $[7:5]$ задають цільовий регістр \reg{Rd} (молодші 16 бітів добутку); біти $[4:2]$ задають перший множник \reg{Rs1}; біти $[1:0]$ задають другий множник \reg{Rs2}. Старші 16 бітів добутку автоматично фіксуються в \reg{ALU\_RESIDUAL}. Довжина: 2 байти.%
+\BitDiagramArithmetic{00011}{Rd [2:0]}{Rd [2:0], Rs1 [7:5], Rs2 [4:2]}%
+\textbf{Октет 0:} код операції \bits{00011}, біти $[2:0]$ задають цільовий регістр призначення \reg{Rd} (\texttt{R0}--\texttt{R7}, перший аргумент).\\
+\textbf{Октет 1:} біти $[7:5]$ задають перший множник \reg{Rs1} (\texttt{R0}--\texttt{R7}); біти $[4:2]$ задають другий множник \reg{Rs2} (\texttt{R0}--\texttt{R7}); біти $[1:0]$ --- резерв (\bits{00}). Старші 16 бітів добутку автоматично фіксуються в \reg{ALU\_RESIDUAL}. Довжина: 2 байти.%
 }{Оновлює ZF; встановлює OF/CF, якщо старші розряди добутку (prod[31:16]) не дорівнюють 0.}{При множенні молодші 16 бітів добутку надходять у цільовий регістр dst, а старші 16 бітів фіксуються у внутрішньому службовому регістрі АЛП (ALU Residual). У наступній операції додавання цей залишок автоматично підсумовується (апаратна підтримка MAC / довгих чисел). Старшу частину можна також отримати в регістр через додавання очищеного регістра з самим собою. Команда NOP очищує залишковий регістр АЛП.}
 \InstructionPage{DIV}{00100}{Арифметика}{Цілочисельне ділення зі збереженням залишку у внутрішньому регістрі АЛП}{%
 \small
@@ -932,9 +1005,9 @@ $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
            ALU\_RESIDUAL <- arg1 \% arg2 \\[2pt]
 Приклад:   DIV R0, R1, R2   ; R0 = R1 / R2 (остача modulo в ALU\_RESIDUAL)
 }{%
-\BitDiagramTwoBytes{00100}{000}{Rd [7:5] \enspace | \enspace Rs1 [4:2] \enspace | \enspace Rs2 [1:0]}{Rd [7:5], Rs1 [4:2], Rs2 [1:0]}%
-\textbf{Октет 0:} код операції \bits{00100}, конфігурація \field{cfg} = \bits{000}.\\
-\textbf{Октет 1:} біти $[7:5]$ задають цільовий регістр \reg{Rd} (частка); біти $[4:2]$ задають ділене \reg{Rs1}; біти $[1:0]$ задають дільник \reg{Rs2}. Остача (modulo) автоматично фіксується в \reg{ALU\_RESIDUAL}. Довжина: 2 байти.%
+\BitDiagramArithmetic{00100}{Rd [2:0]}{Rd [2:0], Rs1 [7:5], Rs2 [4:2]}%
+\textbf{Октет 0:} код операції \bits{00100}, біти $[2:0]$ задають цільовий регістр призначення \reg{Rd} (\texttt{R0}--\texttt{R7}, перший аргумент).\\
+\textbf{Октет 1:} біти $[7:5]$ задають ділене \reg{Rs1} (\texttt{R0}--\texttt{R7}); біти $[4:2]$ задають дільник \reg{Rs2} (\texttt{R0}--\texttt{R7}); біти $[1:0]$ --- резерв (\bits{00}). Остача (modulo) автоматично фіксується в \reg{ALU\_RESIDUAL}. Довжина: 2 байти.%
 }{При діленні на нуль зводиться прапорець помилки EM (Error Math) без блокування ядра; оновлює ZF.}{Результат цілочисельного ділення (частка) записується в цільовий регістр dst, а залишок від ділення (modulo) автоматично зберігається у внутрішньому службовому регістрі АЛП. Збережений залишок може бути задіяний у подальших операціях АЛП або скинутий командою NOP.}
 \InstructionPage{LMR}{00101}{Пам'ять}{Завантаження даних із пам'яті та зовнішніх пристроїв у регістри}{%
 \small
@@ -982,9 +1055,9 @@ $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
 Операція:  arg0 <- arg1 (пряме копіювання з точки Б в точку А) \\[2pt]
 Приклад:   LRR R0, R1       ; R0 = R1 (значення R1 копіюється в R0)
 }{%
-\BitDiagramTwoBytes{00111}{000}{Rd [7:5] \enspace | \enspace Rs [4:2] \enspace | \enspace 00 [1:0]}{Rd [7:5] (точка А), Rs [4:2] (точка Б)}%
-\textbf{Октет 0:} код операції $00111_2$ (\texttt{0x07}), біти $[10:8]$ зарезервовані ($000_2$).\\
-\textbf{Октет 1:} біти $[7:5]$ задають цільовий регістр-приймач \reg{Arg1} (\reg{Rd}, точка А, куди зберігаються дані); біти $[4:2]$ задають регістр-джерело \reg{Arg2} (\reg{Rs}, точка Б, звідки беруться дані); біти $[1:0]$ містять $00_2$. При виконанні значення \reg{Rs} копіюється в \reg{Rd} за 1 такт.%
+\BitDiagramTwoRegs{00111}{Rd}{Точка А}{Rs}%
+\textbf{Октет 0:} код операції $00111_2$ (\texttt{0x07}), біти $[2:0]$ задають цільовий регістр призначення \reg{Rd} (\texttt{R0}--\texttt{R7}, точка А, перший аргумент).\\
+\textbf{Октет 1:} біти $[7:5]$ задають регістр-джерело \reg{Rs} (\texttt{R0}--\texttt{R7}, точка Б); біти $[4:0]$ містять $00000_2$ (резерв). При виконанні значення \reg{Rs} копіюється в \reg{Rd} за 1 такт. Довжина команди: 2 байти.%
 }{Прапорці зберігаються без змін.}{%
 Інструкція \texttt{LRR} є фундаментальною операцією пересилання даних між регістрами загального призначення процесора ($R0$--$R7$). Вона здійснює передачу з джерела (точка Б) у приймач (точка А). Пересилання виконується через прямий апаратний обхідний тракт \textbf{MUX 1} $\to$ \textbf{MUX 2} в обхід АЛП, що виключає блокування обчислювального ядра та не змінює стан прапорців \reg{FREG}.%
 }
@@ -997,9 +1070,9 @@ $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
            (стан 00b --- початкове скидання / не порівнювалось / помилка) \\[2pt]
 Приклад:   CMP R0, R1       ; 01: R0<R1, 10: R0==R1, 11: R0>R1 (00: скидання/помилка)
 }{%
-\BitDiagramTwoBytes{01000}{000}{Rs1 [7:5] \enspace | \enspace Rs2 [4:2] \enspace | \enspace 00 [1:0]}{Rs1 [7:5], Rs2 [4:2]}%
-\textbf{Октет 0:} код операції \bits{01000}, конфігурація \field{cfg} = \bits{000}.\\
-\textbf{Октет 1:} біти $[7:5]$ задають перший операнд \reg{Rs1}; біти $[4:2]$ задають другий операнд \reg{Rs2}; біти $[1:0]$ містять \bits{00}.\\
+\BitDiagramTwoRegs{01000}{Rs1}{1-й операнд}{Rs2}%
+\textbf{Октет 0:} код операції \bits{01000}, біти $[2:0]$ задають перший операнд \reg{Rs1} (перший аргумент).\\
+\textbf{Октет 1:} біти $[7:5]$ задають другий операнд \reg{Rs2}; біти $[4:0]$ містять \bits{00000} (резерв).\\
 Результат апаратного порівняння фіксується у полі \reg{FREG.CMP} (біти $[5:4]$): \bits{01} ($\text{Rs1} < \text{Rs2}$), \bits{10} ($\text{Rs1} = \text{Rs2}$), \bits{11} ($\text{Rs1} > \text{Rs2}$), \bits{00} (скидання / не порівнювалось / помилка). Значення регістрів не модифікуються. Довжина команди: 2 байти.%
 }{Оновлює 2-бітне поле FREG.CMP (биты [5:4]), а також ZF, CF, OF без зміни регістрів.}{Забезпечує швидке розгалуження алгоритмів.}
 \InstructionPage{JMP}{01001}{Перехід}{Безумовний перехід}{%
@@ -1044,9 +1117,9 @@ $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
 Операція:  arg0 <- arg0 AND arg1 \\[2pt]
 Приклад:   AND R0, R1   ; R0 = R0 \& R1
 }{%
-\BitDiagramTwoBytes{01101}{000}{Rd [7:5] \enspace | \enspace Rs [4:2] \enspace | \enspace 00 [1:0]}{Rd [7:5] (приймач), Rs [4:2] (операнд)}%
-\textbf{Октет 0:} код операції \bits{01101}, конфігурація \field{cfg} = \bits{000}.\\
-\textbf{Октет 1:} біти $[7:5]$ задають цільовий приймач \reg{Rd} ($\text{Rd} \leftarrow \text{Rd} \ \& \ \text{Rs}$); біти $[4:2]$ задають другий операнд \reg{Rs}; біти $[1:0]$ містять \bits{00}. Довжина: 2 байти.%
+\BitDiagramTwoRegs{01101}{Rd}{Приймач}{Rs}%
+\textbf{Октет 0:} код операції \bits{01101}, біти $[2:0]$ задають цільовий приймач \reg{Rd} (\texttt{R0}--\texttt{R7}, перший аргумент).\\
+\textbf{Октет 1:} біти $[7:5]$ задають другий операнд \reg{Rs} (\texttt{R0}--\texttt{R7}); біти $[4:0]$ містять $00000_2$ (резерв). Довжина: 2 байти.%
 }{Оновлює прапорець нуля ZF.}{Базова операція для накладання бітових масок.}
 \InstructionPage{OR}{01110}{Логіка}{Побітове логічне АБО}{%
 \small
@@ -1054,9 +1127,9 @@ $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
 Операція:  arg0 <- arg0 OR arg1 \\[2pt]
 Приклад:   OR R0, R1    ; R0 = R0 | R1
 }{%
-\BitDiagramTwoBytes{01110}{000}{Rd [7:5] \enspace | \enspace Rs [4:2] \enspace | \enspace 00 [1:0]}{Rd [7:5] (приймач), Rs [4:2] (операнд)}%
-\textbf{Октет 0:} код операції \bits{01110}, конфігурація \field{cfg} = \bits{000}.\\
-\textbf{Октет 1:} біти $[7:5]$ задають цільовий регістр \reg{Rd} ($\text{Rd} \leftarrow \text{Rd} \ | \ \text{Rs}$); біти $[4:2]$ задають другий операнд \reg{Rs}; біти $[1:0]$ містять \bits{00}. Довжина: 2 байти.%
+\BitDiagramTwoRegs{01110}{Rd}{Приймач}{Rs}%
+\textbf{Октет 0:} код операції \bits{01110}, біти $[2:0]$ задають цільовий регістр \reg{Rd} (\texttt{R0}--\texttt{R7}, перший аргумент).\\
+\textbf{Октет 1:} біти $[7:5]$ задають другий операнд \reg{Rs} (\texttt{R0}--\texttt{R7}); біти $[4:0]$ містять $00000_2$ (резерв). Довжина: 2 байти.%
 }{Оновлює прапорець ZF.}{Швидке об'єднання бітів керування.}
 \InstructionPage{NAND}{01111}{Логіка}{Побітове логічне І-НІ}{%
 \small
@@ -1064,9 +1137,9 @@ $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
 Операція:  arg0 <- NOT (arg0 AND arg1) \\[2pt]
 Приклад:   NAND R0, R1  ; R0 = \textasciitilde(R0 \& R1)
 }{%
-\BitDiagramTwoBytes{01111}{000}{Rd [7:5] \enspace | \enspace Rs [4:2] \enspace | \enspace 00 [1:0]}{Rd [7:5] (приймач), Rs [4:2] (операнд)}%
-\textbf{Октет 0:} код операції \bits{01111}, конфігурація \field{cfg} = \bits{000}.\\
-\textbf{Октет 1:} біти $[7:5]$ задають цільовий регістр \reg{Rd}; біти $[4:2]$ задають операнд \reg{Rs}; біти $[1:0]$ містять \bits{00}. Довжина: 2 байти.%
+\BitDiagramTwoRegs{01111}{Rd}{Приймач}{Rs}%
+\textbf{Октет 0:} код операції \bits{01111}, біти $[2:0]$ задають цільовий регістр \reg{Rd} (\texttt{R0}--\texttt{R7}, перший аргумент).\\
+\textbf{Октет 1:} біти $[7:5]$ задають операнд \reg{Rs} (\texttt{R0}--\texttt{R7}); біти $[4:0]$ містять $00000_2$ (резерв). Довжина: 2 байти.%
 }{Оновлює прапорець ZF.}{Дозволяє синтезувати компактний двійковий код.}
 \InstructionPage{NOR}{10000}{Логіка}{Побітове логічне АБО-НІ}{%
 \small
@@ -1074,9 +1147,9 @@ $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
 Операція:  arg0 <- NOT (arg0 OR arg1) \\[2pt]
 Приклад:   NOR R0, R1   ; R0 = \textasciitilde(R0 | R1)
 }{%
-\BitDiagramTwoBytes{10000}{000}{Rd [7:5] \enspace | \enspace Rs [4:2] \enspace | \enspace 00 [1:0]}{Rd [7:5] (приймач), Rs [4:2] (операнд)}%
-\textbf{Октет 0:} код операції \bits{10000}, конфігурація \field{cfg} = \bits{000}.\\
-\textbf{Октет 1:} біти $[7:5]$ задають цільовий регістр \reg{Rd}; біти $[4:2]$ задають операнд \reg{Rs}; біти $[1:0]$ містять \bits{00}. Довжина: 2 байти.%
+\BitDiagramTwoRegs{10000}{Rd}{Приймач}{Rs}%
+\textbf{Октет 0:} код операції \bits{10000}, біти $[2:0]$ задають цільовий регістр \reg{Rd} (\texttt{R0}--\texttt{R7}, перший аргумент).\\
+\textbf{Октет 1:} біти $[7:5]$ задають операнд \reg{Rs} (\texttt{R0}--\texttt{R7}); біти $[4:0]$ містять $00000_2$ (резерв). Довжина: 2 байти.%
 }{Оновлює прапорець ZF.}{Розширює набір швидких перетворень.}
 \InstructionPage{NOT}{10001}{Логіка}{Побітова інверсія}{%
 \small
@@ -1093,9 +1166,9 @@ $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
 Операція:  arg0 <- arg0 XOR arg1 \\[2pt]
 Приклад:   XOR R0, R1   ; R0 = R0 \textasciicircum\ R1 (при R0==R1 обнуляє R0)
 }{%
-\BitDiagramTwoBytes{10010}{000}{Rd [7:5] \enspace | \enspace Rs [4:2] \enspace | \enspace 00 [1:0]}{Rd [7:5] (приймач), Rs [4:2] (операнд)}%
-\textbf{Октет 0:} код операції \bits{10010}, конфігурація \field{cfg} = \bits{000}.\\
-\textbf{Октет 1:} біти $[7:5]$ задають цільовий регістр \reg{Rd} ($\text{Rd} \leftarrow \text{Rd} \oplus \text{Rs}$); біти $[4:2]$ задають другий операнд \reg{Rs}; біти $[1:0]$ містять \bits{00}. Довжина: 2 байти.%
+\BitDiagramTwoRegs{10010}{Rd}{Приймач}{Rs}%
+\textbf{Октет 0:} код операції \bits{10010}, біти $[2:0]$ задають цільовий регістр \reg{Rd} (\texttt{R0}--\texttt{R7}, перший аргумент).\\
+\textbf{Октет 1:} біти $[7:5]$ задають другий операнд \reg{Rs} (\texttt{R0}--\texttt{R7}); біти $[4:0]$ містять $00000_2$ (резерв). Довжина: 2 байти.%
 }{Оновлює прапорець ZF.}{Основа для алгоритмів контрольних сум та шифрування.}
 \InstructionPage{XNOR}{10011}{Логіка}{Побітова еквівалентентність}{%
 \small
@@ -1103,9 +1176,9 @@ $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
 Операція:  arg0 <- NOT (arg0 XOR arg1) \\[2pt]
 Приклад:   XNOR R0, R1  ; R0 = \textasciitilde(R0 \textasciicircum\ R1)
 }{%
-\BitDiagramTwoBytes{10011}{000}{Rd [7:5] \enspace | \enspace Rs [4:2] \enspace | \enspace 00 [1:0]}{Rd [7:5] (приймач), Rs [4:2] (операнд)}%
-\textbf{Октет 0:} код операції \bits{10011}, конфігурація \field{cfg} = \bits{000}.\\
-\textbf{Октет 1:} біти $[7:5]$ задають цільовий регістр \reg{Rd}; біти $[4:2]$ задають операнд \reg{Rs}; біти $[1:0]$ містять \bits{00}. Довжина: 2 байти.%
+\BitDiagramTwoRegs{10011}{Rd}{Приймач}{Rs}%
+\textbf{Октет 0:} код операції \bits{10011}, біти $[2:0]$ задають цільовий регістр \reg{Rd} (\texttt{R0}--\texttt{R7}, перший аргумент).\\
+\textbf{Октет 1:} біти $[7:5]$ задають операнд \reg{Rs} (\texttt{R0}--\texttt{R7}); біти $[4:0]$ містять $00000_2$ (резерв). Довжина: 2 байти.%
 }{Оновлює прапорець ZF.}{Швидка перевірка відповідності бітових масок.}
 \InstructionPage{INC}{10100}{Арифметика}{Інкремент на одиницю}{%
 \small
@@ -1131,9 +1204,9 @@ $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
 Операція:  SREG <- SREG - 2, MEM[SREG] <- arg0 \\[2pt]
 Приклад:   PUSH R0          ; Зберегти слово R0 на вершину стека
 }{%
-\BitDiagramTwoBytes{10110}{000}{Rs [7:5] \enspace | \enspace RSV [4:0]}{Rs [7:5] (джерело)}%
-\textbf{Октет 0:} код операції \bits{10110}, конфігурація \field{cfg} = \bits{000}.\\
-\textbf{Октет 1:} біти $[7:5]$ задають збережуваний регістр-джерело \reg{Rs} (\texttt{R0}--\texttt{R7}); біти $[4:0]$ містять $00000_2$. Довжина команди: 2 байти.%
+\BitDiagramTwoRegs{10110}{Rs}{R0--R7}{RSV}%
+\textbf{Октет 0:} код операції \bits{10110}, біти $[2:0]$ прямо задають збережуваний регістр-джерело \reg{Rs} (\texttt{R0}--\texttt{R7}, перший аргумент).\\
+\textbf{Октет 1:} біти $[7:0]$ містять $00000000_2$ (резерв). Довжина команди: 2 байти.%
 }{Арифметичні прапорці не змінюються.}{Апаратна підтримка підпрограм та збереження контексту.}
 \InstructionPage{POP}{10111}{Стек}{Вилучення слова з вершини стека}{%
 \small
@@ -1141,9 +1214,9 @@ $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
 Операція:  arg0 <- MEM[SREG], SREG <- SREG + 2 \\[2pt]
 Приклад:   POP R0           ; Витягнути слово з вершини стека в R0
 }{%
-\BitDiagramTwoBytes{10111}{000}{Rd [7:5] \enspace | \enspace RSV [4:0]}{Rd [7:5] (приймач)}%
-\textbf{Октет 0:} код операції \bits{10111}, конфігурація \field{cfg} = \bits{000}.\\
-\textbf{Октет 1:} біти $[7:5]$ задають цільовий регістр-приймач \reg{Rd} (\texttt{R0}--\texttt{R7}); біти $[4:0]$ містять $00000_2$. Довжина команди: 2 байти.%
+\BitDiagramTwoRegs{10111}{Rd}{R0--R7}{RSV}%
+\textbf{Октет 0:} код операції \bits{10111}, біти $[2:0]$ прямо задають цільовий регістр-приймач \reg{Rd} (\texttt{R0}--\texttt{R7}, перший аргумент).\\
+\textbf{Октет 1:} біти $[7:0]$ містять $00000000_2$ (резерв). Довжина команди: 2 байти.%
 }{Арифметичні прапорці не змінюються.}{Симетричне відновлення контексту переривань.}
 \InstructionPage{BSL}{11000}{Зсуви}{Апаратний зсув ліворуч (ітеративний регістр)}{%
 \small
@@ -1238,14 +1311,16 @@ $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
 \textbf{Октет 0:} код операції \bits{11010}. Біт $[10]$ (біт 2 октету 0) задає режим: $0$ --- пряме завантаження, $1$ --- модифікація. Біти $[9:8]$ (біти 1--0 октету 0) задають селектор: $00$ = \reg{FREG}, $01$ = \reg{PTREG}.\\
 \textbf{Октет 1:} при завантаженні ($[10]=0$) задає джерело: \reg{Rs} для \reg{FREG} або пару \reg{Rs\_hi}, \reg{Rs\_lo} для \reg{PTREG}. При модифікації ($[10]=1$) біти $[7:6]$ кодують операцію (для \reg{FREG}: AND, OR, XOR, XNOR; для \reg{PTREG}: ADD, SUB), а біти $[5:3]$ задають рівно один регістр операнда/маски \reg{Rs}. Довжина команди: 2 байти.%
 }{Прапорці FREG модифікуються напряму або маскою. Арифметика PTREG формує прапорець переносу CF через АЛП.}{Універсальний керівний примітив системного рівня.}
-\InstructionPage{RSV27}{11011}{Резерв}{Апаратне розширення}{%
+\InstructionPage{MOD}{11011}{Арифметика}{Цілочисельний залишок від ділення (modulo)}{%
 \small
-Сигнатура: RSV27 : зарезервовано \\
-Операція:  Reserved for LIM architecture hardware extensions
+Сигнатура: MOD arg0, arg1, arg2 : arg0 = arg1 \% arg2 \\
+Операція:  dst <- arg1 \% arg2 \\[2pt]
+Приклад:   MOD R0, R1, R2   ; R0 = R1 \% R2 (залишок від ділення)
 }{%
-\BitDiagramOneByte{11011}{000}%
-Зарезервовано для майбутніх версій архітектури LIM. Довжина: 1 байт.%
-}{Не визначено.}{Зарезервовано.}
+\BitDiagramArithmetic{11011}{Rd [2:0]}{Rd [2:0], Rs1 [7:5], Rs2 [4:2]}%
+\textbf{Октет 0:} код операції \bits{11011}, біти $[2:0]$ задають цільовий регістр \reg{Rd} (\texttt{R0}--\texttt{R7}, перший аргумент).\\
+\textbf{Октет 1:} біти $[7:5]$ задають ділене \reg{Rs1} (\texttt{R0}--\texttt{R7}); біти $[4:2]$ задають дільник \reg{Rs2} (\texttt{R0}--\texttt{R7}); біти $[1:0]$ --- резерв (\bits{00}). Довжина команди: 2 байти.%
+}{При діленні на нуль зводиться апаратний прапорець помилки EM (Error Math) без зависання ядра; оновлює ZF.}{Обчислює залишок від цілочисельного ділення діленого Rs1 на дільник Rs2 та записує результат безпосередньо в цільовий регістр Rd, не переписуючи проміжні результати в акумуляторах.}
 \InstructionPage{RSV28}{11100}{Резерв}{Апаратне розширення}{%
 \small
 Сигнатура: RSV28 : зарезервовано \\
