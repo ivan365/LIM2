@@ -90,6 +90,100 @@ Pre-compiled, ready-to-print comprehensive technical reference datasheets are lo
 
 ---
 
+## 📐 Machine Instruction Formats & Bit Decoding
+
+The LIM M2 processor implements a clean, orthogonal instruction encoding scheme with deterministic decoding:
+* **Universal Architectural Syntax:** Destination register first, followed by source operands:
+  * **Arithmetic (3 operands):** `ADD Rd, Rs1, Rs2` $\implies \text{Rd} = \text{Rs1} + \text{Rs2}$
+  * **Logic (2 operands):** `AND Rd, Rs` $\implies \text{Rd} = \text{Rd} \ \& \ \text{Rs}$
+  * **Unary (1 byte, 1 operand):** `NOT Rd`, `INC Rd`, `DEC Rd`
+  * **Register transfer:** `LRR Rd, Rs` $\implies \text{Rd} = \text{Rs}$ (copy point B $\to$ point A)
+  * **Comparator:** `CMP Rs1, Rs2` $\implies$ sets `FREG.CMP` (`01`: `<`, `10`: `=`, `11`: `>`, `00`: reset/error)
+* **Dynamic operand decoding:** Driven by the 5-bit opcode and 3-bit `CFG` modifier field in Octet 0.
+
+### Universal Instruction Layout
+```
++------------------------+-------------------+------------------------------------------+
+|      OPCODE [7:3]      |     CFG [2:0]     | Operands & Arguments (Dynamic Length)    |
+|        (5 bits)        |     (3 bits)      |             (0 to 3 octets)              |
++------------------------+-------------------+------------------------------------------+
+  Bit 7                3   Bit 2           0   Byte 1 ... Byte 3 (Optional)
+```
+
+### 10 Instruction Classes & Bit Breakdown
+
+1. **Class I: Single-Byte Instructions (1 Byte, 0 Extra Bytes)**
+   * `NOP`, `HALT`, `CLI`, `STI`, `RET` (`CFG = 000`)
+   * `NOT Rd`, `INC Rd`, `DEC Rd` (`Bits [2:0] = Rd` directly, no second byte fetched)
+   ```
+   Octet 0: [ OPCODE (5b) | Rd / 000 (3b) ]
+   ```
+
+2. **Class II: Three-Operand Arithmetic (2 Bytes)**
+   * `ADD`, `SUB`, `MUL`, `DIV` (`Rd = Rs1 op Rs2`)
+   ```
+   Octet 0: [ OPCODE (5b) | CFG=000 (3b) ]
+   Octet 1: [ Rd [7:5] (Dest) | Rs1 [4:2] (Src 1) | Rs2 [1:0] (Src 2) ]
+   ```
+
+3. **Class III: Two-Operand Logic (2 Bytes)**
+   * `AND`, `OR`, `NAND`, `NOR`, `XOR`, `XNOR` (`Rd = Rd op Rs`)
+   ```
+   Octet 0: [ OPCODE (5b) | CFG=000 (3b) ]
+   Octet 1: [ Rd [7:5] (Dest/Src 1) | Rs [4:2] (Src 2) | RSV=00 [1:0] ]
+   ```
+
+4. **Class IV: Register-to-Register Transfer (2 Bytes)**
+   * `LRR Rd, Rs`: fast direct copy from point B (`Rs`) to point A (`Rd`) via `MUX 1` $\to$ `MUX 2` bypass (1 cycle, `FREG` untouched).
+   ```
+   Octet 0: [ 00111 (5b) | CFG=000 (3b) ]
+   Octet 1: [ Rd [7:5] (Point A / Dest) | Rs [4:2] (Point B / Src) | RSV=00 [1:0] ]
+   ```
+
+5. **Class V: Hardware Comparator (2 Bytes)**
+   * `CMP Rs1, Rs2`: non-destructive compare setting `FREG.CMP` (`01`: `<`, `10`: `=`, `11`: `>`, `00`: reset/error).
+   ```
+   Octet 0: [ 01000 (5b) | CFG=000 (3b) ]
+   Octet 1: [ Rs1 [7:5] (Src 1) | Rs2 [4:2] (Src 2) | RSV=00 [1:0] ]
+   ```
+
+6. **Class VI: Hardware Shift Register (2 Bytes, Iterative D-Flip-Flop Chain)**
+   * `BSL Rd, shift` and `BSR Rd, shift`: iterative hardware shift register on D-flip-flops ($\approx 300$ transistors instead of $\approx 30,000$ for a barrel matrix).
+   * **Shift execution is a hardware loop:** shifting by 16 bits takes 15 more clock cycles than shifting by 1 bit (1 cycle per bit).
+   * Governed by `FREG.SMOD` (`1`: rotate via `DBIT`, `0`: zero-fill) and `FREG.DBIT` (holds last ejected bit).
+   ```
+   Octet 0: [ OPCODE (5b) | Rd [2:0] (Target Register R0-R7) ]
+   Octet 1: [ Shift Count [7:0] (0 to 16 cycles / bits) ]
+   ```
+
+7. **Class VII: Stack Operations (2 Bytes)**
+   * `PUSH Rs` and `POP Rd`: word transfers via 24-bit stack pointer `SREG`.
+   ```
+   Octet 0: [ OPCODE (5b) | CFG=000 (3b) ]
+   Octet 1: [ Reg [7:5] (Rs / Rd) | RSV=00000 [4:0] ]
+   ```
+
+8. **Class VIII: Manage Special Registers (2 Bytes)**
+   * `MSP sreg, [op], args`: control `FREG` (00) or 24-bit `PTREG` (01).
+   ```
+   Octet 0: [ 11010 (5b) | Mode (1b: 0=Load, 1=Modify) | SREG (2b: 00=FREG, 01=PTREG) ]
+   Octet 1 (Load):   [ Rs [7:5] (FREG) or Rs_hi [7:5] | Rs_lo [4:2] (PTREG) | RSV [1:0] ]
+   Octet 1 (Modify): [ OP [7:6] (FREG: AND/OR/XOR/XNOR; PTREG: ADD/SUB) | Rs [5:3] (Mask/Offset) | RSV [2:0] ]
+   ```
+
+9. **Class IX: Branch & Jump Instructions (2–3 Bytes)**
+   * `JMP`, `JCR`, `JNZ`, `JZ`:
+     * `MOD = 0` (000): 16-bit immediate address (3 bytes total).
+     * `MOD = 1` (001): Indirect register branch via `Rs` (2 bytes total).
+     * `MOD = 2` (010): 24-bit extended branch via `PTREG`.
+
+10. **Class X: Memory Load & Store (2–4 Bytes)**
+    * `LMR Rd, <SRC_MODE>` and `LRM Rs, <DST_MODE>`:
+      * Bit 2 of Octet 0: `SZ` ($0 = 8$-bit byte, $1 = 16$-bit word).
+      * Bits 1–0 of Octet 0: `Mode` (0 = Inline data, 1 = Imm pointer, 2 = 24-bit `PTREG` with auto-increment, 3 = Register pair 24-bit address).
+
+---
+
 ## ⚡ Instruction Set Architecture (ISA - 32 Opcodes)
 
 | Opcode | Hex | Mnemonic | Class | Functional Description |
@@ -205,7 +299,7 @@ The LIM M2 architecture enforces a strict and consistent operand order across al
 
 * **Arithmetic (3 Operands):** `ADD Rd, Rs1, Rs2` denotes $\text{Rd} = \text{Rs1} + \text{Rs2}$ (e.g., `ADD R0, R1, R2` computes $R0 = R1 + R2$). Similarly: `SUB`, `MUL`, `DIV`.
 * **Logic (2 Operands):** `AND Rd, Rs` denotes $\text{Rd} = \text{Rd} \ \& \ \text{Rs}$ (e.g., `AND R0, R1` computes $R0 = R0 \ \& \ R1$). Similarly: `OR`, `NAND`, `NOR`, `XOR`, `XNOR`.
-* **Bitwise Inversion NOT (1 Operand, 1-byte instruction):** `NOT Rd` denotes $\text{Rd} = \sim\text{Rd}$ (e.g., `NOT R0` computes $R0 = \sim R0$). Encoded in 1 byte (`[7:3]` opcode, `[2:0]` Rd), no second byte is fetched from memory.
+* **Single-Byte Unary Operations (1 Operand):** `INC Rd` ($\text{Rd} = \text{Rd} + 1$), `DEC Rd` ($\text{Rd} = \text{Rd} - 1$), and `NOT Rd` ($\text{Rd} = \sim\text{Rd}$). Operate on a single register `Rd` in place. Encoded in exactly 1 byte (`[7:3]` opcode, `[2:0]` Rd), no second byte is fetched from memory.
 * **Register-to-Register Transfer:** `LRR Rd, Rs` executes a direct transfer from source (point B, `Rs`) to destination (point A, `Rd`): $\text{Rd} = \text{Rs}$ (e.g., `LRR R0, R1` computes $R0 = R1$).
 * **Memory Loads:** `LMR Rd, ...` stores data read from memory into the first argument `Rd`.
 
@@ -343,8 +437,8 @@ In assembly and the compiler toolchain, general-purpose registers are designated
 | **`SUB`** | `SUB arg0(REG), arg1(REG), arg2(REG) : arg0 = arg1 - arg2` | `SUB R0, R1, R2 ; R0 = R1 - R2` | 16-bit subtraction with borrow and zero flags. |
 | **`MUL`** | `MUL arg0(REG), arg1(REG), arg2(REG) : arg0 = arg1 * arg2` | `MUL R0, R1, R2 ; R0 = R1 * R2` | Unsigned 16x16-bit multiplication (high bits in FREG/DBIT). |
 | **`DIV`** | `DIV arg0(REG), arg1(REG), arg2(REG) : arg0 = arg1 / arg2` | `DIV R0, R1, R2 ; R0 = R1 / R2` | Integer division (division by zero triggers VEC 0 fault). |
-| **`INC`** | `INC arg0(REG) : arg0 = arg0 + 1` | `INC R0 ; R0 = R0 + 1` | Single-cycle register increment by 1. |
-| **`DEC`** | `DEC arg0(REG) : arg0 = arg0 - 1` | `DEC R0 ; R0 = R0 - 1` | Single-cycle register decrement by 1. |
+| **`INC`** | `INC arg0(REG) : arg0 = arg0 + 1` | `INC R0 ; R0 = R0 + 1` | 1-byte instruction (`[7:3]` opcode, `[2:0]` Rd): atomic register increment by 1. |
+| **`DEC`** | `DEC arg0(REG) : arg0 = arg0 - 1` | `DEC R0 ; R0 = R0 - 1` | 1-byte instruction (`[7:3]` opcode, `[2:0]` Rd): atomic register decrement by 1. |
 | **`CMP`** | `CMP arg0(REG), arg1(REG) : compare(arg0, arg1)` | `CMP R0, R1 ; Compare R0 with R1` | Non-destructive compare setting `FREG.CMP` (`01`: R0<R1, `10`: R0==R1, `11`: R0>R1; `00`: reset/error) and ZF, CF flags. |
 
 ### 3. Bitwise Logic
@@ -361,8 +455,8 @@ In assembly and the compiler toolchain, general-purpose registers are designated
 ### 4. Bit Shifts (with SMOD and DBIT Support)
 | Mnemonic | Programmer Signature | Code Example | Description |
 |---|---|---|---|
-| **`SHL`** | `SHL arg0(REG), arg1(REG), arg2(IMM\|REG) : arg0 = arg1 << arg2` | `SHL R0, R1, 1 ; Shift R1 left` | Logical/cyclic left shift. If `SMOD` is enabled, evicted bit enters `DBIT`, incoming bit is loaded from `DBIT`. |
-| **`SHR`** | `SHR arg0(REG), arg1(REG), arg2(IMM\|REG) : arg0 = arg1 >> arg2` | `SHR R0, R1, 1 ; Shift R1 right` | Logical/cyclic right shift. If `SMOD` is disabled, zero-padded. |
+| **`BSL`** | `BSL arg0(REG), arg1(IMM) : arg0 = arg0 << arg1` | `BSL R0, 4 ; Shift R0 left by 4 bits` | Iterative in-place hardware shift left. Implemented via clocked shift register loop (1 cycle per bit, $\approx 300$ transistors instead of $\approx 30\,000$). Shifting by 16 bits takes 15 more cycles than shifting by 1 bit. Byte 0: `[7:3]` opcode 11000, `[2:0]` Rd. Byte 1: `[7:0]` shift (0--16). Circular rotation when `SMOD=1` (bit 15 wraps to bit 0); DBIT-filled (0 or 1) when `SMOD=0`. Last displaced bit is captured in `FREG.DBIT`. |
+| **`BSR`** | `BSR arg0(REG), arg1(IMM) : arg0 = arg0 >> arg1` | `BSR R0, 4 ; Shift R0 right by 4 bits` | Iterative in-place hardware shift right. Implemented via clocked shift register loop (1 cycle per bit, $\approx 300$ transistors instead of $\approx 30\,000$). Shifting by 16 bits takes 15 more cycles than shifting by 1 bit. Byte 0: `[7:3]` opcode 11001, `[2:0]` Rd. Byte 1: `[7:0]` shift (0--16). Circular rotation when `SMOD=1` (bit 0 wraps to bit 15); DBIT-filled (0 or 1) when `SMOD=0`. Last displaced bit is captured in `FREG.DBIT`. |
 
 ### 5. Control Flow & Subroutines
 | Mnemonic | Programmer Signature | Code Example | Description |

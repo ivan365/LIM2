@@ -90,6 +90,100 @@
 
 ---
 
+## 📐 Formát strojových inštrukcií a bitové dekódovanie
+
+Procesor LIM M2 implementuje čistú, ortogonálnu schému kódovania inštrukcií s deterministickým dekódovaním:
+* **Univerzálna architektonická syntax:** Najprv cieľový register (kam), a až potom zdrojové operandy (odkiaľ):
+  * **Aritmetika (3 operandy):** `ADD Rd, Rs1, Rs2` $\implies \text{Rd} = \text{Rs1} + \text{Rs2}$
+  * **Logika (2 operandy):** `AND Rd, Rs` $\implies \text{Rd} = \text{Rd} \ \& \ \text{Rs}$
+  * **Unárne (1 bajt, 1 operand):** `NOT Rd`, `INC Rd`, `DEC Rd`
+  * **Presun:** `LRR Rd, Rs` $\implies \text{Rd} = \text{Rs}$ (kopírovanie z bodu B do bodu A)
+  * **Komparátor:** `CMP Rs1, Rs2` $\implies$ nastavuje `FREG.CMP` (`01`: `<`, `10`: `=`, `11`: `>`, `00`: reset/chyba)
+* **Dynamické dekódovanie operandov:** Riadené 5-bitovým opkódom a 3-bitovým modifikátorom `CFG` v oktete 0.
+
+### Univerzálna bitová šablóna
+```
++------------------------+-------------------+------------------------------------------+
+|      OPCODE [7:3]      |     CFG [2:0]     | Operandy a argumenty (dynamická dĺžka)   |
+|        (5 bitov)       |     (3 bity)      |             (0 až 3 oktety)              |
++------------------------+-------------------+------------------------------------------+
+  Bit 7                3   Bit 2           0   Bajt 1 ... Bajt 3 (voliteľné)
+```
+
+### 10 tried inštrukcií a štruktúra polí
+
+1. **Trieda I: Jednobajtové inštrukcie (1 bajt, 0 dodatočných bajtov)**
+   * `NOP`, `HALT`, `CLI`, `STI`, `RET` (`CFG = 000`)
+   * `NOT Rd`, `INC Rd`, `DEC Rd` (`Bity [2:0] = Rd` priamo určujú register, druhý bajt zo zbernice pamäte sa nenačítava)
+   ```
+   Oktet 0: [ OPCODE (5b) | Rd / 000 (3b) ]
+   ```
+
+2. **Trieda II: Trojoperandová aritmetika (2 bajty)**
+   * `ADD`, `SUB`, `MUL`, `DIV` (`Rd = Rs1 op Rs2`)
+   ```
+   Oktet 0: [ OPCODE (5b) | CFG=000 (3b) ]
+   Oktet 1: [ Rd [7:5] (Cieľ) | Rs1 [4:2] (Zdroj 1) | Rs2 [1:0] (Zdroj 2) ]
+   ```
+
+3. **Trieda III: Dvojoperandová logika (2 bajty)**
+   * `AND`, `OR`, `NAND`, `NOR`, `XOR`, `XNOR` (`Rd = Rd op Rs`)
+   ```
+   Oktet 0: [ OPCODE (5b) | CFG=000 (3b) ]
+   Oktet 1: [ Rd [7:5] (Cieľ/Op1) | Rs [4:2] (Zdroj 2) | RSV=00 [1:0] ]
+   ```
+
+4. **Trieda IV: Medziregistrový presun LRR (2 bajty)**
+   * `LRR Rd, Rs`: priame kopírovanie zo zdroja (bod B, `Rs`) do cieľa (bod A, `Rd`) cez premosťovací kanál `MUX 1` $\to$ `MUX 2` (1 cyklus, `FREG` sa nemení).
+   ```
+   Oktet 0: [ 00111 (5b) | CFG=000 (3b) ]
+   Oktet 1: [ Rd [7:5] (Bod A / Kam) | Rs [4:2] (Bod B / Odkiaľ) | RSV=00 [1:0] ]
+   ```
+
+5. **Trieda V: Hardvérový komparátor CMP (2 bajty)**
+   * `CMP Rs1, Rs2`: nedeštruktívne porovnanie s nastavením `FREG.CMP` (`01`: `<`, `10`: `=`, `11`: `>`, `00`: reset/chyba).
+   ```
+   Oktet 0: [ 01000 (5b) | CFG=000 (3b) ]
+   Oktet 1: [ Rs1 [7:5] (Operand 1) | Rs2 [4:2] (Operand 2) | RSV=00 [1:0] ]
+   ```
+
+6. **Trieda VI: Hardvérový posun na D-klopných obvodoch (2 bajty, taktovaný cyklus)**
+   * `BSL Rd, shift` a `BSR Rd, shift`: iteratívny posuvný register na 16 D-klopných obvodoch ($\approx 300$ tranzistorov namiesto $\approx 30\,000$ pri maticovom posúvači).
+   * **Taktované vykonávanie v hardvéri:** posun o 16 bitov trvá o 15 taktov viac než posun o 1 bit (1 takt na 1 bit).
+   * Riadené príznakmi `FREG.SMOD` (`1`: rotácia cez `DBIT`, `0`: nulovanie) a `FREG.DBIT` (uchováva posledný vytlačený bit).
+   ```
+   Oktet 0: [ OPCODE (5b) | Rd [2:0] (Posúvaný register R0--R7) ]
+   Oktet 1: [ Počítadlo taktov shift [7:0] (0--16 taktov / bitov) ]
+   ```
+
+7. **Trieda VII: Operácie so zásobníkom (2 bajty)**
+   * `PUSH Rs` a `POP Rd`: slovný prenos so zásobníkom cez 24-bitový ukazovateľ `SREG`.
+   ```
+   Oktet 0: [ OPCODE (5b) | CFG=000 (3b) ]
+   Oktet 1: [ Reg [7:5] (Rs / Rd) | RSV=00000 [4:0] ]
+   ```
+
+8. **Trieda VIII: Manipulácia so špeciálnymi registrami (2 bajty)**
+   * `MSP sreg, [op], args`: priame načítanie/zápis alebo funkčná modifikácia `FREG` (00) alebo 24-bitového `PTREG` (01).
+   ```
+   Oktet 0: [ 11010 (5b) | Mode (1b: 0=Načítanie, 1=Modifikácia) | SREG (2b: 00=FREG, 01=PTREG) ]
+   Oktet 1 (Načítanie):    [ Rs [7:5] (FREG) alebo Rs_hi [7:5] | Rs_lo [4:2] (PTREG) | RSV [1:0] ]
+   Oktet 1 (Modifikácia):  [ OP [7:6] (FREG: AND/OR/XOR/XNOR; PTREG: ADD/SUB) | Rs [5:3] (Maska/Posun) | RSV [2:0] ]
+   ```
+
+9. **Trieda IX: Inštrukcie vetvenia a skokov (2--3 bajty)**
+   * `JMP`, `JCR`, `JNZ`, `JZ`:
+     * `MOD = 0` (000): 16-bitová priama adresa (spolu 3 bajty).
+     * `MOD = 1` (001): Nepriamy registrový skok cez `Rs` (spolu 2 bajty).
+     * `MOD = 2` (010): 24-bitový skok cez systémový ukazovateľ `PTREG`.
+
+10. **Trieda X: Inštrukcie výmeny s pamäťou LMR a LRM (2--4 bajty)**
+    * `LMR Rd, <SRC_MODE>` a `LRM Rs, <DST_MODE>`:
+      * Bit 2 oktetu 0: `SZ` ($0 = 8$ bitov / bajt, $1 = 16$ bitov / slovo).
+      * Bits 1–0 oktetu 0: `Mode` (0 = Inline dáta za kódom, 1 = Imm ukazovateľ, 2 = 24-bitový `PTREG` s autoincrementom, 3 = Dvojica registrov 24-bitovej adresy).
+
+---
+
 ## ⚡ Inštrukčný súbor procesora (ISA - 32 Inštrukcií)
 
 | Kód | Hex | Mnemonic | Trieda | Popis operácie |
@@ -205,7 +299,7 @@ V architektúre procesora LIM M2 je zavedený striktný a jednotný koncept pora
 
 * **Aritmetika (3 operandy):** `ADD Rd, Rs1, Rs2` znamená $\text{Rd} = \text{Rs1} + \text{Rs2}$ (napríklad `ADD R0, R1, R2` vypočíta $R0 = R1 + R2$). Rovnako pre: `SUB`, `MUL`, `DIV`.
 * **Logika (2 operandy):** `AND Rd, Rs` znamená $\text{Rd} = \text{Rd} \ \& \ \text{Rs}$ (napríklad `AND R0, R1` vypočíta $R0 = R0 \ \& \ R1$). Rovnako pre: `OR`, `NAND`, `NOR`, `XOR`, `XNOR`.
-* **Bitová inverzia NOT (1 operand, 1-bajtová inštrukcia):** `NOT Rd` znamená $\text{Rd} = \sim\text{Rd}$ (napríklad `NOT R0` vypočíta $R0 = \sim R0$). Kóduje sa v 1 bajte (`[7:3]` opkód, `[2:0]` Rd), druhý bajt z pamäte sa nenačítava.
+* **Jednobajtové unárne inštrukcie (1 operand):** `INC Rd` ($\text{Rd} = \text{Rd} + 1$), `DEC Rd` ($\text{Rd} = \text{Rd} - 1$) a `NOT Rd` ($\text{Rd} = \sim\text{Rd}$). Modifikujú jediný register `Rd` na mieste. Kódujú sa presne v 1 bajte (`[7:3]` opkód, `[2:0]` Rd), druhý bajt z pamäte sa nenačítava.
 * **Medziregistrový presun:** `LRR Rd, Rs` znamená prenos z bodu B (zdroj `Rs`) do bodu A (príjemca `Rd`): $\text{Rd} = \text{Rs}$ (napríklad `LRR R0, R1` vykoná $R0 = R1$).
 * **Načítanie z pamäte:** `LMR Rd, ...` ukladá načítané dáta do prvého argumentu `Rd`.
 
@@ -343,8 +437,8 @@ V assembleri a v budúcom kompilátore sú univerzálne registre označené ako 
 | **`SUB`** | `SUB arg0(REG), arg1(REG), arg2(REG) : arg0 = arg1 - arg2` | `SUB R0, R1, R2 ; R0 = R1 - R2` | Odčítanie operandov s nastavením príznakov výpožičky/nuly. |
 | **`MUL`** | `MUL arg0(REG), arg1(REG), arg2(REG) : arg0 = arg1 * arg2` | `MUL R0, R1, R2 ; R0 = R1 * R2` | Bezznamienkové násobenie 16x16 bitov (vyššie bity vo FREG/DBIT). |
 | **`DIV`** | `DIV arg0(REG), arg1(REG), arg2(REG) : arg0 = arg1 / arg2` | `DIV R0, R1, R2 ; R0 = R1 / R2` | Celočíselné delenie (delenie nulou vyvolá výnimku VEC 0). |
-| **`INC`** | `INC arg0(REG) : arg0 = arg0 + 1` | `INC R0 ; R0 = R0 + 1` | Rýchly inkrement počítadla registra o jednotku. |
-| **`DEC`** | `DEC arg0(REG) : arg0 = arg0 - 1` | `DEC R0 ; R0 = R0 - 1` | Rýchly dekrement hodnoty registra o jednotku. |
+| **`INC`** | `INC arg0(REG) : arg0 = arg0 + 1` | `INC R0 ; R0 = R0 + 1` | 1-bajtová inštrukcia (`[7:3]` opkód, `[2:0]` Rd): inkrement registra o jednotku. |
+| **`DEC`** | `DEC arg0(REG) : arg0 = arg0 - 1` | `DEC R0 ; R0 = R0 - 1` | 1-bajtová inštrukcia (`[7:3]` opkód, `[2:0]` Rd): dekrement registra o jednotku. |
 | **`CMP`** | `CMP arg0(REG), arg1(REG) : compare(arg0, arg1)` | `CMP R0, R1 ; Porovnanie R0 a R1` | Hardvérové porovnanie bez zmeny dát. Nastavuje `FREG.CMP` (`01`: R0<R1, `10`: R0==R1, `11`: R0>R1; `00`: reset/chyba) a príznaky ZF, CF. |
 
 ### 3. Bitová logika
@@ -361,8 +455,8 @@ V assembleri a v budúcom kompilátore sú univerzálne registre označené ako 
 ### 4. Bitové posuny (s podporou SMOD a DBIT)
 | Mnemotechnika | Signatúra programátora | Príklad kódu | Popis |
 |---|---|---|---|
-| **`SHL`** | `SHL arg0(REG), arg1(REG), arg2(IMM\|REG) : arg0 = arg1 << arg2` | `SHL R0, R1, 1 ; Posun R1 doľava` | Logický/kruhový posun doľava. Pri zapnutom `SMOD` vysunutý bit prechádza do `DBIT`, vstupný sa berie z `DBIT`. |
-| **`SHR`** | `SHR arg0(REG), arg1(REG), arg2(IMM\|REG) : arg0 = arg1 >> arg2` | `SHR R0, R1, 1 ; Posun R1 doprava` | Logický/kruhový posun doprava. Pri vypnutom `SMOD` sa dopĺňajú nuly. |
+| **`BSL`** | `BSL arg0(REG), arg1(IMM) : arg0 = arg0 << arg1` | `BSL R0, 4 ; Posun R0 doľava o 4 bity` | Iteratívny hardvérový posun doľava na mieste. Realizovaný cez hardvérový cyklus posuvného registra (1 takt na 1 bit, $\approx 300$ tranzistorov namiesto $\approx 30\,000$). Posun o 16 bitov trvá o 15 taktov viac než posun o 1 bit. Bajt 0: `[7:3]` opkód 11000, `[2:0]` Rd. Bajt 1: `[7:0]` shift (0--16). Cyklická rotácia pri `SMOD=1` (bit 15 sa vráti na bit 0); výplň aktuálnym `DBIT` (0 alebo 1) pri `SMOD=0`. Posledný vytlačený bit sa uloží do `FREG.DBIT`. |
+| **`BSR`** | `BSR arg0(REG), arg1(IMM) : arg0 = arg0 >> arg1` | `BSR R0, 4 ; Posun R0 doprava o 4 bity` | Iteratívny hardvérový posun doprava na mieste. Realizovaný cez hardvérový cyklus posuvného registra (1 takt na 1 bit, $\approx 300$ tranzistorov namiesto $\approx 30\,000$). Posun o 16 bitov trvá o 15 taktov viac než posun o 1 bit. Bajt 0: `[7:3]` opkód 11001, `[2:0]` Rd. Bajt 1: `[7:0]` shift (0--16). Cyklická rotácia pri `SMOD=1` (bit 0 sa vráti na bit 15); výplň aktuálnym `DBIT` (0 alebo 1) pri `SMOD=0`. Posledný vytlačený bit sa uloží do `FREG.DBIT`. |
 
 ### 5. Skoky a podprogramy
 | Mnemotechnika | Signatúra programátora | Príklad kódu | Popis |

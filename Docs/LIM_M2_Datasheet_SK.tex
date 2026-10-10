@@ -48,6 +48,135 @@
   enhanced,colback=limpaper,colframe=limlight,boxrule=0.8pt,arc=2mm,
   left=3mm,right=3mm,top=2mm,bottom=2mm}
 
+% Makrá vizualizácie bitového formátu inštrukcie v štýle LIM M2
+\newcommand{\BitDiagramOneByte}[2]{%
+\noindent\begin{tikzpicture}[x=0.9cm,y=0.55cm]
+  \draw[thick,fill=limblue] (0,0) rectangle (4.6,1.05);
+  \draw[thick,fill=limcyan] (4.6,0) rectangle (7.8,1.05);
+  \node[text=white,font=\bfseries\tiny,align=center] at (2.3,0.52) {OPCODE (5 bitov)\\#1};
+  \node[text=white,font=\bfseries\tiny,align=center] at (6.2,0.52) {CFG / Rd (3 bity)\\#2};
+  \draw[line width=0.7pt, limblue] (0,1.05) -- (0,1.22);
+  \draw[line width=0.7pt, limblue] (4.6,1.05) -- (4.6,1.22);
+  \draw[line width=0.7pt, limblue] (7.8,1.05) -- (7.8,1.22);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (0,1.06) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (4.6,1.06) {3};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (4.6,1.06) {2};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (7.8,1.06) {0};
+  \node[anchor=west,font=\scriptsize\bfseries\color{limblue}] at (8.1,0.52) {Oktet 0 (1 bajt, 0 doplň. bajtov)};
+\end{tikzpicture}\par\vspace{1.5mm}%
+}
+
+\newcommand{\BitDiagramTwoBytes}[4]{%
+\noindent\begin{tikzpicture}[x=0.9cm,y=0.55cm]
+  \draw[thick,fill=limblue] (0,0) rectangle (4.0,1.05);
+  \draw[thick,fill=limcyan] (4.0,0) rectangle (6.6,1.05);
+  \draw[thick,fill=limlight] (7.0,0) rectangle (9.8,1.05);
+  \draw[thick,fill=limmint] (9.8,0) rectangle (12.6,1.05);
+  \draw[thick,fill=gray!20] (12.6,0) rectangle (14.6,1.05);
+  \node[text=white,font=\bfseries\tiny,align=center] at (2.0,0.52) {OPCODE (5b)\\#1};
+  \node[text=white,font=\bfseries\tiny,align=center] at (5.3,0.52) {CFG (3b)\\#2};
+  \node[font=\bfseries\tiny,align=center] at (8.4,0.52) {Arg1 [7:5]};
+  \node[font=\bfseries\tiny,align=center] at (11.2,0.52) {Arg2 [4:2]};
+  \node[font=\bfseries\tiny,align=center] at (13.6,0.52) {RSV/Arg3 [1:0]};
+  % Divider ticks Octet 0
+  \draw[line width=0.7pt, limblue] (0,1.05) -- (0,1.22);
+  \draw[line width=0.7pt, limblue] (4.0,1.05) -- (4.0,1.22);
+  \draw[line width=0.7pt, limblue] (6.6,1.05) -- (6.6,1.22);
+  % Divider ticks Octet 1
+  \draw[line width=0.7pt, limblue] (7.0,1.05) -- (7.0,1.22);
+  \draw[line width=0.7pt, limblue] (9.8,1.05) -- (9.8,1.22);
+  \draw[line width=0.7pt, limblue] (12.6,1.05) -- (12.6,1.22);
+  \draw[line width=0.7pt, limblue] (14.6,1.05) -- (14.6,1.22);
+  % Bit labels Octet 0
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (0,1.06) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (4.0,1.06) {3};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (4.0,1.06) {2};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (6.6,1.06) {0};
+  % Bit labels Octet 1
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (7.0,1.06) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (9.8,1.06) {5};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (9.8,1.06) {4};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (12.6,1.06) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (12.6,1.06) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (14.6,1.06) {0};
+  % Footers
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.3,-0.05) {Oktet 0: Opkód + CFG};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (10.8,-0.05) {Oktet 1: #4 (Dĺžka: 2 bajty)};
+\end{tikzpicture}\par\vspace{1.5mm}%
+}
+
+\newcommand{\BitDiagramShift}[3]{%
+\noindent\begin{tikzpicture}[x=0.9cm,y=0.55cm]
+  \draw[thick,fill=limblue] (0,0) rectangle (4.0,1.05);
+  \draw[thick,fill=limcyan] (4.0,0) rectangle (6.6,1.05);
+  \draw[thick,fill=limlight] (7.0,0) rectangle (14.6,1.05);
+  \node[text=white,font=\bfseries\tiny,align=center] at (2.0,0.52) {OPCODE (5b)\\#1};
+  \node[text=white,font=\bfseries\tiny,align=center] at (5.3,0.52) {Rd (3b)\\#2};
+  \node[font=\bfseries\tiny,align=center] at (10.8,0.52) {Shift Count [7:0] \enspace ($0$--$16$ taktov, 1 bit/takt)};
+  % Divider ticks Octet 0
+  \draw[line width=0.7pt, limblue] (0,1.05) -- (0,1.22);
+  \draw[line width=0.7pt, limblue] (4.0,1.05) -- (4.0,1.22);
+  \draw[line width=0.7pt, limblue] (6.6,1.05) -- (6.6,1.22);
+  % Divider ticks Octet 1
+  \draw[line width=0.7pt, limblue] (7.0,1.05) -- (7.0,1.22);
+  \draw[line width=0.7pt, limblue] (14.6,1.05) -- (14.6,1.22);
+  % Bit labels Octet 0
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (0,1.06) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (4.0,1.06) {3};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (4.0,1.06) {2};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (6.6,1.06) {0};
+  % Bit labels Octet 1
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (7.0,1.06) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (14.6,1.06) {0};
+  % Footers
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.3,-0.05) {Oktet 0: Opkód + Rd};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (10.8,-0.05) {Oktet 1: #3 (Dĺžka: 2 bajty)};
+\end{tikzpicture}\par\vspace{1.5mm}%
+}
+
+\newcommand{\BitDiagramDynamic}[5]{%
+\noindent\begin{tikzpicture}[x=0.9cm,y=0.55cm]
+  \draw[thick,fill=limblue] (0,0) rectangle (3.8,1.05);
+  \draw[thick,fill=limcyan] (3.8,0) rectangle (6.2,1.05);
+  \draw[thick,fill=limlight] (6.5,0) rectangle (8.5,1.05);
+  \draw[thick,fill=limmint] (8.5,0) rectangle (10.5,1.05);
+  \draw[thick,fill=gray!18] (10.8,0) rectangle (15.2,1.05);
+  \node[text=white,font=\bfseries\tiny,align=center] at (1.9,0.52) {OPCODE (5b)\\#1};
+  \node[text=white,font=\bfseries\tiny,align=center] at (5.0,0.52) {CFG (3b)\\#2};
+  \node[font=\bfseries\tiny,align=center] at (7.5,0.52) {Arg1 [7:5]};
+  \node[font=\bfseries\tiny,align=center] at (9.5,0.52) {Arg2 [4:0]};
+  \node[font=\bfseries\tiny,align=center] at (13.0,0.52) {#4};
+  % Divider ticks Octet 0
+  \draw[line width=0.7pt, limblue] (0,1.05) -- (0,1.22);
+  \draw[line width=0.7pt, limblue] (3.8,1.05) -- (3.8,1.22);
+  \draw[line width=0.7pt, limblue] (6.2,1.05) -- (6.2,1.22);
+  % Divider ticks Octet 1
+  \draw[line width=0.7pt, limblue] (6.5,1.05) -- (6.5,1.22);
+  \draw[line width=0.7pt, limblue] (8.5,1.05) -- (8.5,1.22);
+  \draw[line width=0.7pt, limblue] (10.5,1.05) -- (10.5,1.22);
+  % Divider ticks Octet 2..3
+  \draw[line width=0.7pt, limblue] (10.8,1.05) -- (10.8,1.22);
+  \draw[line width=0.7pt, limblue] (15.2,1.05) -- (15.2,1.22);
+  % Bit labels Octet 0
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (0,1.06) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (3.8,1.06) {3};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (3.8,1.06) {2};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (6.2,1.06) {0};
+  % Bit labels Octet 1
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (6.5,1.06) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (8.5,1.06) {5};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (8.5,1.06) {4};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (10.5,1.06) {0};
+  % Bit labels Octet 2..3
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (10.8,1.06) {15};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (15.2,1.06) {0};
+  % Footers
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.1,-0.05) {Oktet 0: Opkód + CFG};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (8.5,-0.05) {Oktet 1: Registre};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (13.0,-0.05) {Oktet 2..3: #5};
+\end{tikzpicture}\par\vspace{1.5mm}%
+}
+
 \newcommand{\InstructionPage}[8]{%
   \clearpage
   \phantomsection\addcontentsline{toc}{subsection}{#1 --- #4}
@@ -171,7 +300,7 @@ Architektúra procesora LIM M2 striktne uplatňuje univerzálnu paradigmu: \text
 \begin{itemize}
   \item \textbf{Aritmetické operácie (3 operandy):} \texttt{ADD Rd, Rs1, Rs2} znamená $\text{Rd} \leftarrow \text{Rs1} + \text{Rs2}$ (napríklad zápis \texttt{ADD R0, R1, R2} vypočíta $R0 = R1 + R2$); rovnako pre \texttt{SUB}, \texttt{MUL}, \texttt{DIV}.
   \item \textbf{Logické operácie (2 operandy):} \texttt{AND Rd, Rs} znamená $\text{Rd} \leftarrow \text{Rd} \ \text{AND}\ \text{Rs}$ (napríklad \texttt{AND R0, R1} vypočíta $R0 = R0 \ \& \ R1$); rovnako pre \texttt{OR}, \texttt{NAND}, \texttt{NOR}, \texttt{XOR}, \texttt{XNOR}.
-  \item \textbf{Bitová inverzia NOT (1 operand, 1-bajtová inštrukcia):} \texttt{NOT Rd} znamená $\text{Rd} \leftarrow \sim\text{Rd}$ (napríklad \texttt{NOT R0} vypočíta $R0 = \sim R0$). Kóduje sa v 1 bajte (\texttt{[7:3]} opkód, \texttt{[2:0]} register Rd), druhý bajt z pamäte sa nenačítava.
+  \item \textbf{Jednobajtové unárne operácie (1 operand):} \texttt{INC Rd} ($\text{Rd} \leftarrow \text{Rd} + 1$), \texttt{DEC Rd} ($\text{Rd} \leftarrow \text{Rd} - 1$) a \texttt{NOT Rd} ($\text{Rd} \leftarrow \sim\text{Rd}$). Pracujú s jediným cieľovým registrom \reg{Rd} na mieste. Kódujú sa presne v 1 bajte (\texttt{[7:3]} opkód, \texttt{[2:0]} register Rd), druhý bajt zo zbernice pamäte sa nenačítava.
   \item \textbf{Medziregistrové presuny:} \texttt{LRR Rd, Rs} vykonáva priame kopírovanie z bodu B (zdroj \reg{Rs}) do bodu A (príjemca \reg{Rd}): $\text{Rd} \leftarrow \text{Rs}$ (napríklad \texttt{LRR R0, R1} vykoná $R0 = R1$).
   \item \textbf{Načítanie z pamäte (LMR):} prvý argument \reg{Rd} určuje cieľový register procesora, do ktorého sa uložia načítané dáta.
 \end{itemize}
@@ -414,25 +543,301 @@ Bit & Mnemonic & Funkčný popis \\
 \end{tabularx}
 
 \section{Formát strojových inštrukcií}
-Inštrukčný súbor LIM M2 je navrhnutý pre rýchle a deterministické dekódovanie. 
-Horných 5 bitov je vyhradených pre primárny operačný kód:
+Inštrukcie mikroprocesora LIM M2 majú ortogonálny, modulárny formát s deterministickým dekódovaním. 
+Základný opkód vždy zaberá horných 5 bitov prvého oktetu, čo garantuje okamžitú hardvérovú dispečerizáciu v mikroprogramovom riadiacom bloku.
+
+\subsection{Univerzálna bitová šablóna strojovej inštrukcie}
+Každá strojová inštrukcia začína základnou hlavičkou pevnej veľkosti, za ktorou nasledujú dynamické operandy a rozšírenia:
 
 \begin{center}
-\begin{tikzpicture}[x=0.9cm,y=0.72cm]
-  \draw[thick,fill=limblue] (0,0) rectangle (5,1.25);
-  \draw[thick,fill=limcyan] (5,0) rectangle (8,1.25);
-  \draw[thick,fill=limlight] (8,0) rectangle (17,1.25);
-  \node[text=white,font=\bfseries,align=center] at (2.5,0.62) {OPCODE\\5 bitov};
-  \node[text=white,font=\bfseries,align=center] at (6.5,0.62) {CFG\\3 bity};
-  \node[font=\bfseries,align=center] at (12.5,0.62) {Operandy a argumenty\\dynamická dĺžka};
-  \node[anchor=south west,font=\small] at (0,1.32) {$W-1$};
-  \node[anchor=south] at (5,1.32) {$W-6$};
-  \node[anchor=south] at (8,1.32) {$W-9$};
-  \node[anchor=south east,font=\small] at (17,1.32) {0};
+\begin{tikzpicture}[x=0.88cm,y=0.68cm]
+  \draw[thick,fill=limblue] (0,0) rectangle (4.8,1.2);
+  \draw[thick,fill=limcyan] (4.8,0) rectangle (7.8,1.2);
+  \draw[thick,fill=limlight] (7.8,0) rectangle (16.8,1.2);
+  \node[text=white,font=\bfseries\small,align=center] at (2.4,0.6) {OPCODE\\5 bitov};
+  \node[text=white,font=\bfseries\small,align=center] at (6.3,0.6) {CFG / REG\\3 bity};
+  \node[font=\bfseries\small,align=center] at (12.3,0.6) {Operandy a argumenty\\dynamická dĺžka (0--3 oktety)};
+  \draw[line width=0.7pt, limblue] (0,1.2) -- (0,1.38);
+  \draw[line width=0.7pt, limblue] (4.8,1.2) -- (4.8,1.38);
+  \draw[line width=0.7pt, limblue] (7.8,1.2) -- (7.8,1.38);
+  \draw[line width=0.7pt, limblue] (16.8,1.2) -- (16.8,1.38);
+  \node[anchor=south west,font=\footnotesize\bfseries\color{limblue}] at (0,1.22) {7};
+  \node[anchor=south east,font=\footnotesize\bfseries\color{limblue}] at (4.8,1.22) {3};
+  \node[anchor=south west,font=\footnotesize\bfseries\color{limblue}] at (4.8,1.22) {2};
+  \node[anchor=south east,font=\footnotesize\bfseries\color{limblue}] at (7.8,1.22) {0};
+  \node[anchor=south west,font=\footnotesize\bfseries\color{limblue}] at (7.8,1.22) {Oktet 1...};
+  \node[anchor=south east,font=\footnotesize\bfseries\color{limblue}] at (16.8,1.22) {0};
 \end{tikzpicture}
 \end{center}
 
-Pole \field{cfg} (3 bity) selektuje až 8 ortogonálnych režimov inštrukcie, čím poskytuje vysokú flexibilitu bez nežiaduceho rozširovania počtu opkódov.
+Pole \field{CFG} (3 bity) určuje jeden z 8 možných režimov práce inštrukcie, alebo (v jednobajtových či posunových inštrukciách) priamo kóduje cieľový register \reg{Rd}, čím eliminuje nutnosť výberu dodatočného bajtu.
+
+\subsection{Trieda I: Jednobajtové inštrukcie (1 bajt, 0 doplňujúcich oktetov)}
+Riadiace inštrukcie (\texttt{NOP}, \texttt{HALT}, \texttt{CLI}, \texttt{STI}, \texttt{RET}) a unárne registrové operácie (\texttt{NOT}, \texttt{INC}, \texttt{DEC}) sa načítavajú presne za jeden takt výberu. Druhý bajt zo zbernice pamäte sa vôbec nevyžaduje:
+\begin{itemize}
+  \item Pri bezargumentových inštrukciách pole \field{CFG} obsahuje \bits{000}.
+  \item Pri unárnych inštrukciách (\texttt{INC Rd}, \texttt{DEC Rd}, \texttt{NOT Rd}) spodné 3 bity (\bits{[2:0]}) obsahujú index cieľového registra \reg{Rd} (\texttt{R0}--\texttt{R7}).
+\end{itemize}
+
+\begin{center}
+\begin{tikzpicture}[x=0.88cm,y=0.62cm]
+  \draw[thick,fill=limblue] (0,0) rectangle (4.8,1.1);
+  \draw[thick,fill=limcyan] (4.8,0) rectangle (8.0,1.1);
+  \node[text=white,font=\bfseries\tiny,align=center] at (2.4,0.55) {OPCODE (5 bitov)\\bity [7:3]};
+  \node[text=white,font=\bfseries\tiny,align=center] at (6.4,0.55) {Rd / 000 (3 bity)\\bity [2:0]};
+  \draw[line width=0.7pt, limblue] (0,1.1) -- (0,1.28);
+  \draw[line width=0.7pt, limblue] (4.8,1.1) -- (4.8,1.28);
+  \draw[line width=0.7pt, limblue] (8.0,1.1) -- (8.0,1.28);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (0,1.12) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (4.8,1.12) {3};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (4.8,1.12) {2};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (8.0,1.12) {0};
+  \node[anchor=west,font=\scriptsize\bfseries\color{limblue}] at (8.4,0.55) {Oktet 0: Fixná dĺžka 1 bajt};
+\end{tikzpicture}
+\end{center}
+
+\subsection{Trieda II: Trojoperandové aritmetické inštrukcie (2 bajty)}
+Výpočtové inštrukcie (\texttt{ADD}, \texttt{SUB}, \texttt{MUL}, \texttt{DIV}) striktne realizujú architektonickú paradigmu \textbf{„najprv cieľ, potom operandy“}:
+$$\texttt{ADD Rd, Rs1, Rs2} \quad \implies \quad \text{Rd} \leftarrow \text{Rs1} + \text{Rs2} + \reg{ALU\_RESIDUAL}$$
+Prvý oktet obsahuje kód operácie (\bits{[7:3]}) a nulovú konfiguráciu (\bits{[2:0] = 000}). Druhý oktet balí indexy troch operandov:
+\begin{itemize}
+  \item Bity $[7:5]$: cieľový register určenia \reg{Rd} (3 bity, \texttt{R0}--\texttt{R7}).
+  \item Bity $[4:2]$: prvý zdrojový operand \reg{Rs1} (3 bity, \texttt{R0}--\texttt{R7}).
+  \item Bity $[1:0]$: druhý zdrojový operand \reg{Rs2} (spodné 2 bity registra \texttt{R0}--\texttt{R3}).
+\end{itemize}
+
+\begin{center}
+\begin{tikzpicture}[x=0.88cm,y=0.62cm]
+  \draw[thick,fill=limblue] (0,0) rectangle (4.2,1.1);
+  \draw[thick,fill=limcyan] (4.2,0) rectangle (6.8,1.1);
+  \draw[thick,fill=limlight] (7.2,0) rectangle (10.0,1.1);
+  \draw[thick,fill=limmint] (10.0,0) rectangle (12.8,1.1);
+  \draw[thick,fill=gray!20] (12.8,0) rectangle (15.2,1.1);
+  \node[text=white,font=\bfseries\tiny,align=center] at (2.1,0.55) {OPCODE (5b)\\bity [7:3]};
+  \node[text=white,font=\bfseries\tiny,align=center] at (5.5,0.55) {CFG=000\\bity [2:0]};
+  \node[font=\bfseries\tiny,align=center] at (8.6,0.55) {Rd [7:5]\\(kam)};
+  \node[font=\bfseries\tiny,align=center] at (11.4,0.55) {Rs1 [4:2]\\(odkiaľ 1)};
+  \node[font=\bfseries\tiny,align=center] at (14.0,0.55) {Rs2 [1:0]\\(odkiaľ 2)};
+  % Ticks & labels Octet 0
+  \draw[line width=0.7pt, limblue] (0,1.1) -- (0,1.28);
+  \draw[line width=0.7pt, limblue] (4.2,1.1) -- (4.2,1.28);
+  \draw[line width=0.7pt, limblue] (6.8,1.1) -- (6.8,1.28);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (0,1.12) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (4.2,1.12) {3};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (4.2,1.12) {2};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (6.8,1.12) {0};
+  % Ticks & labels Octet 1
+  \draw[line width=0.7pt, limblue] (7.2,1.1) -- (7.2,1.28);
+  \draw[line width=0.7pt, limblue] (10.0,1.1) -- (10.0,1.28);
+  \draw[line width=0.7pt, limblue] (12.8,1.1) -- (12.8,1.28);
+  \draw[line width=0.7pt, limblue] (15.2,1.1) -- (15.2,1.28);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (7.2,1.12) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (10.0,1.12) {5};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (10.0,1.12) {4};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (12.8,1.12) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (12.8,1.12) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (15.2,1.12) {0};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.4,-0.08) {Oktet 0: Opkód (bajt 1)};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (11.2,-0.08) {Oktet 1: Registre operandov (bajt 2)};
+\end{tikzpicture}
+\end{center}
+
+\subsection{Trieda III: Dvojoperandové logické inštrukcie (2 bajty)}
+Logické operácie (\texttt{AND}, \texttt{OR}, \texttt{NAND}, \texttt{NOR}, \texttt{XOR}, \texttt{XNOR}) majú presne dva operandy:
+$$\texttt{AND Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rd} \ \text{AND} \ \text{Rs}$$
+\begin{itemize}
+  \item Oktet 0: opkód v bitoch $[7:3]$, bity $[2:0] = 000_2$.
+  \item Oktet 1: bity $[7:5]$ určujú cieľový register \reg{Rd}; bity $[4:2]$ určujú druhý register \reg{Rs}; bity $[1:0]$ sú vyhradené ($00_2$).
+\end{itemize}
+
+\begin{center}
+\begin{tikzpicture}[x=0.88cm,y=0.62cm]
+  \draw[thick,fill=limblue] (0,0) rectangle (4.2,1.1);
+  \draw[thick,fill=limcyan] (4.2,0) rectangle (6.8,1.1);
+  \draw[thick,fill=limlight] (7.2,0) rectangle (10.5,1.1);
+  \draw[thick,fill=limmint] (10.5,0) rectangle (13.8,1.1);
+  \draw[thick,fill=gray!20] (13.8,0) rectangle (15.2,1.1);
+  \node[text=white,font=\bfseries\tiny,align=center] at (2.1,0.55) {OPCODE (5b)\\bity [7:3]};
+  \node[text=white,font=\bfseries\tiny,align=center] at (5.5,0.55) {CFG=000\\bity [2:0]};
+  \node[font=\bfseries\tiny,align=center] at (8.85,0.55) {Rd [7:5]\\(príjemca)};
+  \node[font=\bfseries\tiny,align=center] at (12.15,0.55) {Rs [4:2]\\(operand)};
+  \node[font=\bfseries\tiny,align=center] at (14.5,0.55) {RSV\\00};
+  % Ticks & labels Octet 0
+  \draw[line width=0.7pt, limblue] (0,1.1) -- (0,1.28);
+  \draw[line width=0.7pt, limblue] (4.2,1.1) -- (4.2,1.28);
+  \draw[line width=0.7pt, limblue] (6.8,1.1) -- (6.8,1.28);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (0,1.12) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (4.2,1.12) {3};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (4.2,1.12) {2};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (6.8,1.12) {0};
+  % Ticks & labels Octet 1
+  \draw[line width=0.7pt, limblue] (7.2,1.1) -- (7.2,1.28);
+  \draw[line width=0.7pt, limblue] (10.5,1.1) -- (10.5,1.28);
+  \draw[line width=0.7pt, limblue] (13.8,1.1) -- (13.8,1.28);
+  \draw[line width=0.7pt, limblue] (15.2,1.1) -- (15.2,1.28);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (7.2,1.12) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (10.5,1.12) {5};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (10.5,1.12) {4};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (13.8,1.12) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (13.8,1.12) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (15.2,1.12) {0};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.4,-0.08) {Oktet 0: Opkód};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (11.2,-0.08) {Oktet 1: Rd [7:5], Rs [4:2], RSV [1:0]};
+\end{tikzpicture}
+\end{center}
+
+\subsection{Trieda IV: Medziregistrový presun LRR (2 bajty)}
+Inštrukcia \texttt{LRR Rd, Rs} kopíruje dáta zo zdroja (bod B, \reg{Rs}) do príjemcu (bod A, \reg{Rd}):
+$$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
+Presun sa vykonáva cez priamu obchádzkovú vetvu \textbf{MUX 1} $\to$ \textbf{MUX 2} bez zaťaženia ALU počas jedného mikrotaktu, bez ovplyvnenia registra príznakov \reg{FREG}. Formát oktetov je úplne identický s logickou triedou: Oktet 0: opkód \bits{00111}, Oktet 1: \bits{Rd[7:5] | Rs[4:2] | 00[1:0]}.
+
+\subsection{Trieda V: Hardvérový komparátor CMP (2 bajty)}
+Inštrukcia \texttt{CMP Rs1, Rs2} porovnáva hodnoty registrov bez narušenia ich obsahu:
+\begin{itemize}
+  \item Oktet 0: opkód \bits{01000}, konfigurácia \bits{000}.
+  \item Oktet 1: bity $[7:5]$ určujú \reg{Rs1}, bity $[4:2]$ určujú \reg{Rs2}, bity $[1:0]$ obsahujú \bits{00}.
+\end{itemize}
+Výsledok porovnania sa ukladá do špecializovaného 2-bitového poľa registra stavu \reg{FREG.CMP} (bity $[5:4]$):
+\begin{center}
+\begin{tabular}{ccl}
+\toprule
+Hodnota \reg{FREG.CMP} & Podmienka & Architektonický význam \\
+\midrule
+\texttt{01} ($01_2$) & $\text{Rs1} < \text{Rs2}$ & Prvý operand je ostro menší ako druhý \\
+\texttt{10} ($10_2$) & $\text{Rs1} = \text{Rs2}$ & Hodnoty operandov sú zhodné \\
+\texttt{11} ($11_2$) & $\text{Rs1} > \text{Rs2}$ & Prvý operand je ostro väčší ako druhý \\
+\texttt{00} ($00_2$) & Predvolené / Reset & Nič sa neporovnávalo / chyba komparátora \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Trieda VI: Hardvérový cyklický posun na D-klopných obvodoch (BSL, BSR)}
+Inštrukcie posunu \texttt{BSL Rd, shift} a \texttt{BSR Rd, shift} sú v kremíku realizované ako \textbf{iteratívny 16-bitový posuvný register na D-klopných obvodoch} ($\approx 300$ tranzistorov namiesto $\approx 30\,000$ pri maticovom barelovom posúvači):
+\begin{itemize}
+  \item Posun prebieha hardvérovo cyklom takt-za-taktom (\texttt{for} v hardvéri): posun o 16 bitov vyžaduje presne o 15 taktov viac než posun o 1 bit.
+  \item Oktet 0: horných 5 bitov tvorí opkód (\texttt{BSL}: \bits{11000}, \texttt{BSR}: \bits{11001}), a spodné 3 bity (\bits{[2:0]}) priamo určujú posúvaný register \reg{Rd}.
+  \item Oktet 1: celý bajt (\bits{[7:0]}) udáva počet taktov posunu \field{shift} ($0$--$16$).
+  \item Správanie bitov je riadené registrom \reg{FREG}: pri $\reg{SMOD} = 1$ je aktívna hardvérová rotácia cez vytlačený bit; pri $\reg{SMOD} = 0$ sa prázdne bity plnia hodnotou z \reg{FREG.DBIT}.
+\end{itemize}
+
+\begin{center}
+\begin{tikzpicture}[x=0.88cm,y=0.62cm]
+  \draw[thick,fill=limblue] (0,0) rectangle (4.2,1.1);
+  \draw[thick,fill=limcyan] (4.2,0) rectangle (6.8,1.1);
+  \draw[thick,fill=limlight] (7.2,0) rectangle (15.2,1.1);
+  \node[text=white,font=\bfseries\tiny,align=center] at (2.1,0.55) {OPCODE (5b)\\11000 / 11001};
+  \node[text=white,font=\bfseries\tiny,align=center] at (5.5,0.55) {Rd [2:0]\\Register R0--R7};
+  \node[font=\bfseries\tiny,align=center] at (11.2,0.55) {Počítadlo taktov posunu shift [7:0] \enspace ($0$--$16$ taktov, iterácia D-klopných obvodov)};
+  % Ticks & labels Octet 0
+  \draw[line width=0.7pt, limblue] (0,1.1) -- (0,1.28);
+  \draw[line width=0.7pt, limblue] (4.2,1.1) -- (4.2,1.28);
+  \draw[line width=0.7pt, limblue] (6.8,1.1) -- (6.8,1.28);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (0,1.12) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (4.2,1.12) {3};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (4.2,1.12) {2};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (6.8,1.12) {0};
+  % Ticks & labels Octet 1
+  \draw[line width=0.7pt, limblue] (7.2,1.1) -- (7.2,1.28);
+  \draw[line width=0.7pt, limblue] (15.2,1.1) -- (15.2,1.28);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (7.2,1.12) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (15.2,1.12) {0};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.4,-0.08) {Oktet 0: Opkód + Rd};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (11.2,-0.08) {Oktet 1: Počet taktov posunu (1 takt na bit)};
+\end{tikzpicture}
+\end{center}
+
+\subsection{Trieda VII: Operácie so zásobníkom (PUSH, POP)}
+Inštrukcie zásobníka ukladajú register do pamäte na základe 24-bitového ukazovateľa \reg{SREG}:
+\begin{itemize}
+  \item Oktet 0: opkód (\texttt{PUSH}: \bits{10110}, \texttt{POP}: \bits{10111}), bity $[2:0] = 000$.
+  \item Oktet 1: bity $[7:5]$ určujú register (\reg{Rs} pri uložení, \reg{Rd} pri výbere); bity $[4:0]$ obsahujú $00000_2$.
+\end{itemize}
+
+\subsection{Trieda VIII: Manipulácia so špeciálnymi registrami (MSP)}
+Inštrukcia \texttt{MSP} poskytuje univerzálnu správu systémových registrov (\reg{FREG}, \reg{PTREG} a budúcich rozšírení):
+\begin{itemize}
+  \item \textbf{Oktet 0:} bit $[10]$ (bit 2 oktetu 0) určuje režim:
+    \begin{itemize}
+      \item $0$: priame načítanie hodnoty do špeciálneho registra z univerzálnych registrov;
+      \item $1$: funkčná modifikácia špeciálneho registra (bitové masky alebo posun ukazovateľa).
+    \end{itemize}
+    Bity $[9:8]$ (bity 1--0 oktetu 0) vyberajú cieľový špeciálny register:
+    \begin{itemize}
+      \item $00_2$: register stavu a príznakov \reg{FREG};
+      \item $01_2$: 24-bitový ukazovateľ \reg{PTREG};
+      \item $10_2$, $11_2$: rezervované pre budúce systémové registre.
+    \end{itemize}
+  \item \textbf{Oktet 1 (dynamický podľa CFG):}
+    \begin{itemize}
+      \item \textbf{Pri načítaní ($[10] = 0$):} pre \reg{FREG} bity $[7:5]$ určujú zdrojový register \reg{Rs}; pre \reg{PTREG} bity $[7:5]$ určujú vyšší register \reg{Rs\_hi}, a bity $[4:2]$ --- nižší register \reg{Rs\_lo}.
+      \item \textbf{Pri práci s \reg{FREG} ($[10] = 1, [9:8] = 00$):} bity $[7:6]$ oktetu 1 určujú bitovú operáciu (\bits{00}=AND, \bits{01}=OR, \bits{10}=XOR, \bits{11}=XNOR), a bity $[5:3]$ určujú register masky \reg{Rmask}.
+      \item \textbf{Pri práci s \reg{PTREG} ($[10] = 1, [9:8] = 01$):} bity $[7:6]$ oktetu 1 určujú matematickú operáciu posunu (\bits{00}=ADD, \bits{01}=SUB), a bity $[5:3]$ určujú presne jeden register posunu \reg{Rsrc} (zložené dvojice sú zakázané). Sčítanie a odčítanie využívajú hardvérovú jednotku ALU s podporou príznakov prenosu a výpožičky.
+    \end{itemize}
+\end{itemize}
+
+\begin{center}
+\begin{tikzpicture}[x=0.88cm,y=0.62cm]
+  \draw[thick,fill=limblue] (0,0) rectangle (4.2,1.1);
+  \draw[thick,fill=limcyan] (4.2,0) rectangle (5.5,1.1);
+  \draw[thick,fill=teal!60] (5.5,0) rectangle (6.8,1.1);
+  \draw[thick,fill=limlight] (7.2,0) rectangle (10.0,1.1);
+  \draw[thick,fill=limmint] (10.0,0) rectangle (12.8,1.1);
+  \draw[thick,fill=gray!20] (12.8,0) rectangle (15.2,1.1);
+  \node[text=white,font=\bfseries\tiny,align=center] at (2.1,0.55) {MSP (5b)\\11010};
+  \node[text=white,font=\bfseries\tiny,align=center] at (4.85,0.55) {Mode\\0/1};
+  \node[text=white,font=\bfseries\tiny,align=center] at (6.15,0.55) {Reg\\00/01};
+  \node[font=\bfseries\tiny,align=center] at (8.6,0.55) {Op/Reg 1\\bity [7:5]};
+  \node[font=\bfseries\tiny,align=center] at (11.4,0.55) {Reg 2 / Maska\\bity [4:2]};
+  \node[font=\bfseries\tiny,align=center] at (14.0,0.55) {RSV\\bity [1:0]};
+  % Divider ticks Octet 0
+  \draw[line width=0.7pt, limblue] (0,1.1) -- (0,1.28);
+  \draw[line width=0.7pt, limblue] (4.2,1.1) -- (4.2,1.28);
+  \draw[line width=0.7pt, limblue] (5.5,1.1) -- (5.5,1.28);
+  \draw[line width=0.7pt, limblue] (6.8,1.1) -- (6.8,1.28);
+  % Bit numbers Octet 0
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (0,1.12) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (4.2,1.12) {3};
+  \node[anchor=south,font=\tiny\bfseries\color{limblue}] at (4.85,1.12) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (5.5,1.12) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (6.8,1.12) {0};
+  % Divider ticks Octet 1
+  \draw[line width=0.7pt, limblue] (7.2,1.1) -- (7.2,1.28);
+  \draw[line width=0.7pt, limblue] (10.0,1.1) -- (10.0,1.28);
+  \draw[line width=0.7pt, limblue] (12.8,1.1) -- (12.8,1.28);
+  \draw[line width=0.7pt, limblue] (15.2,1.1) -- (15.2,1.28);
+  % Bit numbers Octet 1
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (7.2,1.12) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (10.0,1.12) {5};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (10.0,1.12) {4};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (12.8,1.12) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (12.8,1.12) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (15.2,1.12) {0};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.4,-0.08) {Oktet 0: Opkód + Režim + Selektor};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (11.2,-0.08) {Oktet 1: Parametre operácie (2 bajty)};
+\end{tikzpicture}
+\end{center}
+
+\subsection{Trieda IX: Inštrukcie vetvenia a skokov (2--3 bajty)}
+Skokové inštrukcie (\texttt{JMP}, \texttt{JCR}, \texttt{JNZ}, \texttt{JZ}) podporujú tri navzájom sa vylučujúce adresné režimy určené poľom \field{CFG} (bity $[2:0]$ oktetu 0):
+\begin{itemize}
+  \item \textbf{MOD = 0 (\bits{000}): Priama 16-bitová adresa (dĺžka 3 bajty).} Za oktetom 0 nasledujú oktety 1 a 2 tvoriace absolútnu 16-bitovú adresu skoku v aktuálnom 64-KB segmente.
+  \item \textbf{MOD = 1 (\bits{001}): Nepriamy registrový skok (dĺžka 2 bajty).} Oktet 1 určuje register \reg{Rs} (bity $[7:5]$), ktorého hodnota sa načíta do \reg{PC}.
+  \item \textbf{MOD = 2 (\bits{010}): Rozšírený 24-bitový skok cez \reg{PTREG}.} Skok sa vykoná na fyzickú 24-bitovú adresu zo systémového registra \reg{PTREG}.
+\end{itemize}
+
+\subsection{Trieda X: Inštrukcie výmeny s pamäťou LMR a LRM (2--4 bajty)}
+Inštrukcie načítania (\texttt{LMR}) a uloženia (\texttt{LRM}) sa vyznačujú najvyššou adaptabilitou.
+Konfiguračné pole oktetu 0 (\bits{[2:0]}) kóduje:
+\begin{itemize}
+  \item Bit $[2]$: veľkosť operandu \field{SZ} ($0 = 8$ bitov / bajt, $1 = 16$ bitov / slovo).
+  \item Bity $[1:0]$: zdroj/cieľ \field{SRC} / \field{DST}:
+    \begin{itemize}
+      \item \textbf{0: Priame dáta (Inline Data):} 2 bajty pri $\field{SZ}=0$ (bajt za inštrukciou) alebo 3 bajty pri $\field{SZ}=1$ (16-bitové slovo za inštrukciou).
+      \item \textbf{1: Priamy ukazovateľ (Imm Pointer):} 4 bajty. Oktet 1 určuje register, a oktety 2--3 uchovávajú 16-bitovú adresu dát.
+      \item \textbf{2: Systémový 24-bitový ukazovateľ \reg{PTREG}:} 2 bajty. Oktet 1 určuje cieľový register. Pri aktívnom príznaku \texttt{FREG.AIP} sa ukazovateľ \reg{PTREG} hardvérovo inkrementuje za 0 dodatočných taktov.
+      \item \textbf{3: Zložená 24-bitová adresa z dvojice registrov:} 2 bajty. Oktet 1 obsahuje bity $[7:5]$ (\reg{Arg1} / vyššie bity adresy) a bity $[4:2]$ (\reg{Arg2} / nižších 16 bitov adresy). V inštrukcii \texttt{LMR} sa register \reg{Arg1} po načítaní prepíše získanými dátami.
+    \end{itemize}
+\end{itemize}
 
 \section{Prehľadná tabuľka inštrukcií jadra LIM M2}
 \small
@@ -484,35 +889,54 @@ Nasledujúce strany obsahujú úplné architektonické profily všetkých 32 ope
 Signatúra: NOP \\
 Operácia:  PC <- PC + 1, ALU\_RESIDUAL <- 0, FREG.CF <- 0, FREG.OF <- 0 \\[2pt]
 Príklad:   NOP              ; Reset reťazca prenosu ALU
-}{Bez operandov; pole \field{cfg} rezervované na kalibráciu časovania.}{Vynuluje príznaky prenosu (CF), pretečenia (OF) a výpožičky; ostatné príznaky zachováva.}{Slúži na synchronizáciu taktov a hardvérové vyprázdnenie (Flush) vnútorného zvyškového registra ALU, čím prerušuje reťazenie pred novými nezávislými výpočtami.}
+}{%
+\BitDiagramOneByte{00000}{000}%
+Inštrukcia pevnej dĺžky (1 bajt). Bez operandov; pole \field{cfg} obsahuje \bits{000} (rezervované na kalibráciu časovania). Druhý bajt zo zbernice sa nenačítava.%
+}{Vynuluje príznaky prenosu (CF), pretečenia (OF) a výpožičky; ostatné príznaky zachováva.}{Slúži na synchronizáciu taktov a hardvérové vyprázdnenie (Flush) vnútorného zvyškového registra ALU, čím prerušuje reťazenie pred novými nezávislými výpočtami.}
 \InstructionPage{ADD}{00001}{Aritmetika}{Sčítanie s automatickým reťazením prenosu}{%
 \small
 Signatúra: ADD arg0(REG), arg1(REG), arg2(REG) : arg0 = arg1 + arg2 \\
 Operácia:  sum <- arg1 + arg2 + ALU\_RESIDUAL \\
            arg0 <- sum[15:0], ALU\_RESIDUAL <- (sum > 0xFFFF ? 1 : 0) \\[2pt]
 Príklad:   ADD R0, R1, R2   ; R0 = R1 + R2 (registre R0--R7)
-}{Registre R0--R7, akumulátory ACCA/ACCB alebo priame konštanty.}{Nastavuje príznak prenosu CF a pretečenia OF pri prekročení $2^{16}-1$; aktualizuje ZF podľa dst.}{Podporuje priebežnú viacbajtovú aritmetiku (32, 48, 64+ bitov). Ak súčet prekročí 16 bitov ($>2^{16}-1$), prenos (+1) sa zachová vo vnútornom registri ALU a automaticky sa pripočíta pri nasledujúcej operácii ADD bez nutnosti inštrukcie ADC. Spodných 16 bitov sa deterministicky zapíše do dst. Reťazenie sa preruší inštrukciou NOP alebo novou matematickou operáciou.}
+}{%
+\BitDiagramTwoBytes{00001}{000}{Rd [7:5] \enspace | \enspace Rs1 [4:2] \enspace | \enspace Rs2 [1:0]}{Rd [7:5], Rs1 [4:2], Rs2 [1:0]}%
+\textbf{Oktet 0:} kód operácie \bits{00001}, konfigurácia \field{cfg} = \bits{000}.\\
+\textbf{Oktet 1:} bity $[7:5]$ určujú cieľový register \reg{Rd} (\texttt{R0}--\texttt{R7}, kam sa uloží výsledok); bity $[4:2]$ určujú prvý sčítanec \reg{Rs1}; bity $[1:0]$ určujú druhý sčítanec \reg{Rs2}. Dĺžka inštrukcie: presne 2 bajty.%
+}{Nastavuje príznak prenosu CF a pretečenia OF pri prekročení $2^{16}-1$; aktualizuje ZF podľa dst.}{Podporuje priebežnú viacbajtovú aritmetiku (32, 48, 64+ bitov). Ak súčet prekročí 16 bitov ($>2^{16}-1$), prenos (+1) sa zachová vo vnútornom registri ALU a automaticky sa pripočíta pri nasledujúcej operácii ADD bez nutnosti inštrukcie ADC. Spodných 16 bitov sa deterministicky zapíše do dst. Reťazenie sa preruší inštrukciou NOP alebo novou matematickou operáciou.}
 \InstructionPage{SUB}{00010}{Aritmetika}{Odčítanie s automatickým reťazením výpožičky}{%
 \small
 Signatúra: SUB arg0(REG), arg1(REG), arg2(REG) : arg0 = arg1 - arg2 \\
 Operácia:  diff <- arg1 - arg2 - ALU\_RESIDUAL \\
            arg0 <- diff[15:0], ALU\_RESIDUAL <- (diff < 0 ? 1 : 0) \\[2pt]
 Príklad:   SUB R0, R1, R2   ; R0 = R1 - R2 (registre R0--R7)
-}{Registre R0--R7, konštanty alebo akumulátory ACCA/ACCB.}{Pri zápornom rozdiele ($< 0$) nastavuje príznak výpožičky (Borrow / CF) a OF; aktualizuje ZF.}{Umožňuje kontinuálne viacbajtové odčítanie. Pri zápornom rozdiele ($< 0$) sa výpožička ($-1$) uloží do vnútorného registra ALU a pri ďalšej inštrukcii SUB sa automaticky odpočíta 1 od vyššieho slova. Výsledok spodného slova sa deterministicky uloží do dst. Na začatie nového nezávislého odčítania sa reťazenie preruší pomocou NOP.}
+}{%
+\BitDiagramTwoBytes{00010}{000}{Rd [7:5] \enspace | \enspace Rs1 [4:2] \enspace | \enspace Rs2 [1:0]}{Rd [7:5], Rs1 [4:2], Rs2 [1:0]}%
+\textbf{Oktet 0:} kód operácie \bits{00010}, konfigurácia \field{cfg} = \bits{000}.\\
+\textbf{Oktet 1:} bity $[7:5]$ určujú cieľový register \reg{Rd} (kam sa uloží rozdiel); bity $[4:2]$ určujú menšenec \reg{Rs1}; bity $[1:0]$ určujú menšiteľ \reg{Rs2}. Dĺžka inštrukcie: presne 2 bajty.%
+}{Pri zápornom rozdiele ($< 0$) nastavuje príznak výpožičky (Borrow / CF) a OF; aktualizuje ZF.}{Umožňuje kontinuálne viacbajtové odčítanie. Pri zápornom rozdiele ($< 0$) sa výpožička ($-1$) uloží do vnútorného registra ALU a pri ďalšej inštrukcii SUB sa automaticky odpočíta 1 od vyššieho slova. Výsledok spodného slova sa deterministicky uloží do dst. Na začatie nového nezávislého odčítania sa reťazenie preruší pomocou NOP.}
 \InstructionPage{MUL}{00011}{Aritmetika}{Celočíselné násobenie so zachovaním hornej časti v registri ALU}{%
 \small
 Signatúra: MUL arg0(REG), arg1(REG), arg2(REG) : arg0 = arg1 * arg2 \\
 Operácia:  prod <- arg1 * arg2 \\
            arg0 <- prod[15:0], ALU\_RESIDUAL <- prod[31:16] \\[2pt]
 Príklad:   MUL R0, R1, R2   ; R0 = R1 * R2 (horná časť v ALU\_RESIDUAL)
-}{Registre R0--R7, akumulátory ACCA/ACCB.}{Aktualizuje ZF; nastavuje OF/CF, ak je horných 16 bitov súčinu (prod[31:16]) nenulových.}{Pri 32-bitovom súčine smeruje spodných 16 bitov do cieľového registra dst, kým horných 16 bitov sa uloží do vnútorného zvyškového registra ALU (ALU Residual). Pri nasledujúcom sčítaní sa tento zvyšok automaticky pripočíta (podpora MAC a viacbajtových čísiel). Hornú polovicu možno získať aj sčítaním registra so sebou samým po vynulovaní. Inštrukcia NOP register vyčistí.}
+}{%
+\BitDiagramTwoBytes{00011}{000}{Rd [7:5] \enspace | \enspace Rs1 [4:2] \enspace | \enspace Rs2 [1:0]}{Rd [7:5], Rs1 [4:2], Rs2 [1:0]}%
+\textbf{Oktet 0:} kód operácie \bits{00011}, konfigurácia \field{cfg} = \bits{000}.\\
+\textbf{Oktet 1:} bity $[7:5]$ určujú cieľový register \reg{Rd} (dolných 16 bitov súčinu); bity $[4:2]$ určujú prvý činiteľ \reg{Rs1}; bity $[1:0]$ určujú druhý činiteľ \reg{Rs2}. Horných 16 bitov súčinu sa automaticky zachytáva v registri \reg{ALU\_RESIDUAL}. Dĺžka inštrukcie: 2 bajty.%
+}{Aktualizuje ZF; nastavuje OF/CF, ak je horných 16 bitov súčinu (prod[31:16]) nenulových.}{Pri 32-bitovom súčine smeruje spodných 16 bitov do cieľového registra dst, kým horných 16 bitov sa uloží do vnútorného zvyškového registra ALU (ALU Residual). Pri nasledujúcom sčítaní sa tento zvyšok automaticky pripočíta (podpora MAC a viacbajtových čísiel). Hornú polovicu možno získať aj sčítaním registra so sebou samým po vynulovaní. Inštrukcia NOP register vyčistí.}
 \InstructionPage{DIV}{00100}{Aritmetika}{Celočíselné delenie so zachovaním zvyšku vo vnútornom registri ALU}{%
 \small
 Signatúra: DIV arg0(REG), arg1(REG), arg2(REG) : arg0 = arg1 / arg2 \\
 Operácia:  arg0 <- arg1 / arg2 \\
            ALU\_RESIDUAL <- arg1 \% arg2 \\[2pt]
 Príklad:   DIV R0, R1, R2   ; R0 = R1 / R2 (zvyšok modulo v ALU\_RESIDUAL)
-}{Registre R0--R7, akumulátory ACCA/ACCB.}{Pri delení nulou sa nastavuje príznak chyby EM (Error Math) bez zablokovania procesora; aktualizuje ZF.}{Podiel sa zapíše do cieľového registra dst, pričom zvyšok po delení (modulo) sa zachová vo vnútornom registri ALU pre ďalšie operácie alebo vymazanie inštrukciou NOP.}
+}{%
+\BitDiagramTwoBytes{00100}{000}{Rd [7:5] \enspace | \enspace Rs1 [4:2] \enspace | \enspace Rs2 [1:0]}{Rd [7:5], Rs1 [4:2], Rs2 [1:0]}%
+\textbf{Oktet 0:} kód operácie \bits{00100}, konfigurácia \field{cfg} = \bits{000}.\\
+\textbf{Oktet 1:} bity $[7:5]$ určujú cieľový register \reg{Rd} (podiel); bity $[4:2]$ určujú delenec \reg{Rs1}; bity $[1:0]$ určujú deliteľ \reg{Rs2}. Zvyšok po delení (modulo) sa automaticky ukladá do registra \reg{ALU\_RESIDUAL}. Dĺžka inštrukcie: 2 bajty.%
+}{Pri delení nulou sa nastavuje príznak chyby EM (Error Math) bez zablokovania procesora; aktualizuje ZF.}{Podiel sa zapíše do cieľového registra dst, pričom zvyšok po delení (modulo) sa zachová vo vnútornom registri ALU pre ďalšie operácie alebo vymazanie inštrukciou NOP.}
 \InstructionPage{LMR}{00101}{Pamäť}{Načítanie dát z pamäte a externých zariadení do registrov}{%
 \small
 Signatúra: LMR arg0(REG), <SRC\_MODE> : arg0 = MEM[...] \\
@@ -523,6 +947,7 @@ Režimy:    SRC=0: LMR R0, [PC+]          ; Imm Data (1--2 bajty) \\
 Operácia:  arg0 <- MEM[EA] (horné bity adresy sa prepíšu dátami) \\[2pt]
 Príklad:   LMR R0, R1       ; EA=(R0<<16)|R1, načítanie MEM[EA] do R0
 }{%
+\BitDiagramDynamic{00101}{SRC,SZ}{Rd [7:5] \enspace | \enspace Rs [4:2]}{Imm / Addr}{Parametre výberu (2--4 bajty)}%
 \textbf{Oktet 0:} bit $[8]$ (\field{SZ}) určuje šírku dát ($0 = 1$ bajt, $1 = 2$ bajty / slovo); bity $[10:9]$ (\field{SRC}) volia zdroj dát ($0$ --- priame dáta za kódom inštrukcie, $1$ --- priamy ukazovateľ za inštrukciou, $2$ --- nepriamo cez 24-bitový ukazovateľ \reg{PTREG}, $3$ --- nepriamo cez dvojicu používateľských registrov).\\
 \textbf{Oktet 1:} bity $[7:5]$ definujú register \reg{Arg1} (\reg{R\_hi} / cieľ), bity $[4:2]$ definujú register \reg{Arg2} (\reg{R\_lo}). V režime $\field{SRC} = 3$ používateľ zvolí dva 16-bitové registre tvoriace 32-bitové číslo, z ktorého sa na adresovanie použije 24 bitov: \reg{Arg1} nesie horné bity adresy a \reg{Arg2} dolných 16 bitov. Register \reg{Arg1} je zároveň cieľovým registrom: po výbere z pamäte sa horné bity adresy v \reg{Arg1} prepíšu načítanými dátami.%
 }{Všetky príznaky v stavovom registri \reg{FREG} zostávajú zachované bez zmeny.}{%
@@ -542,6 +967,7 @@ Režimy:    DST=0: LRM R0, [PC+]          ; Vložená pamäť za kódom \\
 Operácia:  MEM[EA] <- arg0[15:0] (alebo dolný bajt pri SZ=0) \\[2pt]
 Príklad:   LRM R0, R1       ; EA=(R0<<16)|R1, zápis R0 do MEM[EA]
 }{%
+\BitDiagramDynamic{00110}{DST,SZ}{Rs [7:5] \enspace | \enspace Rd [4:2]}{Imm / Addr}{Parametre uloženia (2--4 bajty)}%
 \textbf{Oktet 0:} bit $[8]$ (\field{SZ}) určuje šírku dát ($0 = 1$ bajt, $1 = 2$ bajty / slovo); bity $[10:9]$ (\field{DST}) volia cieľové umiestnenie dát ($0$ --- zápis priamo za kód inštrukcie, $1$ --- zápis podľa ukazovateľa za inštrukciou, $2$ --- nepriamo cez 24-bitový ukazovateľ \reg{PTREG}, $3$ --- nepriamo cez dvojicu registrov používateľa).\\
 \textbf{Oktet 1:} bity $[7:5]$ definujú zdrojový register \reg{Arg1} (\reg{Rs} / \reg{R\_hi}), bity $[4:2]$ definujú register \reg{Arg2} (\reg{R\_lo}). V režime $\field{DST} = 3$ dva registre tvoria 32-bitové číslo, z ktorého sa použije 24 bitov adresy (\reg{Arg1} --- horné bity adresy a zdroj dát, \reg{Arg2} --- dolných 16 bitov). Prepísanie existujúcich dát na cieľovej adrese je plnou zodpovednosťou programátora.%
 }{Všetky príznaky v stavovom registri \reg{FREG} zostávajú zachované bez zmeny.}{%
@@ -557,6 +983,7 @@ Signatúra: LRR arg0(REG), arg1(REG) : arg0 = arg1 \\
 Operácia:  arg0 <- arg1 (priame kopírovanie z bodu B do bodu A) \\[2pt]
 Príklad:   LRR R0, R1       ; R0 = R1 (hodnota R1 sa skopíruje do R0)
 }{%
+\BitDiagramTwoBytes{00111}{000}{Rd [7:5] \enspace | \enspace Rs [4:2] \enspace | \enspace 00 [1:0]}{Rd [7:5] (bod A), Rs [4:2] (bod B)}%
 \textbf{Oktet 0:} kód operácie $00111_2$ (\texttt{0x07}), bity $[10:8]$ sú rezervované ($000_2$).\\
 \textbf{Oktet 1:} bity $[7:5]$ definujú cieľový register-príjemcu \reg{Arg1} (\reg{Rd}, bod A, kam sa dáta ukladajú); bity $[4:2]$ definujú zdrojový register \reg{Arg2} (\reg{Rs}, bod B, odkiaľ sa dáta čítajú); bity $[1:0]$ obsahujú $00_2$. Pri vykonaní sa hodnota \reg{Rs} prenesie do \reg{Rd} za 1 mikrocyklus.%
 }{Všetky príznaky zostávajú zachované.}{%
@@ -570,113 +997,191 @@ Operácia:  if arg0 < arg1 then FREG.CMP <- 01b (menšie) \\
            if arg0 > arg1 then FREG.CMP <- 11b (väčšie) \\
            (stav 00b --- počiatočný reset / neporovnané / chyba) \\[2pt]
 Príklad:   CMP R0, R1       ; 01: R0<R1, 10: R0==R1, 11: R0>R1 (00: reset/chyba)
-}{Režim porovnania registrov bez zmeny dát.}{Aktualizuje 2-bitové pole FREG.CMP (bity [5:4]) a príznaky ZF, CF, OF bez zmeny registrov.}{Umožňuje rýchle podmienené vetvenie.}
+}{%
+\BitDiagramTwoBytes{01000}{000}{Rs1 [7:5] \enspace | \enspace Rs2 [4:2] \enspace | \enspace 00 [1:0]}{Rs1 [7:5], Rs2 [4:2]}%
+\textbf{Oktet 0:} kód operácie \bits{01000}, konfigurácia \field{cfg} = \bits{000}.\\
+\textbf{Oktet 1:} bity $[7:5]$ určujú prvý operand \reg{Rs1}; bity $[4:2]$ určujú druhý operand \reg{Rs2}; bity $[1:0]$ obsahujú \bits{00}.\\
+Výsledok hardvérového porovnania sa ukladá do poľa \reg{FREG.CMP} (bity $[5:4]$): \bits{01} ($\text{Rs1} < \text{Rs2}$), \bits{10} ($\text{Rs1} = \text{Rs2}$), \bits{11} ($\text{Rs1} > \text{Rs2}$), \bits{00} (reset / neporovnávané / chyba). Hodnoty registrov sa nemenia. Dĺžka inštrukcie: 2 bajty.%
+}{Aktualizuje 2-bitové pole FREG.CMP (bity [5:4]) a príznaky ZF, CF, OF bez zmeny registrov.}{Umožňuje rýchle podmienené vetvenie.}
 \InstructionPage{JMP}{01001}{Skok}{Nepodmienený skok}{%
 \small
 Signatúra: JMP target(IMM|REG) : PC = target \\
 Operácia:  PC <- target \\[2pt]
 Príklad:   JMP R0           ; Bezpodmienečný skok na adresu v R0
-}{Podporuje 16-bitový lokálny alebo plný 24-bitový skok cez \reg{PTREG}.}{Príznaky zostávajú nezmenené.}{Atomické načítanie Program Counter v minimálnom počte cyklov.}
+}{%
+\BitDiagramDynamic{01001}{MOD}{Target Reg [7:5] \enspace | \enspace RSV}{16-bit Imm Addr}{Dĺžka: 2--3 bajty}%
+\textbf{Oktet 0:} kód operácie \bits{01001}, bity $[2:0]$ (\field{MOD}): \bits{000} --- 16-bitová priama adresa (dĺžka 3 bajty, oktety 1--2 obsahujú adresu); \bits{001} --- nepriamy registrový skok (dĺžka 2 bajty, oktet 1 bity $[7:5]$ určujú register \reg{Rs}); \bits{010} --- rozšírený 24-bitový skok cez \reg{PTREG}.%
+}{Príznaky zostávajú nezmenené.}{Atomické načítanie Program Counter v minimálnom počte cyklov.}
 \InstructionPage{JCR}{01010}{Skok}{Podmienený skok pri prenose}{%
 \small
 Signatúra: JCR target(IMM|REG) : if FREG.CF == 1 then PC = target \\
 Operácia:  if FREG.CF == 1 then PC <- target \\[2pt]
 Príklad:   JCR R2           ; Skok na adresu R2, ak je nastavený Carry
-}{Cieľová adresa určená posunom alebo absolútne.}{Príznaky sú iba čítané.}{Základný stavebný prvok viacnásobnej presnej aritmetiky.}
+}{%
+\BitDiagramDynamic{01010}{MOD}{Target Reg [7:5] \enspace | \enspace RSV}{16-bit Imm Addr}{Dĺžka: 2--3 bajty}%
+\textbf{Oktet 0:} kód operácie \bits{01010}, bity $[2:0]$ (\field{MOD}): \bits{000} (16-bitová adresa Imm, 3 bajty), \bits{001} (nepriamo cez \reg{Rs}, 2 bajty), \bits{010} (24-bitový cez \reg{PTREG}). Skok sa vykoná iba pri nastavenom príznaku prenosu \reg{FREG.CF} = 1.%
+}{Príznaky sú iba čítané.}{Základný stavebný prvok viacnásobnej presnej aritmetiky.}
 \InstructionPage{JNZ}{01011}{Skok}{Podmienený skok pri nenulovom stave}{%
 \small
 Signatúra: JNZ target(IMM|REG) : if FREG.ZF == 0 then PC = target \\
 Operácia:  if FREG.ZF == 0 then PC <- target \\[2pt]
 Príklad:   JNZ R3           ; Skok na adresu R3, ak ZF == 0 (nie je nula)
-}{Vysoko efektívny skok pre programové slučky a počítadlá.}{Príznaky zostávajú nezmenené.}{Rýchle vyhodnotenie podmienky v mikroprograme.}
+}{%
+\BitDiagramDynamic{01011}{MOD}{Target Reg [7:5] \enspace | \enspace RSV}{16-bit Imm Addr}{Dĺžka: 2--3 bajty}%
+\textbf{Oktet 0:} kód operácie \bits{01011}, bity $[2:0]$ (\field{MOD}): \bits{000} (16-bitová adresa Imm, 3 bajty), \bits{001} (nepriamo cez \reg{Rs}, 2 bajty), \bits{010} (24-bitový cez \reg{PTREG}). Skok sa vykoná pri nulovom stave príznaku \reg{FREG.ZF} = 0.%
+}{Príznaky zostávajú nezmenené.}{Rýchle vyhodnotenie podmienky v mikroprograme.}
 \InstructionPage{JZ}{01100}{Skok}{Podmienený skok pri nulovom stave}{%
 \small
 Signatúra: JZ target(IMM|REG) : if FREG.ZF == 1 then PC = target \\
 Operácia:  if FREG.ZF == 1 then PC <- target \\[2pt]
 Príklad:   JZ R4            ; Skok na adresu R4, ak ZF == 1 (je nula)
-}{Vyhodnocuje rovnosť alebo ukončovacie podmienky.}{Príznaky zostávajú nezmenené.}{Optimalizované pre reťazcové a vyhľadávacie operácie.}
+}{%
+\BitDiagramDynamic{01100}{MOD}{Target Reg [7:5] \enspace | \enspace RSV}{16-bit Imm Addr}{Dĺžka: 2--3 bajty}%
+\textbf{Oktet 0:} kód operácie \bits{01100}, bity $[2:0]$ (\field{MOD}): \bits{000} (16-bitová adresa Imm, 3 bajty), \bits{001} (nepriamo cez \reg{Rs}, 2 bajty), \bits{010} (24-bitový cez \reg{PTREG}). Skok sa vykoná pri nastavenom príznaku nuly \reg{FREG.ZF} = 1.%
+}{Príznaky zostávajú nezmenené.}{Optimalizované pre reťazcové a vyhľadávacie operácie.}
 \InstructionPage{AND}{01101}{Logika}{Bitový logický súčin (AND)}{%
 \small
 Signatúra: AND arg0(REG), arg1(REG) : arg0 = arg0 \& arg1 \\
 Operácia:  arg0 <- arg0 AND arg1 \\[2pt]
 Príklad:   AND R0, R1   ; R0 = R0 \& R1
-}{Registrové operandy (2 operandy).}{Nastavuje príznak nuly ZF; pretečenie vynulované.}{Kľúčová inštrukcia pre bitové maskovanie.}
+}{%
+\BitDiagramTwoBytes{01101}{000}{Rd [7:5] \enspace | \enspace Rs [4:2] \enspace | \enspace 00 [1:0]}{Rd [7:5] (príjemca), Rs [4:2] (operand)}%
+\textbf{Oktet 0:} kód operácie \bits{01101}, konfigurácia \field{cfg} = \bits{000}.\\
+\textbf{Oktet 1:} bity $[7:5]$ určujú cieľový register \reg{Rd} ($\text{Rd} \leftarrow \text{Rd} \ \& \ \text{Rs}$); bity $[4:2]$ určujú druhý operand \reg{Rs}; bity $[1:0]$ obsahujú \bits{00}. Dĺžka inštrukcie: 2 bajty.%
+}{Nastavuje príznak nuly ZF; pretečenie vynulované.}{Kľúčová inštrukcia pre bitové maskovanie.}
 \InstructionPage{OR}{01110}{Logika}{Bitový logický súčet (OR)}{%
 \small
 Signatúra: OR arg0(REG), arg1(REG) : arg0 = arg0 | arg1 \\
 Operácia:  arg0 <- arg0 OR arg1 \\[2pt]
 Príklad:   OR R0, R1    ; R0 = R0 | R1
-}{Registrové operandy (2 operandy).}{Nastavuje ZF; prenosy sú deterministicky vynulované.}{Rýchle zlučovanie riadiacich príznakov.}
+}{%
+\BitDiagramTwoBytes{01110}{000}{Rd [7:5] \enspace | \enspace Rs [4:2] \enspace | \enspace 00 [1:0]}{Rd [7:5] (príjemca), Rs [4:2] (operand)}%
+\textbf{Oktet 0:} kód operácie \bits{01110}, konfigurácia \field{cfg} = \bits{000}.\\
+\textbf{Oktet 1:} bity $[7:5]$ určujú cieľový register \reg{Rd} ($\text{Rd} \leftarrow \text{Rd} \ | \ \text{Rs}$); bity $[4:2]$ určujú druhý operand \reg{Rs}; bity $[1:0]$ obsahujú \bits{00}. Dĺžka inštrukcie: 2 bajty.%
+}{Nastavuje ZF; prenosy sú deterministicky vynulované.}{Rýchle zlučovanie riadiacich príznakov.}
 \InstructionPage{NAND}{01111}{Logika}{Bitový logický zápor súčinu (NAND)}{%
 \small
 Signatúra: NAND arg0(REG), arg1(REG) : arg0 = \textasciitilde(arg0 \& arg1) \\
 Operácia:  arg0 <- NOT (arg0 AND arg1) \\[2pt]
 Príklad:   NAND R0, R1  ; R0 = \textasciitilde(R0 \& R1)
-}{Univerzálna logická báza (2 operandy).}{Nastavuje príznak ZF.}{Umožňuje kompaktnú realizáciu zákazníckych logických funkcií.}
+}{%
+\BitDiagramTwoBytes{01111}{000}{Rd [7:5] \enspace | \enspace Rs [4:2] \enspace | \enspace 00 [1:0]}{Rd [7:5] (príjemca), Rs [4:2] (operand)}%
+\textbf{Oktet 0:} kód operácie \bits{01111}, konfigurácia \field{cfg} = \bits{000}.\\
+\textbf{Oktet 1:} bity $[7:5]$ určujú cieľový register \reg{Rd}; bity $[4:2]$ určujú operand \reg{Rs}; bity $[1:0]$ obsahujú \bits{00}. Dĺžka: 2 bajty.%
+}{Nastavuje príznak ZF.}{Umožňuje kompaktnú realizáciu zákazníckych logických funkcií.}
 \InstructionPage{NOR}{10000}{Logika}{Bitový logický zápor súčtu (NOR)}{%
 \small
 Signatúra: NOR arg0(REG), arg1(REG) : arg0 = \textasciitilde(arg0 | arg1) \\
 Operácia:  arg0 <- NOT (arg0 OR arg1) \\[2pt]
 Príklad:   NOR R0, R1   ; R0 = \textasciitilde(R0 | R1)
-}{Invertovaná logická funkcia (2 operandy).}{Nastavuje príznak ZF.}{Rozširuje množinu rýchlych bitových transformácií.}
+}{%
+\BitDiagramTwoBytes{10000}{000}{Rd [7:5] \enspace | \enspace Rs [4:2] \enspace | \enspace 00 [1:0]}{Rd [7:5] (príjemca), Rs [4:2] (operand)}%
+\textbf{Oktet 0:} kód operácie \bits{10000}, konfigurácia \field{cfg} = \bits{000}.\\
+\textbf{Oktet 1:} bity $[7:5]$ určujú cieľový register \reg{Rd}; bity $[4:2]$ určujú operand \reg{Rs}; bity $[1:0]$ obsahujú \bits{00}. Dĺžka: 2 bajty.%
+}{Nastavuje príznak ZF.}{Rozširuje množinu rýchlych bitových transformácií.}
 \InstructionPage{NOT}{10001}{Logika}{Bitová inverzia (jednotkový doplnok)}{%
 \small
 Signatúra: NOT arg0(REG) : arg0 = \textasciitilde arg0 \\
 Operácia:  arg0 <- NOT arg0 \\[2pt]
 Príklad:   NOT R0       ; R0 = \textasciitilde R0 (1-bajtová inštrukcia)
-}{Jednobajtová inštrukcia ([7:3] opkód 10001, [2:0] Rd). Druhý bajt z pamäte sa nenačítava.}{Nastavuje príznak ZF.}{Vykoná sa v minimálnom počte mikrotaktov bez načítania druhého bajtu.}
+}{%
+\BitDiagramOneByte{10001}{Rd [2:0]}%
+\textbf{Jednobajtová inštrukcia (dĺžka: 1 bajt).} Oktet 0: bity $[7:3]$ obsahujú opkód \bits{10001}, bity $[2:0]$ priamo určujú cieľový register \reg{Rd} (\texttt{R0}--\texttt{R7}). Druhý bajt zo zbernice pamäte sa nenačítava.%
+}{Nastavuje príznak ZF.}{Vykoná sa v minimálnom počte mikrotaktov bez načítania druhého bajtu.}
 \InstructionPage{XOR}{10010}{Logika}{Bitová neverzia (XOR)}{%
 \small
 Signatúra: XOR arg0(REG), arg1(REG) : arg0 = arg0 \textasciicircum\ arg1 \\
 Operácia:  arg0 <- arg0 XOR arg1 \\[2pt]
 Príklad:   XOR R0, R1   ; R0 = R0 \textasciicircum\ R1 (pri R0==R1 vynuluje R0)
-}{Registrové operandy (2 operandy).}{Nastavuje príznak ZF.}{Základná inštrukcia pre paritu, CRC a kryptografiu.}
+}{%
+\BitDiagramTwoBytes{10010}{000}{Rd [7:5] \enspace | \enspace Rs [4:2] \enspace | \enspace 00 [1:0]}{Rd [7:5] (príjemca), Rs [4:2] (operand)}%
+\textbf{Oktet 0:} kód operácie \bits{10010}, konfigurácia \field{cfg} = \bits{000}.\\
+\textbf{Oktet 1:} bity $[7:5]$ určujú cieľový register \reg{Rd} ($\text{Rd} \leftarrow \text{Rd} \oplus \text{Rs}$); bity $[4:2]$ určujú druhý operand \reg{Rs}; bity $[1:0]$ obsahujú \bits{00}. Dĺžka: 2 bajty.%
+}{Nastavuje príznak ZF.}{Základná inštrukcia pre paritu, CRC a kryptografiu.}
 \InstructionPage{XNOR}{10011}{Logika}{Bitová ekvivalencia}{%
 \small
 Signatúra: XNOR arg0(REG), arg1(REG) : arg0 = \textasciitilde(arg0 \textasciicircum\ arg1) \\
 Operácia:  arg0 <- NOT (arg0 XOR arg1) \\[2pt]
 Príklad:   XNOR R0, R1  ; R0 = \textasciitilde(R0 \textasciicircum\ R1)
-}{Porovnanie bitov na zhodu (2 operandy).}{Nastavuje príznak ZF.}{Rýchla paralelná kontrola ekvivalencie masiek.}
+}{%
+\BitDiagramTwoBytes{10011}{000}{Rd [7:5] \enspace | \enspace Rs [4:2] \enspace | \enspace 00 [1:0]}{Rd [7:5] (príjemca), Rs [4:2] (operand)}%
+\textbf{Oktet 0:} kód operácie \bits{10011}, konfigurácia \field{cfg} = \bits{000}.\\
+\textbf{Oktet 1:} bity $[7:5]$ určujú cieľový register \reg{Rd}; bity $[4:2]$ určujú operand \reg{Rs}; bity $[1:0]$ obsahujú \bits{00}. Dĺžka: 2 bajty.%
+}{Nastavuje príznak ZF.}{Rýchla paralelná kontrola ekvivalencie masiek.}
 \InstructionPage{INC}{10100}{Aritmetika}{Inkrementácia o 1}{%
 \small
 Signatúra: INC arg0(REG) : arg0 = arg0 + 1 \\
 Operácia:  arg0 <- arg0 + 1 \\[2pt]
-Príklad:   INC R0           ; R0 = R0 + 1 (inkrement registra)
-}{Rýchly krok počítadla cyklu.}{Nastavuje ZF, OF; prenos CF riadený cez \field{cfg}.}{Optimalizuje indexovanie v poliach.}
+Príklad:   INC R0           ; R0 = R0 + 1 (1-bajtová inštrukcia)
+}{%
+\BitDiagramOneByte{10100}{Rd [2:0]}%
+\textbf{Jednobajtová inštrukcia (dĺžka: 1 bajt).} Oktet 0: bity $[7:3]$ obsahujú opkód \bits{10100}, bity $[2:0]$ priamo určujú register \reg{Rd} (\texttt{R0}--\texttt{R7}). Druhý bajt zo zbernice pamäte sa nenačítava.%
+}{Nastavuje ZF. Pretečenie je monitorované v ALU.}{Rýchly krok počítadla cyklu vykonaný v minimálnom počte taktov bez ďalšieho čítania.}
 \InstructionPage{DEC}{10101}{Aritmetika}{Dekrementácia o 1}{%
 \small
 Signatúra: DEC arg0(REG) : arg0 = arg0 - 1 \\
 Operácia:  arg0 <- arg0 - 1 \\[2pt]
-Príklad:   DEC R0           ; R0 = R0 - 1 (dekrement registra)
-}{Krok zostupného počítadla.}{Nastavuje ZF, OF.}{Kompaktná realizácia cyklov.}
+Príklad:   DEC R0           ; R0 = R0 - 1 (1-bajtová inštrukcia)
+}{%
+\BitDiagramOneByte{10101}{Rd [2:0]}%
+\textbf{Jednobajtová inštrukcia (dĺžka: 1 bajt).} Oktet 0: bity $[7:3]$ obsahujú opkód \bits{10101}, bity $[2:0]$ priamo určujú register \reg{Rd} (\texttt{R0}--\texttt{R7}). Druhý bajt zo zbernice pamäte sa nenačítava.%
+}{Nastavuje ZF. Výpožička je monitorovaná v ALU.}{Kompaktná realizácia cyklov bez načítania druhého bajtu.}
 \InstructionPage{PUSH}{10110}{Zásobník}{Uloženie slova do zásobníka}{%
 \small
 Signatúra: PUSH arg0(REG) : SREG -= 2, MEM[SREG] = arg0 \\
 Operácia:  SREG <- SREG - 2, MEM[SREG] <- arg0 \\[2pt]
 Príklad:   PUSH R0          ; Uložiť slovo R0 na vrchol zásobníka
-}{Zdroj: ľubovoľný register R0--R7 alebo systémový register.}{Aritmetické príznaky sa nemenia.}{Hardvérová podpora volaní funkcií a ukladania kontextu.}
+}{%
+\BitDiagramTwoBytes{10110}{000}{Rs [7:5] \enspace | \enspace RSV [4:0]}{Rs [7:5] (zdroj)}%
+\textbf{Oktet 0:} kód operácie \bits{10110}, konfigurácia \field{cfg} = \bits{000}.\\
+\textbf{Oktet 1:} bity $[7:5]$ určujú ukladaný zdrojový register \reg{Rs} (\texttt{R0}--\texttt{R7}); bity $[4:0]$ obsahujú $00000_2$. Dĺžka inštrukcie: 2 bajty.%
+}{Aritmetické príznaky sa nemenia.}{Hardvérová podpora volaní funkcií a ukladania kontextu.}
 \InstructionPage{POP}{10111}{Zásobník}{Výber slova zo zásobníka}{%
 \small
 Signatúra: POP arg0(REG) : arg0 = MEM[SREG], SREG += 2 \\
 Operácia:  arg0 <- MEM[SREG], SREG <- SREG + 2 \\[2pt]
 Príklad:   POP R0           ; Vybrať slovo z vrcholu zásobníka do R0
-}{Cieľ: registre R0--R7 alebo stavové registre.}{Aritmetické príznaky sa nemenia.}{Symetrické obnovenie kontextu po prerušení.}
-\InstructionPage{BSL}{11000}{Posuny}{Barelový posun doľava}{%
+}{%
+\BitDiagramTwoBytes{10111}{000}{Rd [7:5] \enspace | \enspace RSV [4:0]}{Rd [7:5] (príjemca)}%
+\textbf{Oktet 0:} kód operácie \bits{10111}, konfigurácia \field{cfg} = \bits{000}.\\
+\textbf{Oktet 1:} bity $[7:5]$ určujú cieľový register-príjemcu \reg{Rd} (\texttt{R0}--\texttt{R7}); bity $[4:0]$ obsahujú $00000_2$. Dĺžka inštrukcie: 2 bajty.%
+}{Aritmetické príznaky sa nemenia.}{Symetrické obnovenie kontextu po prerušení.}
+\InstructionPage{BSL}{11000}{Posuny}{Hardvérový posun doľava (iteratívny register)}{%
 \small
-Signatúra: BSL arg0(REG), arg1(REG), arg2(IMM|REG) : arg0 = arg1 << arg2 \\
-Operácia:  arg0 <- arg1 << arg2 \\
-           FREG.DBIT <- vytlačený najvyšší bit (bit 15) \\
-           Pri SMOD=1 sa do LSB vloží predošlý DBIT; pri SMOD=0: 0 \\[2pt]
-Príklad:   BSL R0, R1, 1    ; Posun R1 doľava o 1 bit, výsledok do R0
-}{Rozsah posunu: konštanta alebo hodnota v registri.}{Najvyšší vysunutý bit zachytený v FREG.DBIT (bit 13). Pri SMOD=1 sa do najnižšieho bitu vloží predchádzajúci DBIT; pri SMOD=0 sa dopĺňajú nuly.}{Efektívna cyklická a prúdová rotácia viacbajtových dát.}
-\InstructionPage{BSR}{11001}{Posuny}{Barelový posun doprava}{%
+Signatúra: BSL arg0(REG), arg1(IMM) : arg0 = arg0 << arg1 \\
+Kódovanie:  Oktet 0: [7:3]=11000, [2:0]=Rd (cieľový register R0--R7) \\
+\phantom{Kódovanie: }Oktet 1: [7:0]=shift (počet bitov posunu 0--16) \\
+Operácia:  Postupný taktovaný posun registra Rd doľava o shift bitov: \\
+           \textbf{Hardvérový cyklus (1 takt na 1 bit, $\approx 300$ tranzistorov):} \\
+           \quad Pre každý takt $t \in [1..\text{shift}]$: \\
+           \quad Najvyšší bit 15 sa vytlačí (last\_displaced <- bit 15); \\
+           \quad Pri SMOD = 1 sa do najnižšieho bitu 0 vráti vytlačený bit (rotácia); \\
+           \quad Pri SMOD = 0 sa do najnižšieho bitu 0 vloží bit z FREG.DBIT (0 alebo 1); \\
+           \quad Zachytenie: FREG.DBIT <- last\_displaced (posledný vytlačený bit). \\[2pt]
+Príklad:   BSL R0, 4        ; Posun R0 doľava o 4 bity (trvá 4 takty posunu)
+}{%
+\BitDiagramShift{11000}{Rd [2:0]}{Shift Count [7:0]}%
+\textbf{Oktet 0:} kód operácie \bits{11000}, bity $[2:0]$ priamo určujú posúvaný register \reg{Rd} (\texttt{R0}--\texttt{R7}).\\
+\textbf{Oktet 1:} celý bajt (\bits{[7:0]}) určuje počet taktov posunu \field{shift} ($0$--$16$). Fyzicky sa posun realizuje taktovaným cyklom na 16 D-klopných obvodoch. Dĺžka inštrukcie: 2 bajty.%
+}{Posledný vytlačený bit sa uloží do FREG.DBIT (bit 13). Príznak nuly FREG.ZF sa nastaví pri nulovom výsledku. Riadené príznakmi FREG.SMOD (bit 14) a FREG.DBIT (bit 13).}{Iteratívny posuvný register na D-klopných obvodoch: cena len $\approx 300$ tranzistorov namiesto $\approx 30\,000$ pri jedno-taktovom maticovom posúvači. Posun o 16 bitov vyžaduje o 15 taktov viac než posun o 1 bit.}
+\InstructionPage{BSR}{11001}{Posuny}{Hardvérový posun doprava (iteratívny register)}{%
 \small
-Signatúra: BSR arg0(REG), arg1(REG), arg2(IMM|REG) : arg0 = arg1 >> arg2 \\
-Operácia:  arg0 <- arg1 >> arg2 \\
-           FREG.DBIT <- vytlačený najnižší bit (bit 0) \\
-           Pri SMOD=1 sa do MSB vloží predošlý DBIT; pri SMOD=0: 0 \\[2pt]
-Príklad:   BSR R0, R1, 1    ; Posun R1 doprava o 1 bit, výsledok do R0
-}{Logický alebo aritmetický posun voliteľný cez \field{cfg}.}{Najnižší vysunutý bit uložený v DBIT (bit 13). Pri SMOD=1 sa do najvyššieho bitu vloží predchádzajúci DBIT; pri SMOD=0 sa dopĺňajú nuly.}{Prúdové škálovanie a delenie mocninami dvojky.}
+Signatúra: BSR arg0(REG), arg1(IMM) : arg0 = arg0 >> arg1 \\
+Kódovanie:  Oktet 0: [7:3]=11001, [2:0]=Rd (cieľový register R0--R7) \\
+\phantom{Kódovanie: }Oktet 1: [7:0]=shift (počet bitov posunu 0--16) \\
+Operácia:  Postupný taktovaný posun registra Rd doprava o shift bitov: \\
+           \textbf{Hardvérový cyklus (1 takt na 1 bit, $\approx 300$ tranzistorov):} \\
+           \quad Pre každý takt $t \in [1..\text{shift}]$: \\
+           \quad Najnižší bit 0 sa vytlačí (last\_displaced <- bit 0); \\
+           \quad Pri SMOD = 1 sa do najvyššieho bitu 15 vráti vytlačený bit (rotácia); \\
+           \quad Pri SMOD = 0 sa do najvyššieho bitu 15 vloží bit z FREG.DBIT (0 alebo 1); \\
+           \quad Zachytenie: FREG.DBIT <- last\_displaced (posledný vytlačený bit). \\[2pt]
+Príklad:   BSR R0, 4        ; Posun R0 doprava o 4 bity (trvá 4 takty posunu)
+}{%
+\BitDiagramShift{11001}{Rd [2:0]}{Shift Count [7:0]}%
+\textbf{Oktet 0:} kód operácie \bits{11001}, bity $[2:0]$ priamo určujú posúvaný register \reg{Rd} (\texttt{R0}--\texttt{R7}).\\
+\textbf{Oktet 1:} celý bajt (\bits{[7:0]}) určuje počet taktov posunu \field{shift} ($0$--$16$). Fyzicky sa posun realizuje taktovaným cyklom na 16 D-klopných obvodoch. Dĺžka inštrukcie: 2 bajty.%
+}{Posledný vytlačený bit sa uloží do FREG.DBIT (bit 13). Príznak nuly FREG.ZF sa nastaví pri nulovom výsledku. Riadené príznakmi FREG.SMOD (bit 14) a FREG.DBIT (bit 13).}{Iteratívny posuvný register na D-klopných obvodoch: cena len $\approx 300$ tranzistorov namiesto $\approx 30\,000$ pri jedno-taktovom maticovom posúvači. Posun o 16 bitov vyžaduje o 15 taktov viac než posun o 1 bit.}
 \InstructionPage{MSP}{11010}{Systém}{Manipulácia so špeciálnymi registrami (FREG, PTREG)}{%
 \small
 Signatúra: MSP sreg, [op], args : práca so špeciálnymi registrami \\
@@ -691,32 +1196,89 @@ Príklad:   MSP FREG, R0         ; Priamy zápis do FREG hodnoty R0 \\
            MSP PTREG, R0, R1    ; Nastavenie 24-bitového PTREG = \{R0, R1\} \\
            MSP FREG, OR, R2     ; Nastavenie masiek: FREG = FREG | R2 \\
            MSP PTREG, ADD, R3   ; Posun ukazovateľa: PTREG = PTREG + R3
-}{Špeciálne registre FREG (00) a 24-bitový PTREG (01). Podporuje priamu inicializáciu, bitové masky FREG a lokálnu aritmetiku PTREG.}{Príznaky FREG sa modifikujú priamo alebo maskou. Aritmetika PTREG generuje príznak prenosu CF cez ALU.}{Univerzálny privilegovaný riadiaci primitív systémovej úrovne.}
+}{%
+\noindent\begin{tikzpicture}[x=0.9cm,y=0.55cm]
+  \draw[thick,fill=limblue] (0,0) rectangle (4.2,1.05);
+  \draw[thick,fill=limcyan] (4.2,0) rectangle (5.5,1.05);
+  \draw[thick,fill=teal!60] (5.5,0) rectangle (6.8,1.05);
+  \draw[thick,fill=limlight] (7.2,0) rectangle (10.0,1.05);
+  \draw[thick,fill=limmint] (10.0,0) rectangle (12.8,1.05);
+  \draw[thick,fill=gray!20] (12.8,0) rectangle (15.2,1.05);
+  \node[text=white,font=\bfseries\tiny,align=center] at (2.1,0.52) {MSP (5b)\\11010};
+  \node[text=white,font=\bfseries\tiny,align=center] at (4.85,0.52) {Mode\\0/1};
+  \node[text=white,font=\bfseries\tiny,align=center] at (6.15,0.52) {Reg\\00/01};
+  \node[font=\bfseries\tiny,align=center] at (8.6,0.52) {Op/Reg 1\\bity [7:5]};
+  \node[font=\bfseries\tiny,align=center] at (11.4,0.52) {Reg 2 / Maska\\bity [4:2]};
+  \node[font=\bfseries\tiny,align=center] at (14.0,0.52) {RSV\\bity [1:0]};
+  % Divider ticks Octet 0
+  \draw[line width=0.7pt, limblue] (0,1.05) -- (0,1.22);
+  \draw[line width=0.7pt, limblue] (4.2,1.05) -- (4.2,1.22);
+  \draw[line width=0.7pt, limblue] (5.5,1.05) -- (5.5,1.22);
+  \draw[line width=0.7pt, limblue] (6.8,1.05) -- (6.8,1.22);
+  % Bit numbers Octet 0
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (0,1.06) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (4.2,1.06) {3};
+  \node[anchor=south,font=\tiny\bfseries\color{limblue}] at (4.85,1.06) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (5.5,1.06) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (6.8,1.06) {0};
+  % Divider ticks Octet 1
+  \draw[line width=0.7pt, limblue] (7.2,1.05) -- (7.2,1.22);
+  \draw[line width=0.7pt, limblue] (10.0,1.05) -- (10.0,1.22);
+  \draw[line width=0.7pt, limblue] (12.8,1.05) -- (12.8,1.22);
+  \draw[line width=0.7pt, limblue] (15.2,1.05) -- (15.2,1.22);
+  % Bit numbers Octet 1
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (7.2,1.06) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (10.0,1.06) {5};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (10.0,1.06) {4};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (12.8,1.06) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (12.8,1.06) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (15.2,1.06) {0};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.4,-0.05) {Oktet 0: Opkód + Režim + Selektor};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (11.2,-0.05) {Oktet 1: Parametre operácie (2 bajty)};
+\end{tikzpicture}\par\vspace{1.5mm}%
+\textbf{Oktet 0:} kód operácie \bits{11010}. Bit $[10]$ (bit 2 oktetu 0) určuje režim: $0$ --- priame načítanie, $1$ --- modifikácia. Bity $[9:8]$ (bity 1--0 oktetu 0) určujú selektor: $00$ = \reg{FREG}, $01$ = \reg{PTREG}.\\
+\textbf{Oktet 1:} pri načítaní ($[10]=0$) určuje zdroj: \reg{Rs} pre \reg{FREG} alebo dvojicu \reg{Rs\_hi}, \reg{Rs\_lo} pre \reg{PTREG}. Pri modifikácii ($[10]=1$) bity $[7:6]$ kódujú operáciu (pre \reg{FREG}: AND, OR, XOR, XNOR; pre \reg{PTREG}: ADD, SUB), a bity $[5:3]$ určujú presne jeden register operandu/masky \reg{Rs}. Dĺžka inštrukcie: 2 bajty.%
+}{Príznaky FREG sa modifikujú priamo alebo maskou. Aritmetika PTREG generuje príznak prenosu CF cez ALU.}{Univerzálny privilegovaný riadiaci primitív systémovej úrovne.}
 \InstructionPage{RSV27}{11011}{Rezerva}{Hardvérové rozšírenie}{%
 \small
 Signatúra: RSV27 : rezervované \\
 Operácia:  Reserved for LIM architecture hardware extensions
-}{Vyhradené pre budúce revízie architektúry LIM.}{Nedefinované.}{Rezervované.}
+}{%
+\BitDiagramOneByte{11011}{000}%
+Vyhradené pre budúce revízie architektúry LIM. Dĺžka: 1 bajt.%
+}{Nedefinované.}{Rezervované.}
 \InstructionPage{RSV28}{11100}{Rezerva}{Hardvérové rozšírenie}{%
 \small
 Signatúra: RSV28 : rezervované \\
 Operácia:  Reserved for LIM architecture hardware extensions
-}{Vyhradené pre budúce revízie architektúry LIM.}{Nedefinované.}{Rezervované.}
+}{%
+\BitDiagramOneByte{11100}{000}%
+Vyhradené pre budúce revízie architektúry LIM. Dĺžka: 1 bajt.%
+}{Nedefinované.}{Rezervované.}
 \InstructionPage{RSV29}{11101}{Rezerva}{Hardvérové rozšírenie}{%
 \small
 Signatúra: RSV29 : rezervované \\
 Operácia:  Reserved for LIM architecture hardware extensions
-}{Vyhradené pre budúce revízie architektúry LIM.}{Nedefinované.}{Rezervované.}
+}{%
+\BitDiagramOneByte{11101}{000}%
+Vyhradené pre budúce revízie architektúry LIM. Dĺžka: 1 bajt.%
+}{Nedefinované.}{Rezervované.}
 \InstructionPage{RSV30}{11110}{Rezerva}{Hardvérové rozšírenie}{%
 \small
 Signatúra: RSV30 : rezervované \\
 Operácia:  Reserved for LIM architecture hardware extensions
-}{Vyhradené pre budúce revízie architektúry LIM.}{Nedefinované.}{Rezervované.}
+}{%
+\BitDiagramOneByte{11110}{000}%
+Vyhradené pre budúce revízie architektúry LIM. Dĺžka: 1 bajt.%
+}{Nedefinované.}{Rezervované.}
 \InstructionPage{RSV31}{11111}{Rezerva}{Hardvérové rozšírenie}{%
 \small
 Signatúra: RSV31 : rezervované \\
 Operácia:  Reserved for LIM architecture hardware extensions
-}{Vyhradené pre budúce revízie architektúry LIM.}{Nedefinované.}{Rezervované.}
+}{%
+\BitDiagramOneByte{11111}{000}%
+Vyhradené pre budúce revízie architektúry LIM. Dĺžka: 1 bajt.%
+}{Nedefinované.}{Rezervované.}
 
 \clearpage
 \section{Fyzické rozhranie a rozloženie vývodov (34-vývodové puzdro)}

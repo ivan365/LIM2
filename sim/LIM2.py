@@ -105,6 +105,22 @@ class LIM2CPU(BaseCPU):
             self.set_reg(rd, res)
             self._update_flags(res)
 
+        # 20: INC Rd (1 байт: Инкремент операнда на единицу, [7-3] опкод 10100, [2-0] Rd)
+        elif opcode == 0b10100:
+            rd = cfg
+            val = self.get_reg(rd)
+            res = (val + 1) & 0xFFFF
+            self.set_reg(rd, res)
+            self._update_flags(res)
+
+        # 21: DEC Rd (1 байт: Декремент операнда на единицу, [7-3] опкод 10101, [2-0] Rd)
+        elif opcode == 0b10101:
+            rd = cfg
+            val = self.get_reg(rd)
+            res = (val - 1) & 0xFFFF
+            self.set_reg(rd, res)
+            self._update_flags(res)
+
         # 1: ADD Rd, Rs1, Rs2 (2 байта: Rd = Rs1 + Rs2)
         elif opcode == 0b00001:
             self.databus = (self.databus << 8) | self.bus.read8(self.pc)
@@ -346,6 +362,98 @@ class LIM2CPU(BaseCPU):
             res = (~(self.get_reg(rd) ^ self.get_reg(rs))) & 0xFFFF
             self.set_reg(rd, res)
             self._update_flags(res)
+
+        # 24: BSL Rd, shift (Итеративный аппаратный сдвиг влево: [15-11] 11000, [10-8] Rd, [7-0] shift)
+        # В железе: аппаратный цикл сдвигового регистра из 16 D-триггеров (~300 транзисторов вместо ~30 000).
+        # Сдвиг на N бит занимает ровно N тактов (сдвиг на 16 бит занимает на 15 тактов больше сдвига на 1 бит).
+        elif opcode == 0b11000:
+            self.databus = (self.databus << 8) | self.bus.read8(self.pc)
+            self.pc += 1
+            rd = (self.databus >> 8) & 0x07
+            shift = self.databus & 0xFF
+            val = self.get_reg(rd) & 0xFFFF
+            smod = (self.freg >> 14) & 1
+            dbit = (self.freg >> 13) & 1
+            fill_bit = dbit
+            last_displaced = dbit
+
+            # Симуляция физического 16-битного регистра сдвига (цепочка триггеров [b0..b15])
+            reg_bits = [(val >> i) & 1 for i in range(16)]
+
+            # Аппаратный тактовый цикл: каждый шаг сдвигает регистр на 1 бит за 1 такт
+            for _ in range(shift):
+                if hasattr(self, "cycles"):
+                    self.cycles += 1
+
+                # Вытесняемый старший бит (выход 15-го триггера)
+                last_displaced = reg_bits[15]
+
+                # Входной бит в младший триггер:
+                # - При SMOD=1 (кольцевой режим) влетает вытесненный бит 15
+                # - При SMOD=0 (направленный режим) влетает бит из DBIT (0 или 1)
+                in_bit = last_displaced if smod == 1 else fill_bit
+
+                # Физический такт сдвига триггеров влево (b[i] <- b[i-1])
+                for i in range(15, 0, -1):
+                    reg_bits[i] = reg_bits[i - 1]
+                reg_bits[0] = in_bit
+
+            # Сборка 16-битного слова из триггеров регистра
+            val = 0
+            for i in range(16):
+                val |= (reg_bits[i] << i)
+
+            if shift > 0:
+                self.freg = (self.freg & ~(1 << 13)) | (last_displaced << 13)
+
+            self.set_reg(rd, val)
+            self._update_flags(val)
+
+        # 25: BSR Rd, shift (Итеративный аппаратный сдвиг вправо: [15-11] 11001, [10-8] Rd, [7-0] shift)
+        # В железе: аппаратный цикл сдвигового регистра из 16 D-триггеров (~300 транзисторов вместо ~30 000).
+        # Сдвиг на N бит занимает ровно N тактов (сдвиг на 16 бит занимает на 15 тактов больше сдвига на 1 бит).
+        elif opcode == 0b11001:
+            self.databus = (self.databus << 8) | self.bus.read8(self.pc)
+            self.pc += 1
+            rd = (self.databus >> 8) & 0x07
+            shift = self.databus & 0xFF
+            val = self.get_reg(rd) & 0xFFFF
+            smod = (self.freg >> 14) & 1
+            dbit = (self.freg >> 13) & 1
+            fill_bit = dbit
+            last_displaced = dbit
+
+            # Симуляция физического 16-битного регистра сдвига (цепочка триггеров [b0..b15])
+            reg_bits = [(val >> i) & 1 for i in range(16)]
+
+            # Аппаратный тактовый цикл: каждый шаг сдвигает регистр на 1 бит за 1 такт
+            for _ in range(shift):
+                if hasattr(self, "cycles"):
+                    self.cycles += 1
+
+                # Вытесняемый младший бит (выход 0-го триггера)
+                last_displaced = reg_bits[0]
+
+                # Входной бит в старший триггер:
+                # - При SMOD=1 (кольцевой режим) влетает вытесненный бит 0
+                # - При SMOD=0 (направленный режим) влетает бит из DBIT (0 или 1)
+                in_bit = last_displaced if smod == 1 else fill_bit
+
+                # Физический такт сдвига триггеров вправо (b[i] <- b[i+1])
+                for i in range(0, 15):
+                    reg_bits[i] = reg_bits[i + 1]
+                reg_bits[15] = in_bit
+
+            # Сборка 16-битного слова из триггеров регистра
+            val = 0
+            for i in range(16):
+                val |= (reg_bits[i] << i)
+
+            if shift > 0:
+                self.freg = (self.freg & ~(1 << 13)) | (last_displaced << 13)
+
+            self.set_reg(rd, val)
+            self._update_flags(val)
 
         # 26: MSP (Opcode 11010 / 0x1A: Манипуляция специальными регистрами FREG, PTREG)
         elif opcode == 0b11010:

@@ -353,6 +353,7 @@ class BaseCPU:
         self.databus: int = 0
         self.addressbus: int = 0
         self.step_count: int = 0
+        self.cycles: int = 0  # Аппаратный счетчик тактов ядра (Clock Cycles)
         self.is_halted: bool = False
         self.breakpoints: set[int] = set()
 
@@ -452,7 +453,7 @@ class BaseCPU:
 
     def __setattr__(self, name: str, value: Any):
         if name.startswith("_") or name in (
-            "name", "bus", "regs", "databus", "addressbus", "step_count", "is_halted", "breakpoints"
+            "name", "bus", "regs", "databus", "addressbus", "step_count", "cycles", "is_halted", "breakpoints"
         ):
             super().__setattr__(name, value)
             return
@@ -599,6 +600,7 @@ class BaseCPU:
         self.databus = 0
         self.addressbus = 0
         self.step_count = 0
+        self.cycles = 0
         self.is_halted = False
 
         # Вызываем пользовательский хук старта
@@ -611,6 +613,9 @@ class BaseCPU:
         """Выполняет один шаг/инструкцию."""
         if self.is_halted or self.pc in self.breakpoints:
             return False
+
+        # Базовый такт выборки и декодирования инструкции
+        self.cycles += 1
 
         # Вызываем пользовательский обработчик шага
         if hasattr(self, "on_step"):
