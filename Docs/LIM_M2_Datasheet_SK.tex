@@ -386,7 +386,7 @@ Architektúra procesora LIM M2 striktne uplatňuje univerzálnu paradigmu: \text
   \item \textbf{Dvojitý akumulátorový uzol (Dual Accumulator Staging):} Registre \reg{ACCA} a \reg{ACCB} stabilne fixujú operandy pred ALU, čím izolujú prechodové javy výpočtu od hlavného registrového poľa.
   \item \textbf{Hardvérové reťazenie dlhej aritmetiky (ALU Auto-Chaining):} Blok ALU integruje vnútorný zvyškový register (\reg{ALU\_RESIDUAL}). V prípade prenosu ($+1$ pri súčte $>2^{16}-1$), výpožičky ($-1$ pri rozdiele $<0$) alebo vyšších bitov násobenia/delenia sa zvyšok zachytáva hardvérovo a automaticky pripočíta či odpočíta v nasledujúcej matematickej operácii. Tým sa zabezpečuje priebežná viacbajtová aritmetika (32, 48, 64+ bitov) bez samostatných inštrukcií ADC/SBB. Vyprázdnenie reťazca sa vykonáva inštrukciou \texttt{NOP}.
   \item \textbf{Priamy premosťovací kanál (Reg-to-Reg Bypass):} Obchádzková vetva z MUX 1 priamo do MUX 2 umožňuje bleskové kopírovanie medzi registrami bez blokovania aritmetickej jednotky.
-  \item \textbf{Lineárne 24-bitové adresovanie pamäte (až 16 MB):} Špecializované 24-bitové registre \reg{PTREG} (ukazovateľ údajov s autoincrementom) a \reg{SREG} (zásobníkový ukazovateľ) umožňujú lineárny prístup k rozsiahlym dátovým blokom a zásobníku až do 16~MB bez segmentačných bariér.
+  \item \textbf{Natívne 32-bitové adresovanie pamäte (až 4 GB):} Natívna 32-bitová zbernica adresy (\texttt{A0}--\texttt{A31}) a špecializované 32-bitové registre \reg{PTREG} (ukazovateľ údajov s autoincrementom) a \reg{SREG} (zásobníkový ukazovateľ), spolu s 32 systémovými vektorovými registrami (\texttt{\$ir0..\$ir15}, \texttt{\$pv0..\$pv15}), umožňujú priamy lineárny prístup k celému 4~Gigabajtovému fyzickému pamäťovému priestoru bez segmentačných okien a prepínania bánk.
   \item \textbf{Vysoký frekvenčný potenciál:} Odstránenie kapacitného zaťaženia distribuovaných zberníc umožňuje jadru dosahovať základnú taktovaciu frekvenciu \textbf{200~MHz}, pričom v optimalizovanej kremíkovej implementácii škáluje na \textbf{700~MHz a viac}.
 \end{itemize}
 
@@ -607,7 +607,7 @@ Bit & Mnemonic & Funkčný popis \\
 8    & PIE  & Program Interrupt Enable: globálne povolenie softvérových prerušení. \\
 9    & MIE  & Master Interrupt Enable: povolenie externých hardvérových prerušení. \\
 10   & DWR  & Disable Wait for Ready: nútený zbernicový cyklus bez čakania na potvrdzovací signál. \\
-11   & M24  & 24-bit Mode Enable: aktivácia rozšíreného 24-bitového lineárneho adresovania. \\
+11   & PRV  & Privilege Mode: 0 = User Mode, 1 = Supervisor Mode (chránené 8 Zónami Privilégií \$pv0..\$pv15). \\
 12   & AIP  & Auto-Increment PTREG: povolenie hardvérového autoincrementu ukazovateľa \reg{PTREG}. \\
 13   & DBIT & Displaced Bit: záchytný register pre bit vysunutý pri posunoch. \\
 14   & SMOD & Shift Mode: voľba cyklického posunu cez DBIT (0: nulovanie, 1: priechod cez DBIT). \\
@@ -820,75 +820,287 @@ Inštrukcie posunu \texttt{BSL Rd, shift} a \texttt{BSR Rd, shift} sú v kremík
 \end{center}
 
 \subsection{Trieda VII: Operácie so zásobníkom (PUSH, POP)}
-Inštrukcie zásobníka ukladajú register do pamäte na základe 24-bitového ukazovateľa \reg{SREG}:
+Inštrukcie zásobníka ukladajú register do pamäte na základe 32-bitového ukazovateľa \reg{SREG}:
 \begin{itemize}
   \item \textbf{Oktet 0:} kód operácie (\texttt{PUSH}: \bits{10110}, \texttt{POP}: \bits{10111}), bity $[2:0]$ priamo určujú register operandu (\reg{Rs} pri uložení, \reg{Rd} pri výbere, 1. argument).
   \item \textbf{Oktet 1:} bity $[7:0]$ obsahujú $00000000_2$ (rezerva).
 \end{itemize}
 
-\subsection{Trieda VIII: Manipulácia so špeciálnymi registrami (MSP)}
-Inštrukcia \texttt{MSP} poskytuje univerzálnu správu systémových registrov (\reg{FREG}, \reg{PTREG} a budúcich rozšírení):
-\begin{itemize}
-  \item \textbf{Oktet 0:} bit $[10]$ (bit 2 oktetu 0) určuje režim:
-    \begin{itemize}
-      \item $0$: priame načítanie hodnoty do špeciálneho registra z univerzálnych registrov;
-      \item $1$: funkčná modifikácia špeciálneho registra (bitové masky alebo posun ukazovateľa).
-    \end{itemize}
-    Bity $[9:8]$ (bity 1--0 oktetu 0) vyberajú cieľový špeciálny register:
-    \begin{itemize}
-      \item $00_2$: register stavu a príznakov \reg{FREG};
-      \item $01_2$: 24-bitový ukazovateľ \reg{PTREG};
-      \item $10_2$, $11_2$: rezervované pre budúce systémové registre.
-    \end{itemize}
-  \item \textbf{Oktet 1 (dynamický podľa CFG):}
-    \begin{itemize}
-      \item \textbf{Pri načítaní ($[10] = 0$):} pre \reg{FREG} bity $[7:5]$ určujú zdrojový register \reg{Rs}; pre \reg{PTREG} bity $[7:5]$ určujú vyšší register \reg{Rs\_hi}, a bity $[4:2]$ --- nižší register \reg{Rs\_lo}.
-      \item \textbf{Pri práci s \reg{FREG} ($[10] = 1, [9:8] = 00$):} bity $[7:6]$ oktetu 1 určujú bitovú operáciu (\bits{00}=AND, \bits{01}=OR, \bits{10}=XOR, \bits{11}=XNOR), a bity $[5:3]$ určujú register masky \reg{Rmask}.
-      \item \textbf{Pri práci s \reg{PTREG} ($[10] = 1, [9:8] = 01$):} bity $[7:6]$ oktetu 1 určujú matematickú operáciu posunu (\bits{00}=ADD, \bits{01}=SUB), a bity $[5:3]$ určujú presne jeden register posunu \reg{Rsrc} (zložené dvojice sú zakázané). Sčítanie a odčítanie využívajú hardvérovú jednotku ALU s podporou príznakov prenosu a výpožičky.
-    \end{itemize}
-\end{itemize}
+\subsection{Trieda VIII: Manipulácia so špeciálnymi registrami (MSP, Opkód 26)}
+Inštrukcia \texttt{MSP} (Opkód \bits{11010}, $26_{10}$) poskytuje modulárne rozhranie na konfiguráciu všetkých systémových, adresných a ochranných prvkov jadra: \reg{FREG}, \reg{PTREG}, \reg{SREG}, ako aj 32 systémových vektorových registrov pre prerušenia a Zóny Privilégií (\texttt{\$ir0..\$ir15}, \texttt{\$pv0..\$pv15}). Dĺžka inštrukcie je v závislosti od režimu od 2 do 6 bajtov.
+
+\subsubsection{Formát 8.1: Načítanie do príznakového registra FREG (MOD = 0, REG = 00)}
+Príkaz \texttt{MSP.ld \$freg, <src>} vykonáva priamu inicializáciu príznakov.
 
 \begin{center}
-\begin{tikzpicture}[x=0.88cm,y=0.62cm]
-  \draw[thick,fill=limblue] (0,0) rectangle (4.2,1.1);
-  \draw[thick,fill=limcyan] (4.2,0) rectangle (5.5,1.1);
-  \draw[thick,fill=teal!60] (5.5,0) rectangle (6.8,1.1);
-  \draw[thick,fill=limlight] (7.2,0) rectangle (10.0,1.1);
-  \draw[thick,fill=limmint] (10.0,0) rectangle (12.8,1.1);
-  \draw[thick,fill=gray!20] (12.8,0) rectangle (15.2,1.1);
-  \node[text=white,font=\bfseries\tiny,align=center] at (2.1,0.55) {MSP (5b)\\11010};
-  \node[text=white,font=\bfseries\tiny,align=center] at (4.85,0.55) {Mode\\0/1};
-  \node[text=white,font=\bfseries\tiny,align=center] at (6.15,0.55) {Reg\\00/01};
-  \node[font=\bfseries\tiny,align=center] at (8.6,0.55) {Op/Reg 1\\bity [7:5]};
-  \node[font=\bfseries\tiny,align=center] at (11.4,0.55) {Reg 2 / Maska\\bity [4:2]};
-  \node[font=\bfseries\tiny,align=center] at (14.0,0.55) {RSV\\bity [1:0]};
-  % Divider ticks Octet 0
-  \draw[line width=0.7pt, limblue] (0,1.1) -- (0,1.28);
-  \draw[line width=0.7pt, limblue] (4.2,1.1) -- (4.2,1.28);
-  \draw[line width=0.7pt, limblue] (5.5,1.1) -- (5.5,1.28);
-  \draw[line width=0.7pt, limblue] (6.8,1.1) -- (6.8,1.28);
-  % Bit numbers Octet 0
-  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (0,1.12) {7};
-  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (4.2,1.12) {3};
-  \node[anchor=south,font=\tiny\bfseries\color{limblue}] at (4.85,1.12) {2};
-  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (5.5,1.12) {1};
-  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (6.8,1.12) {0};
-  % Divider ticks Octet 1
-  \draw[line width=0.7pt, limblue] (7.2,1.1) -- (7.2,1.28);
-  \draw[line width=0.7pt, limblue] (10.0,1.1) -- (10.0,1.28);
-  \draw[line width=0.7pt, limblue] (12.8,1.1) -- (12.8,1.28);
-  \draw[line width=0.7pt, limblue] (15.2,1.1) -- (15.2,1.28);
-  % Bit numbers Octet 1
-  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (7.2,1.12) {7};
-  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (10.0,1.12) {5};
-  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (10.0,1.12) {4};
-  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (12.8,1.12) {2};
-  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (12.8,1.12) {1};
-  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (15.2,1.12) {0};
-  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.4,-0.08) {Oktet 0: Opkód + Režim + Selektor};
-  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (11.2,-0.08) {Oktet 1: Parametre operácie (2 bajty)};
+\begin{tikzpicture}[x=0.88cm,y=0.58cm]
+  \draw[thick,fill=limblue] (0,0) rectangle (4.2,1.0);
+  \draw[thick,fill=limcyan] (4.2,0) rectangle (5.5,1.0);
+  \draw[thick,fill=teal!60] (5.5,0) rectangle (6.8,1.0);
+  \node[text=white,font=\bfseries\tiny,align=center] at (2.1,0.5) {MSP (5b)\\11010};
+  \node[text=white,font=\bfseries\tiny,align=center] at (4.85,0.5) {MOD=0\\(Load)};
+  \node[text=white,font=\bfseries\tiny,align=center] at (6.15,0.5) {REG=00\\(FREG)};
+  \draw[line width=0.6pt, limblue] (0,1.0) -- (0,1.18);
+  \draw[line width=0.6pt, limblue] (4.2,1.0) -- (4.2,1.18);
+  \draw[line width=0.6pt, limblue] (5.5,1.0) -- (5.5,1.18);
+  \draw[line width=0.6pt, limblue] (6.8,1.0) -- (6.8,1.18);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (0,1.02) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (4.2,1.02) {3};
+  \node[anchor=south,font=\tiny\bfseries\color{limblue}] at (4.85,1.02) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (5.5,1.02) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (6.8,1.02) {0};
+
+  \draw[thick,fill=limlight] (7.2,0) rectangle (10.2,1.0);
+  \draw[thick,fill=gray!15] (10.2,0) rectangle (13.2,1.0);
+  \draw[thick,fill=limmint] (13.2,0) rectangle (15.2,1.0);
+  \node[font=\bfseries\tiny,align=center] at (8.7,0.5) {Rs [7:5]\\(pri SRC=00)};
+  \node[font=\bfseries\tiny,align=center] at (11.7,0.5) {Rezerva [4:2]\\000};
+  \node[font=\bfseries\tiny,align=center] at (14.2,0.5) {SRC [1:0]\\00..11};
+  \draw[line width=0.6pt, limblue] (7.2,1.0) -- (7.2,1.18);
+  \draw[line width=0.6pt, limblue] (10.2,1.0) -- (10.2,1.18);
+  \draw[line width=0.6pt, limblue] (13.2,1.0) -- (13.2,1.18);
+  \draw[line width=0.6pt, limblue] (15.2,1.0) -- (15.2,1.18);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (7.2,1.02) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (10.2,1.02) {5};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (10.2,1.02) {4};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (13.2,1.02) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (13.2,1.02) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (15.2,1.02) {0};
+
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.4,-0.05) {Oktet 0: Opkód 26 + MOD=0 + FREG (0xD0)};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (11.2,-0.05) {Oktet 1: Selektor zdroja (dĺžka 2--4 bajty)};
 \end{tikzpicture}
 \end{center}
+
+\begin{itemize}
+  \item $\field{SRC} = 00_2$ (2 bajty): načítanie z registra GPR \reg{Rs} (\texttt{MSP.ld \$freg, \$rs}).
+  \item $\field{SRC} = 01_2$ (4 bajty): priama konštanta \texttt{imm16} v oktetoch 2--3 (\texttt{MSP.ld \$freg, 0x0000}).
+  \item $\field{SRC} = 10_2$ (2 bajty): čítanie z pamäte cez ukazovateľ \texttt{[\$ptreg]} (\texttt{MSP.ld \$freg, [\$ptreg]}).
+  \item $\field{SRC} = 11_2$ (4 bajty): čítanie z pamäte na priamej 16-bitovej adrese \texttt{[addr16]} (\texttt{MSP.ld \$freg, [0x1000]}).
+\end{itemize}
+
+\subsubsection{Formát 8.2: Bitová logika FREG (MOD = 1, REG = 00)}
+Inštrukcie \texttt{MSP.and}, \texttt{MSP.or}, \texttt{MSP.xor}, \texttt{MSP.xnor} aplikujú bitovú masku na príznaky.
+
+\begin{center}
+\begin{tikzpicture}[x=0.88cm,y=0.58cm]
+  \draw[thick,fill=limblue] (0,0) rectangle (4.2,1.0);
+  \draw[thick,fill=limcyan] (4.2,0) rectangle (5.5,1.0);
+  \draw[thick,fill=teal!60] (5.5,0) rectangle (6.8,1.0);
+  \node[text=white,font=\bfseries\tiny,align=center] at (2.1,0.5) {MSP (5b)\\11010};
+  \node[text=white,font=\bfseries\tiny,align=center] at (4.85,0.5) {MOD=1\\(Calc)};
+  \node[text=white,font=\bfseries\tiny,align=center] at (6.15,0.5) {REG=00\\(FREG)};
+  \draw[line width=0.6pt, limblue] (0,1.0) -- (0,1.18);
+  \draw[line width=0.6pt, limblue] (4.2,1.0) -- (4.2,1.18);
+  \draw[line width=0.6pt, limblue] (5.5,1.0) -- (5.5,1.18);
+  \draw[line width=0.6pt, limblue] (6.8,1.0) -- (6.8,1.18);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (0,1.02) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (4.2,1.02) {3};
+  \node[anchor=south,font=\tiny\bfseries\color{limblue}] at (4.85,1.02) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (5.5,1.02) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (6.8,1.02) {0};
+
+  \draw[thick,fill=limaccent!40] (7.2,0) rectangle (9.2,1.0);
+  \draw[thick,fill=limlight] (9.2,0) rectangle (12.2,1.0);
+  \draw[thick,fill=gray!15] (12.2,0) rectangle (13.2,1.0);
+  \draw[thick,fill=limmint] (13.2,0) rectangle (15.2,1.0);
+  \node[font=\bfseries\tiny,align=center] at (8.2,0.5) {OP [7:6]\\AND/OR/XOR};
+  \node[font=\bfseries\tiny,align=center] at (10.7,0.5) {Rs [5:3]\\(pri SRC=00)};
+  \node[font=\bfseries\tiny,align=center] at (12.7,0.5) {Rsv\\bit 2};
+  \node[font=\bfseries\tiny,align=center] at (14.2,0.5) {SRC [1:0]\\00..11};
+  \draw[line width=0.6pt, limblue] (7.2,1.0) -- (7.2,1.18);
+  \draw[line width=0.6pt, limblue] (9.2,1.0) -- (9.2,1.18);
+  \draw[line width=0.6pt, limblue] (12.2,1.0) -- (12.2,1.18);
+  \draw[line width=0.6pt, limblue] (13.2,1.0) -- (13.2,1.18);
+  \draw[line width=0.6pt, limblue] (15.2,1.0) -- (15.2,1.18);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (7.2,1.02) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (9.2,1.02) {6};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (9.2,1.02) {5};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (12.2,1.02) {3};
+  \node[anchor=south,font=\tiny\bfseries\color{limblue}] at (12.7,1.02) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (13.2,1.02) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (15.2,1.02) {0};
+
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.4,-0.05) {Oktet 0: Opkód 26 + MOD=1 + FREG (0xD4)};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (11.2,-0.05) {Oktet 1: Kód operácie OP + Selektor masky};
+\end{tikzpicture}
+\end{center}
+
+\begin{itemize}
+  \item \textbf{Kód operácie $\field{OP} [7:6]$:} $00_2 = \texttt{AND}$, $01_2 = \texttt{OR}$, $10_2 = \texttt{XOR}$, $11_2 = \texttt{XNOR}$.
+  \item \textbf{Hardvérová ochrana režimu supervízora (\texttt{PRV}):} Procesor hardvérovo štartuje pri zapnutí napájania a resete v režime správcu (\texttt{PRV=1}). Úvodný kód (zavádzač/jadro OS) nakonfiguruje vektory (\texttt{\$ir0..\$ir15}) a hranice Zón Privilégií (\texttt{\$pv0..\$pv15}), načo zníži oprávnenia na \texttt{PRV=0} a odovzdá riadenie používateľskému kódu. V používateľskom režime (\texttt{PRV=0}) je aktivácia \texttt{PRV=1} a úprava registrov zón hardvérovo povolená výhradne vtedy, ak sa aktuálne \reg{PC} nachádza striktne vo vnútri jednej z 8 Zón Privilégií ($\exists k \in [0..7]: \$pv_{2k} \le \text{PC} \le \$pv_{2k+1}$). \textbf{Dôležité architektonické pravidlo:} pri opustení Zóny Privilégií sa režim supervízora \texttt{PRV=1} automaticky \textbf{neresetuje} --- operačný systém/program je sám zodpovedný za jeho explicitné vynulovanie pred odovzdaním riadenia používateľovi.
+\end{itemize}
+
+\subsubsection{Formát 8.3: Načítanie ukazovateľov PTREG a SREG (MOD = 0, REG = 01 / 10)}
+Príkazy \texttt{MSP.ld \$ptreg} ($\field{REG}=01_2$, opkód \texttt{0xD1}) a \texttt{MSP.ld \$sreg} ($\field{REG}=10_2$, opkód \texttt{0xD2}) vykonávajú priamu inicializáciu 32-bitových lineárnych ukazovateľov.
+
+\begin{center}
+\begin{tikzpicture}[x=0.88cm,y=0.58cm]
+  \draw[thick,fill=limblue] (0,0) rectangle (4.2,1.0);
+  \draw[thick,fill=limcyan] (4.2,0) rectangle (5.5,1.0);
+  \draw[thick,fill=teal!60] (5.5,0) rectangle (6.8,1.0);
+  \node[text=white,font=\bfseries\tiny,align=center] at (2.1,0.5) {MSP (5b)\\11010};
+  \node[text=white,font=\bfseries\tiny,align=center] at (4.85,0.5) {MOD=0\\(Load)};
+  \node[text=white,font=\bfseries\tiny,align=center] at (6.15,0.5) {REG\\01/10};
+  \draw[line width=0.6pt, limblue] (0,1.0) -- (0,1.18);
+  \draw[line width=0.6pt, limblue] (4.2,1.0) -- (4.2,1.18);
+  \draw[line width=0.6pt, limblue] (5.5,1.0) -- (5.5,1.18);
+  \draw[line width=0.6pt, limblue] (6.8,1.0) -- (6.8,1.18);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (0,1.02) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (4.2,1.02) {3};
+  \node[anchor=south,font=\tiny\bfseries\color{limblue}] at (4.85,1.02) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (5.5,1.02) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (6.8,1.02) {0};
+
+  \draw[thick,fill=limlight] (7.2,0) rectangle (10.2,1.0);
+  \draw[thick,fill=limmint] (10.2,0) rectangle (13.2,1.0);
+  \draw[thick,fill=gray!20] (13.2,0) rectangle (15.2,1.0);
+  \node[font=\bfseries\tiny,align=center] at (8.7,0.5) {Rd\_hi [7:5]\\Vyšších 16 bitov};
+  \node[font=\bfseries\tiny,align=center] at (11.7,0.5) {Rs\_lo [4:2]\\Nižších 16 bitov};
+  \node[font=\bfseries\tiny,align=center] at (14.2,0.5) {SRC [1:0]\\00..11};
+  \draw[line width=0.6pt, limblue] (7.2,1.0) -- (7.2,1.18);
+  \draw[line width=0.6pt, limblue] (10.2,1.0) -- (10.2,1.18);
+  \draw[line width=0.6pt, limblue] (13.2,1.0) -- (13.2,1.18);
+  \draw[line width=0.6pt, limblue] (15.2,1.0) -- (15.2,1.18);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (7.2,1.02) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (10.2,1.02) {5};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (10.2,1.02) {4};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (13.2,1.02) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (13.2,1.02) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (15.2,1.02) {0};
+
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.4,-0.05) {Oktet 0: Opkód 26 + MOD=0 + PTREG/SREG};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (11.2,-0.05) {Oktet 1: Dvojica GPR alebo selektor zdroja (2--6 bajtov)};
+\end{tikzpicture}
+\end{center}
+
+\begin{itemize}
+  \item $\field{SRC} = 00_2$ (2 bajty): zloženie adresy z dvojice GPR \reg{Rd\_hi}:\reg{Rs\_lo} (\texttt{MSP.ld \$ptreg, \$0, \$1}).
+  \item $\field{SRC} = 01_2$ (4--6 bajtov): priama adresa \texttt{imm32} (6 bajtov) alebo \texttt{imm16} (4 bajty).
+  \item $\field{SRC} = 10_2$ (\textbf{2 bajty}): \textbf{natívne 1-taktové dereferencovanie ukazovateľa} \texttt{[\$ptreg]} (\texttt{PTREG <- MEM[PTREG]}).
+  \item $\field{SRC} = 11_2$ (4--6 bajtov): načítanie ukazovateľa z pamäte z priamej adresy \texttt{[addr]} (\texttt{MSP.ld \$ptreg, [0xA000]}).
+\end{itemize}
+
+\subsubsection{Formát 8.4: Aritmetika posunu PTREG a SREG (MOD = 1, REG = 01 / 10)}
+Príkazy \texttt{MSP.add} ($\field{OP}=0$) a \texttt{MSP.sub} ($\field{OP}=1$) vykonávajú rýchle hardvérové posúvanie ukazovateľov zásobníka a dátových vyrovnávacích pamätí.
+
+\begin{center}
+\begin{tikzpicture}[x=0.88cm,y=0.58cm]
+  \draw[thick,fill=limblue] (0,0) rectangle (4.2,1.0);
+  \draw[thick,fill=limcyan] (4.2,0) rectangle (5.5,1.0);
+  \draw[thick,fill=teal!60] (5.5,0) rectangle (6.8,1.0);
+  \node[text=white,font=\bfseries\tiny,align=center] at (2.1,0.5) {MSP (5b)\\11010};
+  \node[text=white,font=\bfseries\tiny,align=center] at (4.85,0.5) {MOD=1\\(Arith)};
+  \node[text=white,font=\bfseries\tiny,align=center] at (6.15,0.5) {REG\\01/10};
+  \draw[line width=0.6pt, limblue] (0,1.0) -- (0,1.18);
+  \draw[line width=0.6pt, limblue] (4.2,1.0) -- (4.2,1.18);
+  \draw[line width=0.6pt, limblue] (5.5,1.0) -- (5.5,1.18);
+  \draw[line width=0.6pt, limblue] (6.8,1.0) -- (6.8,1.18);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (0,1.02) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (4.2,1.02) {3};
+  \node[anchor=south,font=\tiny\bfseries\color{limblue}] at (4.85,1.02) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (5.5,1.02) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (6.8,1.02) {0};
+
+  \draw[thick,fill=limaccent!40] (7.2,0) rectangle (8.4,1.0);
+  \draw[thick,fill=limlight] (8.4,0) rectangle (11.4,1.0);
+  \draw[thick,fill=gray!15] (11.4,0) rectangle (13.2,1.0);
+  \draw[thick,fill=limmint] (13.2,0) rectangle (15.2,1.0);
+  \node[font=\bfseries\tiny,align=center] at (7.8,0.5) {OP\\0/1};
+  \node[font=\bfseries\tiny,align=center] at (9.9,0.5) {Rs [6:4]\\(pri SRC=00)};
+  \node[font=\bfseries\tiny,align=center] at (12.3,0.5) {Rezerva [3:2]\\00};
+  \node[font=\bfseries\tiny,align=center] at (14.2,0.5) {SRC [1:0]\\00..11};
+  \draw[line width=0.6pt, limblue] (7.2,1.0) -- (7.2,1.18);
+  \draw[line width=0.6pt, limblue] (8.4,1.0) -- (8.4,1.18);
+  \draw[line width=0.6pt, limblue] (11.4,1.0) -- (11.4,1.18);
+  \draw[line width=0.6pt, limblue] (13.2,1.0) -- (13.2,1.18);
+  \draw[line width=0.6pt, limblue] (15.2,1.0) -- (15.2,1.18);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (7.2,1.02) {7};
+  \node[anchor=south,font=\tiny\bfseries\color{limblue}] at (7.8,1.02) {7};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (8.4,1.02) {6};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (11.4,1.02) {4};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (11.4,1.02) {3};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (13.2,1.02) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (13.2,1.02) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (15.2,1.02) {0};
+
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.4,-0.05) {Oktet 0: Opkód 26 + MOD=1 + PTREG/SREG};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (11.2,-0.05) {Oktet 1: Smer OP (ADD/SUB) + Ofset};
+\end{tikzpicture}
+\end{center}
+
+\begin{itemize}
+  \item $\field{OP} = 0$: \texttt{ADD} (+posun k ukazovateľu), $\field{OP} = 1$: \texttt{SUB} (-posun od ukazovateľa).
+  \item Zdroj posunu: register GPR $\field{SRC}=00_2$ (2 bajty), priama konštanta $\field{SRC}=01_2$ (4 bajty), čítanie posunu cez $\field{SRC}=10_2$ (\texttt{[\$ptreg]}, 2 bajty) alebo $\field{SRC}=11_2$ (\texttt{[addr16]}, 4 bajty).
+\end{itemize}
+
+\subsubsection{Formát 8.5: Načítanie 32-bitových vektorových registrov (MOD = 0, REG = 11)}
+Príkaz \texttt{MSP.ld} načítava 32-bitové adresy do jedného z 32 vektorových registrov: \texttt{\$ir0..\$ir15} (vektory prerušení, ID $0$--$15$) a \texttt{\$pv0..\$pv15} (hranice Zón Privilégií, ID $16$--$31$).
+
+\begin{center}
+\begin{tikzpicture}[x=0.75cm,y=0.58cm]
+  \draw[thick,fill=limblue] (0,0) rectangle (3.5,1.0);
+  \draw[thick,fill=limcyan] (3.5,0) rectangle (4.6,1.0);
+  \draw[thick,fill=teal!60] (4.6,0) rectangle (5.7,1.0);
+  \node[text=white,font=\bfseries\tiny,align=center] at (1.75,0.5) {MSP\\11010};
+  \node[text=white,font=\bfseries\tiny,align=center] at (4.05,0.5) {MOD\\0};
+  \node[text=white,font=\bfseries\tiny,align=center] at (5.15,0.5) {REG\\11};
+  \draw[line width=0.6pt, limblue] (0,1.0) -- (0,1.18);
+  \draw[line width=0.6pt, limblue] (3.5,1.0) -- (3.5,1.18);
+  \draw[line width=0.6pt, limblue] (4.6,1.0) -- (4.6,1.18);
+  \draw[line width=0.6pt, limblue] (5.7,1.0) -- (5.7,1.18);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (0,1.02) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (3.5,1.02) {3};
+  \node[anchor=south,font=\tiny\bfseries\color{limblue}] at (4.05,1.02) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (4.6,1.02) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (5.7,1.02) {0};
+
+  \draw[thick,fill=limlight] (6.0,0) rectangle (9.8,1.0);
+  \draw[thick,fill=limmint] (9.8,0) rectangle (11.6,1.0);
+  \draw[thick,fill=gray!20] (11.6,0) rectangle (12.7,1.0);
+  \node[font=\bfseries\tiny,align=center] at (7.9,0.5) {Vector\_ID [7:3]\\0--15: \$ir / 16--31: \$pv};
+  \node[font=\bfseries\tiny,align=center] at (10.7,0.5) {SRC [2:1]\\00..11};
+  \node[font=\bfseries\tiny,align=center] at (12.15,0.5) {SUB\\0/1};
+  \draw[line width=0.6pt, limblue] (6.0,1.0) -- (6.0,1.18);
+  \draw[line width=0.6pt, limblue] (9.8,1.0) -- (9.8,1.18);
+  \draw[line width=0.6pt, limblue] (11.6,1.0) -- (11.6,1.18);
+  \draw[line width=0.6pt, limblue] (12.7,1.0) -- (12.7,1.18);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (6.0,1.02) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (9.8,1.02) {3};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (9.8,1.02) {2};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (11.6,1.02) {1};
+  \node[anchor=south,font=\tiny\bfseries\color{limblue}] at (12.15,1.02) {0};
+
+  \draw[thick,fill=teal!20] (13.0,0) rectangle (15.5,1.0);
+  \draw[thick,fill=teal!40] (15.5,0) rectangle (18.0,1.0);
+  \draw[thick,fill=gray!15] (18.0,0) rectangle (19.5,1.0);
+  \node[font=\bfseries\tiny,align=center] at (14.25,0.5) {Rd\_hi [7:5]\\vyššie};
+  \node[font=\bfseries\tiny,align=center] at (16.75,0.5) {Rs\_lo [4:2]\\nižšie};
+  \node[font=\bfseries\tiny,align=center] at (18.75,0.5) {00\\bity [1:0]};
+  \draw[line width=0.6pt, limblue] (13.0,1.0) -- (13.0,1.18);
+  \draw[line width=0.6pt, limblue] (15.5,1.0) -- (15.5,1.18);
+  \draw[line width=0.6pt, limblue] (18.0,1.0) -- (18.0,1.18);
+  \draw[line width=0.6pt, limblue] (19.5,1.0) -- (19.5,1.18);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (13.0,1.02) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (15.5,1.02) {5};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (15.5,1.02) {4};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (18.0,1.02) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (18.0,1.02) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (19.5,1.02) {0};
+
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (2.85,-0.05) {Oktet 0: Opkód 26 + VEC (0xD3)};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (9.35,-0.05) {Oktet 1: ID vektora + SRC};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (16.25,-0.05) {Oktet 2 (pri SRC=00 alebo 11)};
+\end{tikzpicture}
+\end{center}
+
+\begin{itemize}
+  \item \textbf{Variant 5.1 ($\field{SRC}=00_2$, $\field{SUB}=0$, 3 bajty):} načítanie vektora z dvojice GPR \reg{Rd\_hi}:\reg{Rs\_lo} (\texttt{MSP.ld \$ir0, \$0, \$1}).
+  \item \textbf{Variant 5.2 ($\field{SRC}=01_2$, $\field{SUB}=0$, 6 bajtov):} priamy 32-bitový vektor adresy \texttt{imm32} v oktetoch 2--5 (\texttt{MSP.ld \$pv0, 0x00008000}).
+  \item \textbf{Variant 5.3 ($\field{SRC}=10_2$, $\field{SUB}=0$, \textbf{2 bajty}):} čítanie vektora z pamäte cez ukazovateľ \texttt{[\$ptreg]} (\texttt{MSP.ld \$ir1, [\$ptreg]}).
+  \item \textbf{Variant 5.4 ($\field{SRC}=11_2$, $\field{SUB}=0$, 3 bajty):} čítanie vektora z pamäte cez 32-bitový ukazovateľ v dvojici GPR \texttt{[\$rd:\$rs]} (\texttt{MSP.ld \$ir2, [\$0:\$1]}).
+  \item \textbf{Variant 5.5 ($\field{SRC}=11_2$, $\field{SUB}=1$, 6 bajtov):} čítanie vektora z pamäte z priamej 32-bitovej adresy \texttt{[addr32]} (\texttt{MSP.ld \$ir0, [0x00005000]}).
+\end{itemize}
 
 \subsection{Trieda IX: Inštrukcie vetvenia a skokov (2--3 bajty)}
 Skokové inštrukcie (\texttt{JMP}, \texttt{JCR}, \texttt{JNZ}, \texttt{JZ}) podporujú tri navzájom sa vylučujúce adresné režimy určené poľom \field{CFG} (bity $[2:0]$ oktetu 0):
@@ -944,9 +1156,9 @@ Konfiguračné pole oktetu 0 (\bits{[2:0]}) kóduje:
 23 & 10111 & POP  & Zásobník   & Výber slova z vrcholu zásobníka do registra \\
 24 & 11000 & BSL  & Posuny     & Barelový posun doľava s konfigurovateľným vstupom \\
 25 & 11001 & BSR  & Posuny     & Barelový posun doprava s ukladaním do DBIT \\
-26 & 11010 & MSP  & Systém     & Manipulácia so špeciálnymi registrami (FREG, PTREG) \\
+26 & 11010 & MSP  & Systém     & Manipulácia so špeciálnymi registrami (FREG, PTREG, SREG) \\
 27 & 11011 & MOD  & Aritmetika & Výpočet zvyšku po celočíselnom delení (modulo) \\
-28 & 11100 & RSV28 & Rezerva   & Rezervované pre rozšírené adresovanie \\
+28 & 11100 & INTR  & Systém    & Softvérové prerušenie podľa indexu vektora v bitoch [2:0] \\
 29 & 11101 & RSV29 & Rezerva   & Rezervované pre koprocesor s pohyblivou rádovou čiarkou \\
 30 & 11110 & RSV30 & Rezerva   & Rezervované pre kryptografické inštrukcie \\
 31 & 11111 & RSV31 & Rezerva   & Rezervované pre budúce rozšírenia architektúry \\
@@ -1255,20 +1467,24 @@ Príklad:   BSR R0, 4        ; Posun R0 doprava o 4 bity (trvá 4 takty posunu)
 \textbf{Oktet 0:} kód operácie \bits{11001}, bity $[2:0]$ priamo určujú posúvaný register \reg{Rd} (\texttt{R0}--\texttt{R7}).\\
 \textbf{Oktet 1:} celý bajt (\bits{[7:0]}) určuje počet taktov posunu \field{shift} ($0$--$16$). Fyzicky sa posun realizuje taktovaným cyklom na 16 D-klopných obvodoch. Dĺžka inštrukcie: 2 bajty.%
 }{Posledný vytlačený bit sa uloží do FREG.DBIT (bit 13). Príznak nuly FREG.ZF sa nastaví pri nulovom výsledku. Riadené príznakmi FREG.SMOD (bit 14) a FREG.DBIT (bit 13).}{Iteratívny posuvný register na D-klopných obvodoch: cena len $\approx 300$ tranzistorov namiesto $\approx 30\,000$ pri jedno-taktovom maticovom posúvači. Posun o 16 bitov vyžaduje o 15 taktov viac než posun o 1 bit.}
-\InstructionPage{MSP}{11010}{Systém}{Manipulácia so špeciálnymi registrami (FREG, PTREG)}{%
+\InstructionPage{MSP}{11010}{Systém}{Manipulácia so špeciálnymi registrami (FREG, PTREG, SREG, VEC)}{%
 \small
-Signatúra: MSP sreg, [op], args : práca so špeciálnymi registrami \\
+Signatúra: MSP sreg, [op], args : práca so špeciálnymi registrami (2--6 bajtov) \\
 Operácia:  
   \textbf{Priamy zápis (bit 10 = 0):} \\
-  \quad sreg=00 (FREG):  FREG <- Rs[15:0] (oktet 1: [7:5]=Rs) \\
-  \quad sreg=01 (PTREG): PTREG <- (Rs\_hi $\ll$ 16) | Rs\_lo (oktet 1: [7:5]=Rs\_hi, [4:2]=Rs\_lo) \\
+  \quad sreg=00 (FREG):  FREG <- Rs[15:0] alebo imm16 / [addr16] / [\$ptreg] \\
+  \quad sreg=01 (PTREG): 32-bitový ukazovateľ PTREG (4 GB): z GPR, imm32, [\$ptreg], [addr32] \\
+  \quad sreg=10 (SREG):  32-bitový ukazovateľ zásobníka SREG: z GPR, imm32, [\$ptreg], [addr32] \\
+  \quad sreg=11 (VEC):   32-bitový vektor prerušenia (\$ir0..\$ir15) alebo zóny (\$pv0..\$pv15) \\
   \textbf{Modifikácia (bit 10 = 1):} \\
-  \quad sreg=00 (FREG):  FREG <- FREG $\odot$ Rs (oktet 1: [7:6]=op \{AND,OR,XOR,XNOR\}, [5:3]=Rs) \\
-  \quad sreg=01 (PTREG): PTREG <- PTREG $\pm$ Rs (oktet 1: [7]=op \{ADD,SUB\}, [6:4]=Rs) \\[2pt]
-Príklad:   MSP FREG, R0         ; Priamy zápis do FREG hodnoty R0 \\
-           MSP PTREG, R0, R1    ; Nastavenie 24-bitového PTREG = \{R0, R1\} \\
-           MSP FREG, OR, R2     ; Nastavenie masiek: FREG = FREG | R2 \\
-           MSP PTREG, ADD, R3   ; Posun ukazovateľa: PTREG = PTREG + R3
+  \quad sreg=00 (FREG):  FREG <- FREG $\odot$ Mask \{AND, OR, XOR, XNOR\} \\
+  \quad sreg=01 (PTREG): PTREG <- PTREG $\pm$ Offset \{ADD, SUB\} \\
+  \quad sreg=10 (SREG):  SREG <- SREG $\pm$ Offset \{ADD, SUB\} \\[2pt]
+Príklad:   MSP.ld \$ir0, 0x00010000     ; Nastavenie vektora IRQ0 (6 bajtov) \\
+           MSP.ld \$pv0, 0x00008000     ; Začiatok chránenej Zóny Privilégií 0 \\
+           MSP.ld \$pv1, 0x00008FFF     ; Koniec chránenej Zóny Privilégií 0 \\
+           MSP.ld \$ptreg, [\$ptreg]    ; Natívne 1-taktové dereferencovanie (2 bajty) \\
+           MSP.or \$freg, 0x0200        ; Povolenie globálnych prerušení MIE
 }{%
 \noindent\begin{tikzpicture}[x=0.9cm,y=0.55cm]
   \draw[thick,fill=limblue] (0,0) rectangle (4.2,1.05);
@@ -1279,10 +1495,10 @@ Príklad:   MSP FREG, R0         ; Priamy zápis do FREG hodnoty R0 \\
   \draw[thick,fill=gray!20] (12.8,0) rectangle (15.2,1.05);
   \node[text=white,font=\bfseries\tiny,align=center] at (2.1,0.52) {MSP (5b)\\11010};
   \node[text=white,font=\bfseries\tiny,align=center] at (4.85,0.52) {Mode\\0/1};
-  \node[text=white,font=\bfseries\tiny,align=center] at (6.15,0.52) {Reg\\00/01};
+  \node[text=white,font=\bfseries\tiny,align=center] at (6.15,0.52) {Reg\\00..10};
   \node[font=\bfseries\tiny,align=center] at (8.6,0.52) {Op/Reg 1\\bity [7:5]};
   \node[font=\bfseries\tiny,align=center] at (11.4,0.52) {Reg 2 / Maska\\bity [4:2]};
-  \node[font=\bfseries\tiny,align=center] at (14.0,0.52) {RSV\\bity [1:0]};
+  \node[font=\bfseries\tiny,align=center] at (14.0,0.52) {SRC\\bity [1:0]};
   % Divider ticks Octet 0
   \draw[line width=0.7pt, limblue] (0,1.05) -- (0,1.22);
   \draw[line width=0.7pt, limblue] (4.2,1.05) -- (4.2,1.22);
@@ -1309,9 +1525,9 @@ Príklad:   MSP FREG, R0         ; Priamy zápis do FREG hodnoty R0 \\
   \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.4,-0.05) {Oktet 0: Opkód + Režim + Selektor};
   \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (11.2,-0.05) {Oktet 1: Parametre operácie (2 bajty)};
 \end{tikzpicture}\par\vspace{1.5mm}%
-\textbf{Oktet 0:} kód operácie \bits{11010}. Bit $[10]$ (bit 2 oktetu 0) určuje režim: $0$ --- priame načítanie, $1$ --- modifikácia. Bity $[9:8]$ (bity 1--0 oktetu 0) určujú selektor: $00$ = \reg{FREG}, $01$ = \reg{PTREG}.\\
-\textbf{Oktet 1:} pri načítaní ($[10]=0$) určuje zdroj: \reg{Rs} pre \reg{FREG} alebo dvojicu \reg{Rs\_hi}, \reg{Rs\_lo} pre \reg{PTREG}. Pri modifikácii ($[10]=1$) bity $[7:6]$ kódujú operáciu (pre \reg{FREG}: AND, OR, XOR, XNOR; pre \reg{PTREG}: ADD, SUB), a bity $[5:3]$ určujú presne jeden register operandu/masky \reg{Rs}. Dĺžka inštrukcie: 2 bajty.%
-}{Príznaky FREG sa modifikujú priamo alebo maskou. Aritmetika PTREG generuje príznak prenosu CF cez ALU.}{Univerzálny privilegovaný riadiaci primitív systémovej úrovne.}
+\textbf{Oktet 0:} kód operácie \bits{11010}. Bit $[10]$ (bit 2 oktetu 0) určuje režim: $0$ --- priame načítanie, $1$ --- modifikácia. Bity $[9:8]$ (bity 1--0 oktetu 0) určujú selektor: $00$ = \reg{FREG}, $01$ = \reg{PTREG}, $10$ = \reg{SREG}.\\
+\textbf{Oktet 1:} pri načítaní ($[10]=0$) určuje zdroj: \reg{Rs} pre \reg{FREG} alebo dvojicu \reg{Rs\_hi}, \reg{Rs\_lo} pre \reg{PTREG}/\reg{SREG}. Pri modifikácii ($[10]=1$) pre \reg{FREG} bity $[7:6]$ kódujú operáciu (AND, OR, XOR, XNOR) a bity $[5:3]$ určujú register masky \reg{Rs}; pre \reg{PTREG} a \reg{SREG} bit $[7]$ určuje operáciu ($0$=ADD, $1$=SUB) a bity $[6:4]$ určujú register posunu \reg{Rs}. Dĺžka inštrukcie: 2 bajty.%
+}{Príznaky FREG sa modifikujú priamo alebo maskou. Aritmetika PTREG a SREG generuje príznak prenosu CF cez ALU.}{Univerzálny privilegovaný riadiaci primitív systémovej úrovne.}
 \InstructionPage{MOD}{11011}{Aritmetika}{Celočíselný zvyšok po delení (modulo)}{%
 \small
 Signatúra: MOD arg0, arg1, arg2 : arg0 = arg1 \% arg2 \\
@@ -1322,14 +1538,17 @@ Príklad:   MOD R0, R1, R2   ; R0 = R1 \% R2 (zvyšok po delení)
 \textbf{Oktet 0:} kód operácie \bits{11011}, bity $[2:0]$ zadávajú cieľový register \reg{Rd} (\texttt{R0}--\texttt{R7}, prvý argument, príjemca zvyšku).\\
 \textbf{Oktet 1:} bity $[7:5]$ určujú delenec \reg{Rs1} (\texttt{R0}--\texttt{R7}); bity $[4:2]$ určujú deliteľ \reg{Rs2} (\texttt{R0}--\texttt{R7}); bity $[1:0]$ obsahujú \bits{00}. Dĺžka inštrukcie: 2 bajty.%
 }{Pri delení nulou sa aktivuje hardvérový chybový príznak EM (Error Math) bez zamrznutia jadra; aktualizuje ZF.}{Vypočíta zvyšok po celočíselnom delení delenca Rs1 deliteľom Rs2 a uloží výsledok priamo do cieľového registra Rd bez prepisovania medzivýsledkov v akumulátoroch.}
-\InstructionPage{RSV28}{11100}{Rezerva}{Hardvérové rozšírenie}{%
+\InstructionPage{INTR}{11100}{Systém}{Softvérové prerušenie podľa indexu vektora (1 bajt)}{%
 \small
-Signatúra: RSV28 : rezervované \\
-Operácia:  Reserved for LIM architecture hardware extensions
+Signatúra: INTR vec3 : vyvolanie vektora prerušenia vec3 (0..7) \\
+Operácia:  SREG <- SREG - 2; MEM16[SREG] <- PC\_next \\
+           SREG <- SREG - 2; MEM16[SREG] <- FREG \\
+           FREG.INTR <- 1; FREG.MIE <- 0; PC <- VECTORS[vec3] \\[2pt]
+Príklad:   INTR 3   ; Softvérové prerušenie podľa vektora č. 3 (kód 0xE3)
 }{%
-\BitDiagramOneByte{11100}{000}%
-Vyhradené pre budúce revízie architektúry LIM. Dĺžka: 1 bajt.%
-}{Nedefinované.}{Rezervované.}
+\BitDiagramOneByte{11100}{vec [2:0]}%
+\textbf{Oktet 0:} kód operácie \bits{11100}, najnižšie 3 bity $[2:0]$ priamo určujú index vektora prerušenia \field{vec3} ($0$--$7$) z vnútorného zásobníka vektorov v procesore. Dĺžka inštrukcie: 1 bajt.%
+}{Nastaví príznak aktívneho prerušenia FREG.INTR (bit 15) na 1 a vynuluje FREG.MIE (bit 9) na 0. Predchádzajúci stav FREG a návratová adresa sa uložia na zásobník.}{Jednobajtová inštrukcia softvérového prerušenia (systémového volania alebo ladiacej pasce) pre okamžitý skok na obslužnú rutinu z vnútornej tabuľky vektorov procesora.}
 \InstructionPage{RSV29}{11101}{Rezerva}{Hardvérové rozšírenie}{%
 \small
 Signatúra: RSV29 : rezervované \\
@@ -1356,27 +1575,28 @@ Vyhradené pre budúce revízie architektúry LIM. Dĺžka: 1 bajt.%
 }{Nedefinované.}{Rezervované.}
 
 \clearpage
-\section{Fyzické rozhranie a rozloženie vývodov (34-vývodové puzdro)}
-Procesor je integrovaný v kompaktnom 34-vývodovom puzdre s dvojradovým usporiadaním kontaktov:
+\section{Fyzické rozhranie a rozloženie vývodov (50-vývodové puzdro)}
+Procesor je integrovaný vo vysokospoľahlivom 50-vývodovom puzdre DIP-50 / QFP-52 s natívnou 32-bitovou adresnou zbernicou a 8-bitovou (jednobajtovou) vonkajšou dátovou zbernicou:
 
 \begin{center}
 \begin{tikzpicture}[font=\sffamily\scriptsize,
-  pinbox/.style={draw,thick,fill=white,minimum width=6mm,minimum height=4mm,inner sep=0pt,font=\bfseries\tiny}]
-\def\chipW{3.2}
-\def\chipH{9.9}
+  pinbox/.style={draw,thick,fill=white,minimum width=6mm,minimum height=3.5mm,inner sep=0pt,font=\bfseries\tiny}]
+\def\chipW{3.4}
+\def\chipH{10.8}
 \draw[thick,fill=limlight] (0,0) rectangle (\chipW,-\chipH);
 \draw[thick] ($(\chipW/2,0)+(-0.35,0)$) arc (180:360:0.35);
-\node[font=\bfseries\Large,text=limblue,rotate=-90] at (\chipW/2,-\chipH/2) {LIM M2};
+\node[font=\bfseries\large,text=limblue,rotate=-90] at (\chipW/2,-\chipH/2) {LIM M2 (50-pin)};
 \foreach \i/\sigL/\sigR in {
-  1/A0/D0, 2/A1/D1, 3/A2/D2, 4/A3/D3, 5/A4/D4, 6/A5/D5, 7/A6/D6, 8/A7/D7,
-  9/A8/IA, 10/A9/VCC, 11/A10/GND, 12/A11/RD, 13/A12/WD, 14/A13/RF, 15/A14/AL, 16/A15/RDI, 17/CLK1/CLK2
+  1/A0/A31, 2/A1/A30, 3/A2/A29, 4/A3/A28, 5/A4/A27, 6/A5/A26, 7/A6/A25, 8/A7/A24,
+  9/A8/D7, 10/A9/D6, 11/A10/D5, 12/A11/D4, 13/A12/D3, 14/A13/D2, 15/A14/D1, 16/A15/D0,
+  17/A16/GND, 18/A17/VCC, 19/A18/RD, 20/A19/WD, 21/A20/RF, 22/A21/IA, 23/A22/RDI, 24/A23/RESET, 25/CLK1/CLK2
 } {
-  \pgfmathsetmacro{\y}{-\i * 0.55}
-  \pgfmathtruncatemacro{\pinR}{35 - \i}
+  \pgfmathsetmacro{\y}{-\i * 0.40}
+  \pgfmathtruncatemacro{\pinR}{51 - \i}
   \node[pinbox] at (0,\y) {\i};
-  \node[anchor=east] at (-0.38,\y) {\sigL};
+  \node[anchor=east,font=\tiny] at (-0.38,\y) {\sigL};
   \node[pinbox] at (\chipW,\y) {\pinR};
-  \node[anchor=west] at (\chipW+0.38,\y) {\sigR};
+  \node[anchor=west,font=\tiny] at (\chipW+0.38,\y) {\sigR};
 }
 \end{tikzpicture}
 \end{center}
@@ -1386,15 +1606,15 @@ Procesor je integrovaný v kompaktnom 34-vývodovom puzdre s dvojradovým uspori
 \toprule
 Vývod & Typ & Popis systémového signálu \\
 \midrule
-A0--A15    & Výstup / Tri-State & 16-bitová adresová zbernica (riadená externým impulzom AL). \\
-D0--D7     & Obojsmerný         & 8-bitová zbernica pre prenos dát s pamäťou a perifériami. \\
+A0--A31    & Výstup / Tri-State & 32-bitová natívna adresová zbernica (priamy fyzický prístup k 4 GB pamäte bez okien a bánk). \\
+D0--D7     & Obojsmerný         & 8-bitová (jednobajtová) vonkajšia zbernica pre prenos dát s pamäťou a perifériami. \\
 CLK1, CLK2 & Vstup              & Dvojfázové hodinové signály s ochranou proti prekrytiu fáz. \\
-VCC, GND   & Napájanie          & Hlavné napájacie vedenie logiky procesora (+5 V nominálne). \\
-RD, WD     & Výstup             & Riadiace impulzy čítania (Read) a zápisu (Write) na zbernici. \\
-AL         & Výstup             & Address Latch: riadenie záchytného registra adresy. \\
-RF         & Vstup              & Ready Flag: hardvérové potvrdenie pripravenosti podriadeného zariadenia. \\
+RESET      & Vstup              & Hardvérový resetovací signál procesora (aktívna nula). \\
 RDI        & Vstup              & Raw Direct Interrupt: prioritná linka hardvérového prerušenia. \\
-IA         & Výstup             & Interruption Accepted / Interrupt Acknowledge: potvrdenie prijatia prerušenia; procesor očakáva načítanie čísla vektora zo zbernice dát. \\
+IA         & Výstup             & Interruption Accepted / Interrupt Acknowledge: potvrdenie prijatia prerušenia perifériám. \\
+RF         & Vstup              & Ready Flag: hardvérové potvrdenie pripravenosti podriadeného zariadenia pamäte/periférie. \\
+RD, WD     & Výstup             & Riadiace impulzy čítania (Read Enable) a zápisu (Write Enable) systémovej zbernice. \\
+VCC, GND   & Napájanie          & Hlavné digitálne napájanie logiky procesora (+3.3 V / +5 V nominálne) a zem. \\
 \bottomrule
 \end{tabularx}
 
@@ -1494,6 +1714,45 @@ Ukončenie obsluhy prerušenia obnoví pôvodný vykonávaný kontext zo zásobn
   $$\text{PC} \leftarrow \text{Memory}[\reg{SREG}], \quad \reg{SREG} \leftarrow \reg{SREG} + 2$$
   \item Procesor plynule pokračuje vo vykonávaní prerušeného toku inštrukcií v nasledujúcom takte bez akejkoľvek straty údajov.
 \end{enumerate}
+
+\clearpage
+\section{Jazyk symbolických inštrukcií (Assembler) a kompilátor LIM M2 (\texttt{limasm.py})}
+
+Dvojprechodový kompilátor assemblera \texttt{LIM2/sim/limasm.py} prekladá zdrojový kód (\texttt{.asm} / \texttt{.lasm}) súčasne do binárneho obrazu (\texttt{.bin}) a hexadecimálneho súboru (\texttt{.hex}).
+
+\subsection{Pomenovanie registrov a prípony veľkosti operandov}
+\begin{itemize}
+  \item \textbf{Všeobecné registre (16-bitové):} označujú sa prefixom \texttt{\$}: \texttt{\$0}--\texttt{\$7} (alebo \texttt{R0}--\texttt{R7}).
+  \item \textbf{Špeciálne systémové registre:} \texttt{\$ptreg} (24-bitový ukazovateľ \reg{PTREG}), \texttt{\$freg} (16-bitový stavový register \reg{FREG}), \texttt{\$sreg} / \texttt{\$sp} (24-bitový ukazovateľ zásobníka \reg{SREG}), \texttt{\$vec0}--\texttt{\$vec7}.
+  \item \textbf{Prípony veľkosti (\texttt{.b} / \texttt{.w} / \texttt{.d}):} \texttt{XXX.b} (byte, 8 bitov), \texttt{XXX.w} (word, 16 bitov, predvolené), \texttt{XXX.d} (doubleword, 24/32 bitov).
+\end{itemize}
+
+\subsection{Aritmetika, unárne inštrukcie a prístup do pamäte (\texttt{LMR}, \texttt{LRM})}
+\begin{verbatim}
+ADD $0, $1, $2          ; $0 = $1 + $2 (alebo ADD R0, R1, R1; rovnako SUB, MUL, DIV, MOD)
+INC $0                  ; $0 = $0 + 1  (1-bajtová inštrukcia; rovnako DEC, NOT)
+LMR.w $0, 0x1234        ; Číslo bez zátvoriek -> priama konštanta (SRC=0)
+LMR.w $0, [0x1000]      ; Hranaté zátvorky [addr] -> odkaz na údaje v pamäti (SRC=1)
+LMR.w $0, [$ptreg]      ; Odkaz cez 24-bitový ukazovateľ PTREG (SRC=2)
+LMR $0, [$0:$1]         ; 24-bitový ukazovateľ z dvojice registrov [$0:$1] (SRC=3)
+\end{verbatim}
+
+\subsection{Špeciálne registre (\texttt{MSP}) a viacnásobné dereferencovanie cez \texttt{PTREG}}
+\begin{verbatim}
+MSP.and $freg, 0x0001       ; Maska AND na stavový register: FREG &= 0x0001
+MSP.ld  $freg, 0x0000       ; Priame nastavenie stavového registra FREG
+MSP.ld  [$ptreg], $0, $1    ; Zostavenie 24-bitového ukazovateľa z dvojice $0, $1
+MSP.ld  $ptreg, 0xA000      ; Priama adresa 0xA000 do PTREG
+MSP.ld  $ptreg, [0xA000]    ; Načítanie ukazovateľa z pamäti [0xA000] do PTREG
+
+; Natívne viacnásobné dereferencovanie reťazca ukazovateľov cez PTREG:
+MSP.ld  $ptreg, 0xA000      ; Koreňová adresa ukazovateľa
+MSP.ld  $ptreg, [$ptreg]    ; 1. dereferencovanie: PTREG <- MEM[PTREG]
+MSP.ld  $ptreg, [$ptreg]    ; 2. dereferencovanie: PTREG <- MEM[PTREG]
+MSP.ld  $ptreg, [$ptreg]    ; 3. dereferencovanie: PTREG <- MEM[PTREG]
+LMR.w   $0, [$ptreg]        ; Načítanie cieľovej hodnoty do $0
+\end{verbatim}
+Kompilácia do \texttt{.bin} a \texttt{.hex}: \texttt{python3 LIM2/sim/limasm.py LIM2/sim/demo.asm -l}.
 
 \section{Záver}
 Architektúra \textbf{LIM M2} spája overenú stabilitu mikroprogramového riadenia s modernou efektivitou aktívnej dátovej cesty bez tretieho stavu. Odstránením zbernicových kolízií a parazitných kapacít jadro zaručuje kryštálovú čistotu digitálnych signálov a bezpečne odomyká frekvenčný rozsah od 200~MHz až po fyzické limity moderných kremíkových štruktúr.

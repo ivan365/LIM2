@@ -453,7 +453,7 @@ class BaseCPU:
 
     def __setattr__(self, name: str, value: Any):
         if name.startswith("_") or name in (
-            "name", "bus", "regs", "databus", "addressbus", "step_count", "cycles", "is_halted", "breakpoints"
+            "name", "bus", "regs", "databus", "addressbus", "step_count", "cycles", "is_halted", "breakpoints", "ivt", "vectors"
         ):
             super().__setattr__(name, value)
             return

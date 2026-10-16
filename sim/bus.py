@@ -271,11 +271,11 @@ class MemoryBus:
     Универсальная шина памяти для симулятора с поддержкой нескольких режимов.
     """
 
-    def __init__(self, size: int = 65536, address_bits: int = 16, data_bits: int = 8, mode: str = "16bit"):
+    def __init__(self, size: int = 65536, address_bits: int = 32, data_bits: int = 8, mode: str = "32bit"):
         self.address_bits = address_bits
         self.data_bits = data_bits
-        self.mode = mode  # "16bit" (64KB) или "24bit" (16MB)
-        self.size = size if size != 65536 or address_bits == 16 else (1 << address_bits)
+        self.mode = mode.lower()  # "16bit", "24bit" или "32bit"
+        self.size = size if size != 65536 or address_bits == 16 else (1 << min(address_bits, 24))
         self.mask = (1 << self.address_bits) - 1
         self.ram = bytearray(min(self.size, 16 * 1024 * 1024))
         self.pins = PinBank()
@@ -285,13 +285,17 @@ class MemoryBus:
         self.current_step: int = 0
 
     def set_mode(self, mode: str):
-        """Переключение режима работы шины ('16bit' / '24bit')."""
+        """Переключение режима работы шины ('16bit' / '24bit' / '32bit')."""
         self.mode = mode.lower()
-        if "24" in self.mode:
+        if "32" in self.mode:
+            self.address_bits = 32
+            self.mask = 0xFFFFFFFF
+            if len(self.ram) < 1048576:
+                self.ram.extend(bytearray(1048576 - len(self.ram)))
+        elif "24" in self.mode:
             self.address_bits = 24
             self.mask = 0xFFFFFF
             if len(self.ram) < 1048576:
-                # Расширяем ОЗУ при необходимости
                 self.ram.extend(bytearray(1048576 - len(self.ram)))
         else:
             self.address_bits = 16
@@ -348,6 +352,30 @@ class MemoryBus:
         else:
             self.write8(addr, (val >> 8) & 0xFF)
             self.write8(addr + 1, val & 0xFF)
+
+    def read32(self, addr: int, little_endian: bool = False) -> int:
+        """Чтение 32-битного двойного слова."""
+        b0 = self.read8(addr)
+        b1 = self.read8(addr + 1)
+        b2 = self.read8(addr + 2)
+        b3 = self.read8(addr + 3)
+        if little_endian:
+            return (b3 << 24) | (b2 << 16) | (b1 << 8) | b0
+        return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
+
+    def write32(self, addr: int, val: int, little_endian: bool = False):
+        """Запись 32-битного двойного слова."""
+        val &= 0xFFFFFFFF
+        if little_endian:
+            self.write8(addr, val & 0xFF)
+            self.write8(addr + 1, (val >> 8) & 0xFF)
+            self.write8(addr + 2, (val >> 16) & 0xFF)
+            self.write8(addr + 3, (val >> 24) & 0xFF)
+        else:
+            self.write8(addr, (val >> 24) & 0xFF)
+            self.write8(addr + 1, (val >> 16) & 0xFF)
+            self.write8(addr + 2, (val >> 8) & 0xFF)
+            self.write8(addr + 3, val & 0xFF)
 
     # --------------------------------------------------------------------------
     # Подключение устройств (MMIO)
@@ -652,19 +680,18 @@ class MemoryBus:
         elif ext == ".hex":
             return self.load_hex(file_path, at=at)
         elif ext in (".asm", ".lasm"):
-            # Если есть limasm в проекте
-            try:
-                import limasm
-            except ImportError:
-                import sys
-                from pathlib import Path
-                root = Path(__file__).resolve().parent.parent.parent
-                if str(root / "simulator") not in sys.path:
-                    sys.path.insert(0, str(root / "simulator"))
-                import limasm
+            import importlib.util
+            from pathlib import Path
+            compiler_dir = Path(__file__).resolve().parent.parent / "compiler"
+            lim2_asm_path = compiler_dir / "limasm.py"
+            if not lim2_asm_path.exists():
+                lim2_asm_path = Path(__file__).resolve().parent / "limasm.py"
+            spec = importlib.util.spec_from_file_location("lim2_limasm", lim2_asm_path)
+            lim2_asm_mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(lim2_asm_mod)
             with open(file_path, "r", encoding="utf-8") as f:
                 code = f.read()
-            asm = limasm.LimAssembler(base_address=target)
+            asm = lim2_asm_mod.LimAssembler(base_address=target)
             bytecode, _ = asm.assemble(code, base_address=target)
             return self.load_bin(bytecode, at=target)
         else:

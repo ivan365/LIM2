@@ -153,6 +153,8 @@ def on_step(self):
     \item \textbf{Одиночный бит:} \texttt{[15]} или \texttt{[0]} (извлекает ровно 1 бит, значение 0 или 1). Например: \texttt{is\_imm = self.parse("[15]")}.
     \item \textbf{Парсинг одного поля в переменную:} \texttt{opcode = self.parse("[15-11]")}. Результат ведет себя как полноценное целое число \texttt{int} (поддерживает \texttt{if opcode == 1:}, арифметику, форматирование), а также распаковку через кортеж: \texttt{opcode, = self.parse("[15-11]")}.
     \item \textbf{Смешанные шаблоны:} \texttt{sign, exp, mant = self.parse("[15] [14-10] [9-0]")}.
+    \item \textbf{Однобайтовое программное прерывание \texttt{INTR} (опкод 28 / \texttt{11100}):} декодируется сразу после чтения первого байта (\texttt{b0}): младшие 3 бита \texttt{[2:0]} задают номер вектора \texttt{0..7} из внутреннего стека векторов \texttt{self.vectors[vec]}, сохраняя \texttt{PC} и \texttt{FREG} в стек по \texttt{SREG}.
+    \item \textbf{Управление указателем стека \texttt{SREG} в \texttt{MSP} (опкод 26 / \texttt{11010}):} селектор \texttt{sreg\_sel == 2} (\texttt{10\_2}) позволяет загружать 24-битный \texttt{SREG} из пары регистров \texttt{(Rs\_hi << 16) | Rs\_lo} и модифицировать его (\texttt{ADD}/\texttt{SUB} со смещением \texttt{Rs} и обновлением \texttt{CF}) идентично формату \texttt{PTREG}.
 \end{itemize}
 
 \section{Конфигурация Платформы в Коде (\texttt{sim.py})}
@@ -335,8 +337,65 @@ cols               # показать текущую раскладку коло
 \caption{Основные команды интерактивного отладчика}
 \end{table}
 
+\section{Язык Ассемблера и Компилятор LIM M2 (\texttt{limasm.py})}
+
+В состав симулятора включен двухпроходный компилятор языка ассемблера \texttt{limasm.py}, генерирующий бинарный образ прошивки (\texttt{.bin}) и аннотированный шестнадцатеричный дамп (\texttt{.hex}), а также интегрированный напрямую в \texttt{sim.py}.
+
+\subsection{Именование регистров и суффиксы размера (\texttt{.b}, \texttt{.w}, \texttt{.d})}
+\begin{itemize}
+    \item \textbf{Регистры общего назначения (РOН):} указываются через префикс \texttt{\$} и номер \texttt{\$0}--\texttt{\$7} (также поддерживаются классические имена \texttt{R0}--\texttt{R7} и \texttt{\$r0}--\texttt{\$r7}).
+    \item \textbf{Специальные регистры:} \texttt{\$ptreg} (24-битный адресный указатель), \texttt{\$freg} (регистр флагов), \texttt{\$sreg} / \texttt{\$sp} (указатель стека), \texttt{\$vec0}--\texttt{\$vec7} (векторы прерываний).
+    \item \textbf{Суффиксы размерности:} \texttt{.b} (\textit{byte}, 8 бит), \texttt{.w} (\textit{word}, 16 бит, по умолчанию), \texttt{.d} (\textit{doubleword}, 24/32 бита).
+\end{itemize}
+
+\subsection{Регистровые операции АЛУ и унарные инструкции}
+Инструкции \texttt{ADD}, \texttt{SUB}, \texttt{MUL}, \texttt{DIV}, \texttt{MOD} и однобайтовые \texttt{INC}, \texttt{DEC}, \texttt{NOT} работают только с регистрами:
+\begin{lstlisting}[language=bash]
+ADD $0, $1, $2      # $0 = $1 + $2 (также: ADD R0, R1, R1)
+SUB $3, $0, $2      # $3 = $0 - $2
+MUL $4, $1, $2      # $4 = $1 * $2
+DIV $5, $4, $1      # $5 = $4 / $1
+INC $0              # $0 = $0 + 1 (1 байт, также INC R0)
+DEC $1              # $1 = $1 - 1 (1 байт, также DEC R1)
+\end{lstlisting}
+
+\subsection{Загрузка и выгрузка (\texttt{LMR} и \texttt{LRM}): числа, ссылки \texttt{[...]} и поинтеры}
+\begin{itemize}
+    \item \textbf{Число без скобок} --- непосредственное значение (\texttt{SRC=0}): \texttt{LMR.w \$0, 0x1234}, \texttt{LMR.b \$1, 0x42}.
+    \item \textbf{Квадратные скобки \texttt{[addr]}} --- прямая ссылка на память (\texttt{SRC=1}): \texttt{LMR.w \$0, [0x1000]}, \texttt{LRM.w \$0, [0x1000]}.
+    \item \textbf{Косвенный поинтер \texttt{[\$ptreg]}} (\texttt{SRC=2}): \texttt{LMR.w \$0, [\$ptreg]}, \texttt{LRM.b \$4, [\$ptreg]}.
+    \item \textbf{Составной поинтер из пары регистров \texttt{[\$0:\$1]}} (\texttt{SRC=3}): \texttt{LMR \$0, [\$0:\$1]} (или \texttt{LMR, \$0, [\$0:\$1]}), \texttt{LRM \$2, [\$0:\$1]}.
+\end{itemize}
+
+\subsection{Инструкция \texttt{MSP} и многократное разыменование через \texttt{PTREG}}
+Инструкция \texttt{MSP} использует точечные модификаторы для работы с \texttt{\$freg}, \texttt{\$ptreg} и \texttt{\$sreg}:
+\begin{lstlisting}[language=bash]
+MSP.and $freg, 0x0001       # Наложение маски AND на регистр флагов
+MSP.ld  $freg, 0x0000       # Загрузка глухой настройки в FREG
+MSP.ld  $ptreg, 0xA000      # Непосредственная загрузка адреса в PTREG
+MSP.ld  $ptreg, [0xA000]    # Загрузка указателя из памяти MEM[0xA000]
+MSP.ld  [$ptreg], $0, $1    # Сборка 24-битного поинтера из пары регистров
+MSP.ld  $sreg, 0x3F00       # Инициализация указателя стека SREG
+MSP.add $ptreg, 0x0010      # Смещение указателя PTREG += 16
+\end{lstlisting}
+
+Нативное многократное разыменование указателей выполняется через \texttt{PTREG} за счет повторения инструкции \texttt{MSP.ld \$ptreg, [\$ptreg]} (\texttt{PTREG = MEM16[PTREG]}):
+\begin{lstlisting}[language=bash]
+MSP.ld $ptreg, 0xA000
+MSP.ld $ptreg, [$ptreg]     # 1-е разыменование
+MSP.ld $ptreg, [$ptreg]     # 2-е разыменование
+MSP.ld $ptreg, [$ptreg]     # 3-е разыменование
+LMR.w  $0, [$ptreg]
+\end{lstlisting}
+
+Компиляция в \texttt{.bin} и \texttt{.hex}:
+\begin{lstlisting}[language=bash]
+python3 limasm.py demo.asm -o demo.bin --hex demo.hex
+\end{lstlisting}
+
 \section{Заключение}
 
-Архитектура \textbf{LIM2} предоставляет разработчику полную свободу: от написания собственного процессора и декодера инструкций до симуляции отставания памяти, аппаратных ножек, межмодульных связей и сложной внешней периферии с наглядной визуализацией в терминале или графических окнах ОС.
+Архитектура \textbf{LIM2} предоставляет разработчику полную свободу: от написания собственного процессора, компилятора ассемблера и декодера инструкций до симуляции отставания памяти, аппаратных ножек, межмодульных связей и сложной внешней периферии с наглядной визуализацией в терминале или графических окнах ОС.
 
 \end{document}
+

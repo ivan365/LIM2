@@ -85,7 +85,7 @@ class SimulationRunner:
             "│   view dev [all|VID1]    — фильтр отображения памяти устройств               │",
             "│   screen / v [ID]        — принудительно показать видеомониторы              │",
             "│   map / busmap           — показать карту распределения памяти шины          │",
-            "│   mode [16bit|24bit]     — переключить режим адресации шины                  │",
+            "│   mode [16bit|24bit|32bit] — переключить режим адресации шины              │",
             "│   save [file] / load [..]— сохранить/загрузить полный снимок машины          │",
             "│   q / quit / exit        — выход из симулятора                               │",
             "└──────────────────────────────────────────────────────────────────────────────┘"
@@ -336,7 +336,7 @@ class SimulationRunner:
                         print(f"Режим шины переключен на {self.bus.mode.upper()}")
                         print(self.render_dashboard(clear_screen=True))
                 else:
-                    print(f"Текущий режим шины: {getattr(self.bus, 'mode', '16bit')}. Использование: mode [16bit|24bit]")
+                    print(f"Текущий режим шины: {getattr(self.bus, 'mode', '32bit')}. Использование: mode [16bit|24bit|32bit]")
 
             elif cmd.startswith("b"):
                 if len(cmd_parts) > 1:
@@ -469,7 +469,7 @@ def run_cli(
     parser.add_argument("-n", "--max-steps", type=int, default=100000, help="Максимум шагов симуляции")
     parser.add_argument("-d", "--dump", nargs=2, type=lambda x: int(x, 0), metavar=("ADDR", "LEN"), help="Вывести дамп памяти")
     parser.add_argument("-l", "--layout", choices=["auto", "1col", "2col", "3col"], default="auto", help="Режим раскладки колонок (по умолчанию auto)")
-    parser.add_argument("--mode", choices=["16bit", "24bit"], default="16bit", help="Режим адресации шины памяти (16bit или 24bit)")
+    parser.add_argument("--mode", choices=["16bit", "24bit", "32bit"], default="32bit", help="Режим адресации шины памяти (16bit, 24bit или 32bit)")
     parser.add_argument("-m", "--memory", action="append", nargs="+", help="Диапазоны памяти RAM (напр: -m 0x0000;0x1000)")
     parser.add_argument("-v", "--video-memory", action="append", nargs="+", help="Видеопамять монитора (напр: -v 0x20;0x04;0x8000)")
     parser.add_argument("-L", "--long-term", nargs="?", const="lim2_state.dump", default=None, metavar="DUMP_FILE", help="Режим долговременной работы (Long-term work): авто-загрузка и сохранение дампа памяти и регистров")

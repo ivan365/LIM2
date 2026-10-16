@@ -117,8 +117,20 @@ def make_single_chip(spec: Any, val: int) -> List[str]:
     title_fmt = title_raw[:7]
     r_label = (spec.block or "REG")[:3].upper() if hasattr(spec, "block") else "REG"
 
-    if spec.bits > 16:
-        # 24-битный или 32-битный чип
+    if spec.bits > 24:
+        # 32-битный чип
+        val_mask = val & spec.mask
+        chip = [
+            f"┌──[{title_fmt:^7}]────┐",
+            f"│  0x{val_mask:08X} │",
+            f"│ DEC:{val_mask:9d} │",
+            f"│ D           Q │",
+            f"│ 32-BIT ADDR   │",
+            f"│ >         {r_label:>3} │",
+            f"└───────────────┘"
+        ]
+    elif spec.bits > 16:
+        # 24-битный чип
         val_mask = val & spec.mask
         chip = [
             f"┌──[{title_fmt:^7}]────┐",
@@ -181,7 +193,7 @@ def make_flag_chip(spec: Any, val: int, width: int = 74) -> List[str]:
 
     layout = spec.flag_layout or [
         ("ZF", "Zero", 0), ("CF", "Carry", 1), ("OF", "Overflow", 2), ("EM", "ErrMath", 3),
-        ("PIE", "ProgInt", 8), ("MIE", "MasterInt", 9), ("DWR", "NoWait", 10), ("M24", "24-bit Mode", 11)
+        ("PIE", "ProgInt", 8), ("MIE", "MasterInt", 9), ("DWR", "NoWait", 10), ("PRV", "Supervisor", 11)
     ]
 
     flag_rows = []
@@ -224,7 +236,7 @@ def render_circuit_registers(cpu: Any, step_count: int = 0) -> str:
 
     # 1. Основные регистры
     lines.extend(render_chips_rows(core_specs))
-    hdr = f"PC: 0x{pc_val:04X} ({pc_val:5d})    Такты: {step_count:<7d}    Шина: {getattr(cpu.bus, 'mode', '16bit').upper()}"
+    hdr = f"PC: 0x{pc_val:08X} ({pc_val:<10d})  Такты: {step_count:<7d}  Шина: {getattr(cpu.bus, 'mode', '32bit').upper()}"
     lines.append(box_row(hdr))
 
     # 2. Вспомогательные блоки (ALU / ACCA / ACCB)
@@ -258,37 +270,31 @@ def render_code_stream(cpu: Any, code_rows: int = 6) -> str:
     title = f"ПОТОК КОМАНД (ДИЗАССЕМБЛЕР) @ PC=0x{curr_pc:04X}"
     lines = [box_top(title)]
 
+    import importlib.util
+    from pathlib import Path
+    compiler_dir = Path(__file__).resolve().parent.parent / "compiler"
+    lim2_asm_path = compiler_dir / "limasm.py"
+    if not lim2_asm_path.exists():
+        lim2_asm_path = Path(__file__).resolve().parent / "limasm.py"
+    spec = importlib.util.spec_from_file_location("lim2_limasm", lim2_asm_path)
+    lim2_asm_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(lim2_asm_mod)
+    disassemble_one = lim2_asm_mod.disassemble_one
+
+    mask = getattr(bus, "mask", 0xFFFF)
+    addr = curr_pc & mask
     for i in range(code_rows):
-        addr = (curr_pc + i * 2) & getattr(bus, "mask", 0xFFFF)
-        b0 = bus.read8(addr)
-        b1 = bus.read8(addr + 1)
-        w = (b0 << 8) | b1
-
-        # Извлекаем опкод для подсказки
-        op = (w >> 11) & 0x1F
-        rd = (w >> 5) & 0x07
-        rs1 = (w >> 2) & 0x07
-        rs2 = w & 0x03
-
-        # Описания популярных инструкций
-        op_names = {
-            0: "NOP", 1: f"ADD R{rd}, R{rs1}, R{rs2}", 2: f"SUB R{rd}, R{rs1}, R{rs2}",
-            3: f"MUL R{rd}, R{rs1}, R{rs2}", 4: f"DIV R{rd}, R{rs1}, R{rs2}",
-            5: f"MOV R{rd}, R{rs1}", 6: f"MOVI R{rd}, #...", 7: f"LOAD R{rd}, [R{rs1}]",
-            8: f"STORE [R{rd}], R{rs1}", 9: f"AND R{rd}, R{rs1}", 10: f"OR R{rd}, R{rs1}",
-            11: f"XOR R{rd}, R{rs1}", 12: "JMP target", 13: "JZ target", 14: "JNZ target",
-            31: "HALT"
-        }
-        mnem = op_names.get(op, f"OP_{op:02X} R{rd}, R{rs1}")
+        mnem, length, raw_bytes = disassemble_one(lambda a: bus.read8(a & mask), addr)
+        raw_hex = " ".join(f"{b:02X}" for b in raw_bytes[:4])
 
         is_current = (i == 0)
-        raw_hex = f"{b0:02X} {b1:02X}"
         if is_current:
-            raw_text = f" ▶ 0x{addr:04X}:  {raw_hex:<6}  {mnem:<40} <== [PC]"
+            raw_text = f" ▶ 0x{addr:04X}:  {raw_hex:<12}  {mnem:<34} <== [PC]"
             lines.append(box_row(f"\033[7;1m{raw_text:<76}\033[0m"))
         else:
-            raw_text = f"   0x{addr:04X}:  {raw_hex:<6}  {mnem:<40}"
+            raw_text = f"   0x{addr:04X}:  {raw_hex:<12}  {mnem:<34}"
             lines.append(box_row(raw_text))
+        addr = (addr + max(1, length)) & mask
 
     lines.append(box_bottom())
     return "\n".join(lines)

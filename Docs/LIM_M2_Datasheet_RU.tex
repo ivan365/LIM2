@@ -387,7 +387,7 @@ ZF, CF, OF & Аппаратные флаги нуля, переноса и зн�
   \item \textbf{Двухаккумуляторный исполнительный узел (Dual Accumulator Staging):} Регистры \reg{ACCA} и \reg{ACCB} обеспечивают надёжную фиксацию операндов перед АЛУ, изолируя переходные процессы вычислений от основного регистрового файла.
   \item \textbf{Аппаратное каскадирование длинной арифметики (ALU Auto-Chaining):} Внутренний тракт АЛУ оснащён остаточным аккумулятором \reg{ALU\_RESIDUAL}. При возникновении переноса ($+1$ при сложении $>2^{16}-1$), заёма ($-1$ при разности $<0$) или избыточных старших разрядов умножения/деления, остаток фиксируется аппаратно и автоматически суммируется или вычитается при следующей математической операции. Это обеспечивает непрерывную многобайтовую арифметику (32, 48, 64+ бит) без отдельных команд ADC/SBB. Сброс цепочки выполняется командой \texttt{NOP}.
   \item \textbf{Прямой тракт пересылки (Reg-to-Reg Bypass):} Обходной канал от MUX 1 напрямую в MUX 2 позволяет осуществлять копирование данных между регистрами без задействования и блокировки вычислительных ресурсов АЛУ.
-  \item \textbf{Расширенная 24-битная адресация памяти (до 16 МБ):} Специализированные 24-битные регистры-указатели \reg{PTREG} (указатель данных с автоинкрементом) и \reg{SREG} (указатель стека) позволяют процессору линейно адресовать обширные массивы памяти и стек до 16~Мбайт за пределами классического 64-килобайтного окна.
+  \item \textbf{Нативная 32-битная адресация памяти (до 4 ГБ):} Нативная 32-разрядная магистраль адреса (\texttt{A0}--\texttt{A31}) и специализированные 32-битные регистры-указатели \reg{PTREG} (указатель данных с автоинкрементом) и \reg{SREG} (указатель стека), а также 32 системных векторных регистра (\texttt{\$ir0..\$ir15}, \texttt{\$pv0..\$pv15}) обеспечивают процессору прямое линейное обращение ко всей физической памяти объёмом 4~Гбайта без необходимости мультиплексирования шин, переключения страниц или банков.
   \item \textbf{Высокочастотный потенциал:} Отсутствие емкостной нагрузки от распределённых шин позволяет ядру достигать базовой рабочей частоты \textbf{200~МГц}, а при трансляции в специализированный кремний (ASIC) ориентироваться на частоты \textbf{700~МГц и выше}.
 \end{itemize}
 
@@ -608,7 +608,7 @@ FREG & 16 бит & Регистр состояния и управления (Pr
 8    & PIE  & Program Interrupt Enable: глобальное разрешение программных прерываний. \\
 9    & MIE  & Master Interrupt Enable: разрешение маскируемых внешних прерываний. \\
 10   & DWR  & Disable Wait for Ready: форсированный безакцептный обмен без ожидания шины. \\
-11   & M24  & 24-bit Mode Enable: активация расширенного 24-битного адресного режима. \\
+11   & PRV  & Privilege Mode: 0 = User Mode, 1 = Supervisor Mode (аппаратный старт в 1; защита через 8 Зон Привилегий \$pv0..\$pv15). \\
 12   & AIP  & Auto-Increment PTREG: разрешение аппаратного инкремента указателя \reg{PTREG} при обращении. \\
 13   & DBIT & Displaced Bit: буфер вытесненного бита сдвигового узла. \\
 14   & SMOD & Shift Mode: управление режимом сдвига (0 --- заполнение нулями, 1 --- циклический проход через DBIT). \\
@@ -827,69 +827,281 @@ $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
   \item \textbf{Октет 1:} биты $[7:0]$ содержат $00000000_2$ (резерв).
 \end{itemize}
 
-\subsection{Класс VIII: Манипуляция специальными регистрами (MSP)}
-Инструкция \texttt{MSP} обеспечивает универсальную работу с системными регистрами (\reg{FREG}, \reg{PTREG} и будущие расширения):
-\begin{itemize}
-  \item \textbf{Октет 0:} бит $[10]$ (бит 2 октета 0) задаёт режим:
-    \begin{itemize}
-      \item $0$: прямая загрузка значения в спецрегистр из регистров общего назначения;
-      \item $1$: функциональная модификация спецрегистра (побитовые маски или смещение).
-    \end{itemize}
-    Биты $[9:8]$ (биты 1--0 октета 0) выбирают целевой спецрегистр:
-    \begin{itemize}
-      \item $00_2$: регистр состояния и флагов \reg{FREG};
-      \item $01_2$: 24-битный регистр-указатель \reg{PTREG};
-      \item $10_2$, $11_2$: зарезервировано для будущих системных регистров.
-    \end{itemize}
-  \item \textbf{Октет 1 (динамический по CFG):}
-    \begin{itemize}
-      \item \textbf{При загрузке ($[10] = 0$):} для \reg{FREG} биты $[7:5]$ задают регистр-источник \reg{Rs}; для \reg{PTREG} биты $[7:5]$ задают старший регистр \reg{Rs\_hi}, а биты $[4:2]$ --- младший регистр \reg{Rs\_lo}.
-      \item \textbf{При работе со \reg{FREG} ($[10] = 1, [9:8] = 00$):} биты $[7:6]$ октета 1 задают побитовую операцию (\bits{00}=AND, \bits{01}=OR, \bits{10}=XOR, \bits{11}=XNOR), а биты $[5:3]$ определяют регистр-маску \reg{Rmask}.
-      \item \textbf{При работе с \reg{PTREG} ($[10] = 1, [9:8] = 01$):} биты $[7:6]$ октета 1 задают математическую операцию смещения (\bits{00}=ADD, \bits{01}=SUB), а биты $[5:3]$ определяют ровно один регистр смещения \reg{Rsrc} (составные пары операндов запрещены). Сложение и вычитание используют аппаратный узел АЛУ с поддержкой флагов переноса и заёма.
-    \end{itemize}
-\end{itemize}
+\subsection{Класс VIII: Манипуляция специальными регистрами (MSP, Опкод 26)}
+Инструкция \texttt{MSP} (Опкод \bits{11010}, $26_{10}$) обеспечивает универсальный модульный доступ ко всем системным, адресным и защитным ресурсам ядра: \reg{FREG}, \reg{PTREG}, \reg{SREG}, а также 32 системным векторам прерываний и границ Зон Привилегий (\texttt{\$ir0..\$ir15}, \texttt{\$pv0..\$pv15}). Длина команды составляет от 2 до 6 байтов в зависимости от выбранного режима.
+
+\subsubsection{Формат 8.1: Загрузка во флаговый регистр FREG (MOD = 0, REG = 00)}
+Команда \texttt{MSP.ld \$freg, <src>} выполняет прямую инициализацию флагов.
 
 \begin{center}
-\begin{tikzpicture}[x=0.88cm,y=0.62cm]
-  \draw[thick,fill=limblue] (0,0) rectangle (4.2,1.1);
-  \draw[thick,fill=limcyan] (4.2,0) rectangle (5.5,1.1);
-  \draw[thick,fill=teal!60] (5.5,0) rectangle (6.8,1.1);
-  \draw[thick,fill=limlight] (7.2,0) rectangle (10.0,1.1);
-  \draw[thick,fill=limmint] (10.0,0) rectangle (12.8,1.1);
-  \draw[thick,fill=gray!20] (12.8,0) rectangle (15.2,1.1);
-  \node[text=white,font=\bfseries\tiny,align=center] at (2.1,0.55) {MSP (5б)\\11010};
-  \node[text=white,font=\bfseries\tiny,align=center] at (4.85,0.55) {Mode\\0/1};
-  \node[text=white,font=\bfseries\tiny,align=center] at (6.15,0.55) {Reg\\00/01};
-  \node[font=\bfseries\tiny,align=center] at (8.6,0.55) {Оп/Рег 1\\бит [7:5]};
-  \node[font=\bfseries\tiny,align=center] at (11.4,0.55) {Рег 2 / Маска\\бит [4:2]};
-  \node[font=\bfseries\tiny,align=center] at (14.0,0.55) {RSV\\бит [1:0]};
-  % Divider ticks Octet 0
-  \draw[line width=0.7pt, limblue] (0,1.1) -- (0,1.28);
-  \draw[line width=0.7pt, limblue] (4.2,1.1) -- (4.2,1.28);
-  \draw[line width=0.7pt, limblue] (5.5,1.1) -- (5.5,1.28);
-  \draw[line width=0.7pt, limblue] (6.8,1.1) -- (6.8,1.28);
-  % Bit numbers Octet 0
-  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (0,1.12) {7};
-  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (4.2,1.12) {3};
-  \node[anchor=south,font=\tiny\bfseries\color{limblue}] at (4.85,1.12) {2};
-  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (5.5,1.12) {1};
-  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (6.8,1.12) {0};
-  % Divider ticks Octet 1
-  \draw[line width=0.7pt, limblue] (7.2,1.1) -- (7.2,1.28);
-  \draw[line width=0.7pt, limblue] (10.0,1.1) -- (10.0,1.28);
-  \draw[line width=0.7pt, limblue] (12.8,1.1) -- (12.8,1.28);
-  \draw[line width=0.7pt, limblue] (15.2,1.1) -- (15.2,1.28);
-  % Bit numbers Octet 1
-  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (7.2,1.12) {7};
-  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (10.0,1.12) {5};
-  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (10.0,1.12) {4};
-  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (12.8,1.12) {2};
-  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (12.8,1.12) {1};
-  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (15.2,1.12) {0};
-  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.4,-0.08) {Октет 0: Опкод + Режим + Селектор};
-  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (11.2,-0.08) {Октет 1: Параметры операции (2 байта)};
+\begin{tikzpicture}[x=0.88cm,y=0.58cm]
+  \draw[thick,fill=limblue] (0,0) rectangle (4.2,1.0);
+  \draw[thick,fill=limcyan] (4.2,0) rectangle (5.5,1.0);
+  \draw[thick,fill=teal!60] (5.5,0) rectangle (6.8,1.0);
+  \node[text=white,font=\bfseries\tiny,align=center] at (2.1,0.5) {MSP (5б)\\11010};
+  \node[text=white,font=\bfseries\tiny,align=center] at (4.85,0.5) {MOD=0\\(Load)};
+  \node[text=white,font=\bfseries\tiny,align=center] at (6.15,0.5) {REG=00\\(FREG)};
+  \draw[line width=0.6pt, limblue] (0,1.0) -- (0,1.18);
+  \draw[line width=0.6pt, limblue] (4.2,1.0) -- (4.2,1.18);
+  \draw[line width=0.6pt, limblue] (5.5,1.0) -- (5.5,1.18);
+  \draw[line width=0.6pt, limblue] (6.8,1.0) -- (6.8,1.18);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (0,1.02) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (4.2,1.02) {3};
+  \node[anchor=south,font=\tiny\bfseries\color{limblue}] at (4.85,1.02) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (5.5,1.02) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (6.8,1.02) {0};
+
+  \draw[thick,fill=limlight] (7.2,0) rectangle (10.2,1.0);
+  \draw[thick,fill=gray!15] (10.2,0) rectangle (13.2,1.0);
+  \draw[thick,fill=limmint] (13.2,0) rectangle (15.2,1.0);
+  \node[font=\bfseries\tiny,align=center] at (8.7,0.5) {Rs [7:5]\\(при SRC=00)};
+  \node[font=\bfseries\tiny,align=center] at (11.7,0.5) {Резерв [4:2]\\000};
+  \node[font=\bfseries\tiny,align=center] at (14.2,0.5) {SRC [1:0]\\00..11};
+  \draw[line width=0.6pt, limblue] (7.2,1.0) -- (7.2,1.18);
+  \draw[line width=0.6pt, limblue] (10.2,1.0) -- (10.2,1.18);
+  \draw[line width=0.6pt, limblue] (13.2,1.0) -- (13.2,1.18);
+  \draw[line width=0.6pt, limblue] (15.2,1.0) -- (15.2,1.18);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (7.2,1.02) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (10.2,1.02) {5};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (10.2,1.02) {4};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (13.2,1.02) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (13.2,1.02) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (15.2,1.02) {0};
+
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.4,-0.05) {Октет 0: Опкод 26 + MOD=0 + FREG (0xD0)};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (11.2,-0.05) {Октет 1: Селектор источника (длина 2--4 байта)};
 \end{tikzpicture}
 \end{center}
+
+\begin{itemize}
+  \item $\field{SRC} = 00_2$ (2 байта): загрузка из регистра РОН \reg{Rs} (\texttt{MSP.ld \$freg, \$rs}).
+  \item $\field{SRC} = 01_2$ (4 байта): непосредственная константа \texttt{imm16} в октетах 2--3 (\texttt{MSP.ld \$freg, 0x0000}).
+  \item $\field{SRC} = 10_2$ (2 байта): чтение из памяти по текущему указателю \texttt{[\$ptreg]} (\texttt{MSP.ld \$freg, [\$ptreg]}).
+  \item $\field{SRC} = 11_2$ (4 байта): чтение из памяти по прямому 16-битному адресу \texttt{[addr16]} (\texttt{MSP.ld \$freg, [0x1000]}).
+\end{itemize}
+
+\subsubsection{Формат 8.2: Побитовая логика FREG (MOD = 1, REG = 00)}
+Команды \texttt{MSP.and}, \texttt{MSP.or}, \texttt{MSP.xor}, \texttt{MSP.xnor} применяют побитовую маску к флагам.
+
+\begin{center}
+\begin{tikzpicture}[x=0.88cm,y=0.58cm]
+  \draw[thick,fill=limblue] (0,0) rectangle (4.2,1.0);
+  \draw[thick,fill=limcyan] (4.2,0) rectangle (5.5,1.0);
+  \draw[thick,fill=teal!60] (5.5,0) rectangle (6.8,1.0);
+  \node[text=white,font=\bfseries\tiny,align=center] at (2.1,0.5) {MSP (5б)\\11010};
+  \node[text=white,font=\bfseries\tiny,align=center] at (4.85,0.5) {MOD=1\\(Calc)};
+  \node[text=white,font=\bfseries\tiny,align=center] at (6.15,0.5) {REG=00\\(FREG)};
+  \draw[line width=0.6pt, limblue] (0,1.0) -- (0,1.18);
+  \draw[line width=0.6pt, limblue] (4.2,1.0) -- (4.2,1.18);
+  \draw[line width=0.6pt, limblue] (5.5,1.0) -- (5.5,1.18);
+  \draw[line width=0.6pt, limblue] (6.8,1.0) -- (6.8,1.18);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (0,1.02) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (4.2,1.02) {3};
+  \node[anchor=south,font=\tiny\bfseries\color{limblue}] at (4.85,1.02) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (5.5,1.02) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (6.8,1.02) {0};
+
+  \draw[thick,fill=limaccent!40] (7.2,0) rectangle (9.2,1.0);
+  \draw[thick,fill=limlight] (9.2,0) rectangle (12.2,1.0);
+  \draw[thick,fill=gray!15] (12.2,0) rectangle (13.2,1.0);
+  \draw[thick,fill=limmint] (13.2,0) rectangle (15.2,1.0);
+  \node[font=\bfseries\tiny,align=center] at (8.2,0.5) {OP [7:6]\\AND/OR/XOR};
+  \node[font=\bfseries\tiny,align=center] at (10.7,0.5) {Rs [5:3]\\(при SRC=00)};
+  \node[font=\bfseries\tiny,align=center] at (12.7,0.5) {Rsv\\бит 2};
+  \node[font=\bfseries\tiny,align=center] at (14.2,0.5) {SRC [1:0]\\00..11};
+  \draw[line width=0.6pt, limblue] (7.2,1.0) -- (7.2,1.18);
+  \draw[line width=0.6pt, limblue] (9.2,1.0) -- (9.2,1.18);
+  \draw[line width=0.6pt, limblue] (12.2,1.0) -- (12.2,1.18);
+  \draw[line width=0.6pt, limblue] (13.2,1.0) -- (13.2,1.18);
+  \draw[line width=0.6pt, limblue] (15.2,1.0) -- (15.2,1.18);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (7.2,1.02) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (9.2,1.02) {6};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (9.2,1.02) {5};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (12.2,1.02) {3};
+  \node[anchor=south,font=\tiny\bfseries\color{limblue}] at (12.7,1.02) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (13.2,1.02) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (15.2,1.02) {0};
+
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.4,-0.05) {Октет 0: Опкод 26 + MOD=1 + FREG (0xD4)};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (11.2,-0.05) {Октет 1: Код операции OP + Селектор маски};
+\end{tikzpicture}
+\end{center}
+
+\begin{itemize}
+  \item \textbf{Код операции $\field{OP} [7:6]$:} $00_2 = \texttt{AND}$, $01_2 = \texttt{OR}$, $10_2 = \texttt{XOR}$, $11_2 = \texttt{XNOR}$.
+  \item \textbf{Аппаратная защита режима супервизора (\texttt{PRV}):} Процессор аппаратно стартует при включении питания и сбросе в режиме супервизора (\texttt{PRV=1}). Начальный код (загрузчик/ядро) настраивает системные векторы (\texttt{\$ir0..\$ir15}) и границы Зон Привилегий (\texttt{\$pv0..\$pv15}), после чего сбрасывает \texttt{PRV=0} и передает управление пользовательскому коду. В пользовательском режиме (\texttt{PRV=0}) включение \texttt{PRV=1} и модификация регистров зон аппаратно разрешены исключительно если текущий \reg{PC} находится строго внутри одной из 8 зарегистрированных Зон Привилегий ($\exists k \in [0..7]: \$pv_{2k} \le \text{PC} \le \$pv_{2k+1}$). \textbf{Важное архитектурное правило:} при выходе за пределы Зоны Привилегий режим супервизора \texttt{PRV=1} автоматически \textbf{не сбрасывается} --- ОС/программа обязана явно сбросить его перед возвратом пользователю.
+\end{itemize}
+
+\subsubsection{Формат 8.3: Загрузка указателей PTREG и SREG (MOD = 0, REG = 01 / 10)}
+Команды \texttt{MSP.ld \$ptreg} ($\field{REG}=01_2$, опкод \texttt{0xD1}) и \texttt{MSP.ld \$sreg} ($\field{REG}=10_2$, опкод \texttt{0xD2}) выполняют прямую инициализацию 32-битных линейных указателей.
+
+\begin{center}
+\begin{tikzpicture}[x=0.88cm,y=0.58cm]
+  \draw[thick,fill=limblue] (0,0) rectangle (4.2,1.0);
+  \draw[thick,fill=limcyan] (4.2,0) rectangle (5.5,1.0);
+  \draw[thick,fill=teal!60] (5.5,0) rectangle (6.8,1.0);
+  \node[text=white,font=\bfseries\tiny,align=center] at (2.1,0.5) {MSP (5б)\\11010};
+  \node[text=white,font=\bfseries\tiny,align=center] at (4.85,0.5) {MOD=0\\(Load)};
+  \node[text=white,font=\bfseries\tiny,align=center] at (6.15,0.5) {REG\\01/10};
+  \draw[line width=0.6pt, limblue] (0,1.0) -- (0,1.18);
+  \draw[line width=0.6pt, limblue] (4.2,1.0) -- (4.2,1.18);
+  \draw[line width=0.6pt, limblue] (5.5,1.0) -- (5.5,1.18);
+  \draw[line width=0.6pt, limblue] (6.8,1.0) -- (6.8,1.18);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (0,1.02) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (4.2,1.02) {3};
+  \node[anchor=south,font=\tiny\bfseries\color{limblue}] at (4.85,1.02) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (5.5,1.02) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (6.8,1.02) {0};
+
+  \draw[thick,fill=limlight] (7.2,0) rectangle (10.2,1.0);
+  \draw[thick,fill=limmint] (10.2,0) rectangle (13.2,1.0);
+  \draw[thick,fill=gray!20] (13.2,0) rectangle (15.2,1.0);
+  \node[font=\bfseries\tiny,align=center] at (8.7,0.5) {Rd\_hi [7:5]\\Старшие 16 бит};
+  \node[font=\bfseries\tiny,align=center] at (11.7,0.5) {Rs\_lo [4:2]\\Младшие 16 бит};
+  \node[font=\bfseries\tiny,align=center] at (14.2,0.5) {SRC [1:0]\\00..11};
+  \draw[line width=0.6pt, limblue] (7.2,1.0) -- (7.2,1.18);
+  \draw[line width=0.6pt, limblue] (10.2,1.0) -- (10.2,1.18);
+  \draw[line width=0.6pt, limblue] (13.2,1.0) -- (13.2,1.18);
+  \draw[line width=0.6pt, limblue] (15.2,1.0) -- (15.2,1.18);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (7.2,1.02) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (10.2,1.02) {5};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (10.2,1.02) {4};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (13.2,1.02) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (13.2,1.02) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (15.2,1.02) {0};
+
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.4,-0.05) {Октет 0: Опкод 26 + MOD=0 + PTREG/SREG};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (11.2,-0.05) {Октет 1: Пара РОН или селектор источника (2--6 байт)};
+\end{tikzpicture}
+\end{center}
+
+\begin{itemize}
+  \item $\field{SRC} = 00_2$ (2 байта): сборка адреса из пары РОН \reg{Rd\_hi}:\reg{Rs\_lo} (\texttt{MSP.ld \$ptreg, \$0, \$1}).
+  \item $\field{SRC} = 01_2$ (4--6 байт): непосредственный адрес \texttt{imm32} (6 байт) или \texttt{imm16} (4 байта).
+  \item $\field{SRC} = 10_2$ (\textbf{2 байта}): \textbf{нативное 1-тактовое разыменование указателя} \texttt{[\$ptreg]} (\texttt{PTREG <- MEM[PTREG]}).
+  \item $\field{SRC} = 11_2$ (4--6 байт): загрузка указателя из памяти по абсолютному адресу \texttt{[addr]} (\texttt{MSP.ld \$ptreg, [0xA000]}).
+\end{itemize}
+
+\subsubsection{Формат 8.4: Арифметика смещения PTREG и SREG (MOD = 1, REG = 01 / 10)}
+Команды \texttt{MSP.add} ($\field{OP}=0$) и \texttt{MSP.sub} ($\field{OP}=1$) осуществляют быстрое аппаратное позиционирование указателей буфера и вершины стека.
+
+\begin{center}
+\begin{tikzpicture}[x=0.88cm,y=0.58cm]
+  \draw[thick,fill=limblue] (0,0) rectangle (4.2,1.0);
+  \draw[thick,fill=limcyan] (4.2,0) rectangle (5.5,1.0);
+  \draw[thick,fill=teal!60] (5.5,0) rectangle (6.8,1.0);
+  \node[text=white,font=\bfseries\tiny,align=center] at (2.1,0.5) {MSP (5б)\\11010};
+  \node[text=white,font=\bfseries\tiny,align=center] at (4.85,0.5) {MOD=1\\(Arith)};
+  \node[text=white,font=\bfseries\tiny,align=center] at (6.15,0.5) {REG\\01/10};
+  \draw[line width=0.6pt, limblue] (0,1.0) -- (0,1.18);
+  \draw[line width=0.6pt, limblue] (4.2,1.0) -- (4.2,1.18);
+  \draw[line width=0.6pt, limblue] (5.5,1.0) -- (5.5,1.18);
+  \draw[line width=0.6pt, limblue] (6.8,1.0) -- (6.8,1.18);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (0,1.02) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (4.2,1.02) {3};
+  \node[anchor=south,font=\tiny\bfseries\color{limblue}] at (4.85,1.02) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (5.5,1.02) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (6.8,1.02) {0};
+
+  \draw[thick,fill=limaccent!40] (7.2,0) rectangle (8.4,1.0);
+  \draw[thick,fill=limlight] (8.4,0) rectangle (11.4,1.0);
+  \draw[thick,fill=gray!15] (11.4,0) rectangle (13.2,1.0);
+  \draw[thick,fill=limmint] (13.2,0) rectangle (15.2,1.0);
+  \node[font=\bfseries\tiny,align=center] at (7.8,0.5) {OP\\0/1};
+  \node[font=\bfseries\tiny,align=center] at (9.9,0.5) {Rs [6:4]\\(при SRC=00)};
+  \node[font=\bfseries\tiny,align=center] at (12.3,0.5) {Резерв [3:2]\\00};
+  \node[font=\bfseries\tiny,align=center] at (14.2,0.5) {SRC [1:0]\\00..11};
+  \draw[line width=0.6pt, limblue] (7.2,1.0) -- (7.2,1.18);
+  \draw[line width=0.6pt, limblue] (8.4,1.0) -- (8.4,1.18);
+  \draw[line width=0.6pt, limblue] (11.4,1.0) -- (11.4,1.18);
+  \draw[line width=0.6pt, limblue] (13.2,1.0) -- (13.2,1.18);
+  \draw[line width=0.6pt, limblue] (15.2,1.0) -- (15.2,1.18);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (7.2,1.02) {7};
+  \node[anchor=south,font=\tiny\bfseries\color{limblue}] at (7.8,1.02) {7};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (8.4,1.02) {6};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (11.4,1.02) {4};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (11.4,1.02) {3};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (13.2,1.02) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (13.2,1.02) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (15.2,1.02) {0};
+
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.4,-0.05) {Октет 0: Опкод 26 + MOD=1 + PTREG/SREG};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (11.2,-0.05) {Октет 1: Направление OP (ADD/SUB) + Офсет};
+\end{tikzpicture}
+\end{center}
+
+\begin{itemize}
+  \item $\field{OP} = 0$: \texttt{ADD} (+смещение к указателю), $\field{OP} = 1$: \texttt{SUB} (-смещение от указателя).
+  \item Источник смещения: регистр РОН $\field{SRC}=00_2$ (2 байта), непосредственная константа $\field{SRC}=01_2$ (4 байта), чтение смещения по $\field{SRC}=10_2$ (\texttt{[\$ptreg]}, 2 байта) или $\field{SRC}=11_2$ (\texttt{[addr16]}, 4 байта).
+\end{itemize}
+
+\subsubsection{Формат 8.5: Загрузка 32-битных векторных регистров (MOD = 0, REG = 11)}
+Команда \texttt{MSP.ld} загружает 32-битные адреса в один из 32 векторных регистров: \texttt{\$ir0..\$ir15} (векторы прерываний, ID $0$--$15$) и \texttt{\$pv0..\$pv15} (границы Зон Привилегий, ID $16$--$31$).
+
+\begin{center}
+\begin{tikzpicture}[x=0.75cm,y=0.58cm]
+  \draw[thick,fill=limblue] (0,0) rectangle (3.5,1.0);
+  \draw[thick,fill=limcyan] (3.5,0) rectangle (4.6,1.0);
+  \draw[thick,fill=teal!60] (4.6,0) rectangle (5.7,1.0);
+  \node[text=white,font=\bfseries\tiny,align=center] at (1.75,0.5) {MSP\\11010};
+  \node[text=white,font=\bfseries\tiny,align=center] at (4.05,0.5) {MOD\\0};
+  \node[text=white,font=\bfseries\tiny,align=center] at (5.15,0.5) {REG\\11};
+  \draw[line width=0.6pt, limblue] (0,1.0) -- (0,1.18);
+  \draw[line width=0.6pt, limblue] (3.5,1.0) -- (3.5,1.18);
+  \draw[line width=0.6pt, limblue] (4.6,1.0) -- (4.6,1.18);
+  \draw[line width=0.6pt, limblue] (5.7,1.0) -- (5.7,1.18);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (0,1.02) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (3.5,1.02) {3};
+  \node[anchor=south,font=\tiny\bfseries\color{limblue}] at (4.05,1.02) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (4.6,1.02) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (5.7,1.02) {0};
+
+  \draw[thick,fill=limlight] (6.0,0) rectangle (9.8,1.0);
+  \draw[thick,fill=limmint] (9.8,0) rectangle (11.6,1.0);
+  \draw[thick,fill=gray!20] (11.6,0) rectangle (12.7,1.0);
+  \node[font=\bfseries\tiny,align=center] at (7.9,0.5) {Vector\_ID [7:3]\\0--15: \$ir / 16--31: \$pv};
+  \node[font=\bfseries\tiny,align=center] at (10.7,0.5) {SRC [2:1]\\00..11};
+  \node[font=\bfseries\tiny,align=center] at (12.15,0.5) {SUB\\0/1};
+  \draw[line width=0.6pt, limblue] (6.0,1.0) -- (6.0,1.18);
+  \draw[line width=0.6pt, limblue] (9.8,1.0) -- (9.8,1.18);
+  \draw[line width=0.6pt, limblue] (11.6,1.0) -- (11.6,1.18);
+  \draw[line width=0.6pt, limblue] (12.7,1.0) -- (12.7,1.18);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (6.0,1.02) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (9.8,1.02) {3};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (9.8,1.02) {2};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (11.6,1.02) {1};
+  \node[anchor=south,font=\tiny\bfseries\color{limblue}] at (12.15,1.02) {0};
+
+  \draw[thick,fill=teal!20] (13.0,0) rectangle (15.5,1.0);
+  \draw[thick,fill=teal!40] (15.5,0) rectangle (18.0,1.0);
+  \draw[thick,fill=gray!15] (18.0,0) rectangle (19.5,1.0);
+  \node[font=\bfseries\tiny,align=center] at (14.25,0.5) {Rd\_hi [7:5]\\старшие};
+  \node[font=\bfseries\tiny,align=center] at (16.75,0.5) {Rs\_lo [4:2]\\младшие};
+  \node[font=\bfseries\tiny,align=center] at (18.75,0.5) {00\\бит [1:0]};
+  \draw[line width=0.6pt, limblue] (13.0,1.0) -- (13.0,1.18);
+  \draw[line width=0.6pt, limblue] (15.5,1.0) -- (15.5,1.18);
+  \draw[line width=0.6pt, limblue] (18.0,1.0) -- (18.0,1.18);
+  \draw[line width=0.6pt, limblue] (19.5,1.0) -- (19.5,1.18);
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (13.0,1.02) {7};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (15.5,1.02) {5};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (15.5,1.02) {4};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (18.0,1.02) {2};
+  \node[anchor=south west,font=\tiny\bfseries\color{limblue}] at (18.0,1.02) {1};
+  \node[anchor=south east,font=\tiny\bfseries\color{limblue}] at (19.5,1.02) {0};
+
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (2.85,-0.05) {Октет 0: Опкод 26 + VEC (0xD3)};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (9.35,-0.05) {Октет 1: ID вектора + SRC};
+  \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (16.25,-0.05) {Октет 2 (при SRC=00 или 11)};
+\end{tikzpicture}
+\end{center}
+
+\begin{itemize}
+  \item \textbf{Вариант 5.1 ($\field{SRC}=00_2$, $\field{SUB}=0$, 3 байта):} загрузка вектора из пары РОН \reg{Rd\_hi}:\reg{Rs\_lo} (\texttt{MSP.ld \$ir0, \$0, \$1}).
+  \item \textbf{Вариант 5.2 ($\field{SRC}=01_2$, $\field{SUB}=0$, 6 байтов):} прямой 32-битный вектор адреса \texttt{imm32} в октетах 2--5 (\texttt{MSP.ld \$pv0, 0x00008000}).
+  \item \textbf{Вариант 5.3 ($\field{SRC}=10_2$, $\field{SUB}=0$, \textbf{2 байта}):} чтение вектора из памяти по указателю \texttt{[\$ptreg]} (\texttt{MSP.ld \$ir1, [\$ptreg]}).
+  \item \textbf{Вариант 5.4 ($\field{SRC}=11_2$, $\field{SUB}=0$, 3 байта):} чтение вектора из памяти по 32-битному указателю в паре РОН \texttt{[\$rd:\$rs]} (\texttt{MSP.ld \$ir2, [\$0:\$1]}).
+  \item \textbf{Вариант 5.5 ($\field{SRC}=11_2$, $\field{SUB}=1$, 6 байтов):} чтение вектора из памяти по прямому 32-битному адресу \texttt{[addr32]} (\texttt{MSP.ld \$ir0, [0x00005000]}).
+\end{itemize}
 
 \subsection{Класс IX: Инструкции ветвления и переходов (2--3 байта)}
 Команды переходов (\texttt{JMP}, \texttt{JCR}, \texttt{JNZ}, \texttt{JZ}) поддерживают три взаимоисключающих режима адресации, задаваемых полем \field{CFG} (биты $[2:0]$ октета 0):
@@ -946,9 +1158,9 @@ $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
 23 & 10111 & POP  & Стек       & Извлечение вершины стека в целевой регистр \\
 24 & 11000 & BSL  & Сдвиги     & Баррельный сдвиг влево с настраиваемым вводом бит \\
 25 & 11001 & BSR  & Сдвиги     & Баррельный сдвиг вправо с контролем флага DBIT \\
-26 & 11010 & MSP  & Система    & Манипуляция специальными регистрами (FREG, PTREG) \\
+26 & 11010 & MSP  & Система    & Манипуляция специальными регистрами (FREG, PTREG, SREG) \\
 27 & 11011 & MOD  & Арифметика & Вычисление остатка от целочисленного деления (modulo) \\
-28 & 11100 & RSV28 & Резерв    & Зарезервировано для расширенной адресации \\
+28 & 11100 & INTR & Система    & Программное прерывание (1 байт, биты [2:0] --- вектор из стека векторов) \\
 29 & 11101 & RSV29 & Резерв    & Зарезервировано для операций с плавающей точкой \\
 30 & 11110 & RSV30 & Резерв    & Зарезервировано для аппаратной криптографии \\
 31 & 11111 & RSV31 & Резерв    & Зарезервировано для расширения системы команд \\
@@ -1043,14 +1255,14 @@ $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
 Пример:    LRM R0, R1       ; EA=(R0<<16)|R1, запись R0 в MEM[EA]
 }{%
 \BitDiagramDynamic{00110}{DST,SZ}{Rs [7:5] \enspace | \enspace Rd [4:2]}{Imm / Addr}{Параметры сохранения (2--4 байта)}%
-\textbf{Октет 0:} бит $[8]$ (\field{SZ}) задаёт разрядность ($0 = 1$ байт, $1 = 2$ байта / слово); биты $[10:9]$ (\field{DST}) задают целевой приёмник данных ($0$ --- запись сразу за кодом инструкции, $1$ --- запись по указателю за инструкцией, $2$ --- косвенно по 24-битному указателю \reg{PTREG}, $3$ --- косвенно по паре регистров пользователя).\\
-\textbf{Октет 1:} биты $[7:5]$ задают регистр-источник \reg{Arg1} (\reg{Rs} / \reg{R\_hi}), биты $[4:2]$ задают регистр \reg{Arg2} (\reg{R\_lo}). В режиме $\field{DST} = 3$ два регистра формируют 32-битное число, из которого используются 24 бита адреса (\reg{Arg1} --- старшие биты адреса и источник данных, \reg{Arg2} --- младшие 16 бит). Уничтожение существующих данных по адресу записи является ответственностью программиста.%
+\textbf{Октет 0:} бит $[8]$ (\field{SZ}) задаёт разрядность ($0 = 1$ байт, $1 = 2$ байта / слово); биты $[10:9]$ (\field{DST}) задают целевой приёмник данных ($0$ --- запись сразу за кодом инструкции, $1$ --- запись по указателю за инструкцией, $2$ --- косвенно по 32-битному указателю \reg{PTREG}, $3$ --- косвенно по паре регистров пользователя).\\
+\textbf{Октет 1:} биты $[7:5]$ задают регистр-источник \reg{Arg1} (\reg{Rs} / \reg{R\_hi}), биты $[4:2]$ задают регистр \reg{Arg2} (\reg{R\_lo}). В режиме $\field{DST} = 3$ два регистра формируют полный 32-битный физический адрес (\reg{Arg1} --- старшие 16 бит адреса и источник данных, \reg{Arg2} --- младшие 16 бит). Уничтожение существующих данных по адресу записи является ответственностью программиста.%
 }{Все флаги регистра состояния \reg{FREG} сохраняются без изменений.}{%
 Инструкция \texttt{LRM} является фундаментальным механизмом выгрузки регистровых данных процессора LIM M2 ($R0$--$R7$) в оперативную память и внешние порты периферии. Архитектура поддерживает четыре ортогональных режима адресации:\\
 1. В режиме $\field{DST} = 0$ процессор записывает $1$ или $2$ байта непосредственно в память вслед за инструкцией (\reg{PC}) со сдвигом счетчика команд. Режим применим для динамических буферов и самомодификации кода; перезапись данных лежит на ответственности программиста.\\
 2. В режиме $\field{DST} = 1$ за инструкцией считывается 16-битный абсолютный адрес, по которому сохраняются данные.\\
-3. В режиме $\field{DST} = 2$ запись производится по 24-битному системному адресу регистра \reg{PTREG}. При активном флаге \texttt{FREG.AIP} (бит 12) регистр \reg{PTREG} автоматически инкрементируется на $+1$ или $+2$, обеспечивая аппаратный потоковый DMA-вывод массивов в память без программных циклов.\\
-4. В режиме $\field{DST} = 3$ используется пара 16-битных регистров: \reg{Arg1} и \reg{Arg2} образуют 32-битное составное число, из которого младшие 24 бита задают физический адрес ($\text{Addr}[23:0]$). Данные из \reg{Arg1} записываются по вычисленному адресу, обеспечивая прямой доступ ко всему адресному пространству 16 МБ.%
+3. В режиме $\field{DST} = 2$ запись производится по 32-битному системному адресу регистра \reg{PTREG}. При активном флаге \texttt{FREG.AIP} (бит 12) регистр \reg{PTREG} автоматически инкрементируется на $+1$ или $+2$, обеспечивая аппаратный потоковый DMA-вывод массивов в память без программных циклов.\\
+4. В режиме $\field{DST} = 3$ используется пара 16-битных регистров: \reg{Arg1} и \reg{Arg2} образуют полный 32-битный составной физический адрес ($\text{Addr}[31:0] = (\reg{Arg1} \ll 16) \mid \reg{Arg2}$). Данные из \reg{Arg1} записываются по вычисленному адресу, обеспечивая прямой доступ ко всему адресному пространству 4 ГБ.%
 }
 \InstructionPage{LRR}{00111}{Пересылка}{Межрегистровое перемещение (копирование из точки Б в точку А)}{%
 \small
@@ -1257,20 +1469,24 @@ $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
 \textbf{Октет 0:} код операции \bits{11001}, биты $[2:0]$ прямо задают сдвигаемый регистр \reg{Rd} (\texttt{R0}--\texttt{R7}).\\
 \textbf{Октет 1:} весь байт (\bits{[7:0]}) указывает число тактов сдвига \field{shift} ($0$--$16$). Физически сдвиг реализуется потактовым циклом на 16 D-триггерах. Длина команды: 2 байта.%
 }{Последний вытесненный бит сохраняется в FREG.DBIT (бит 13). Флаг нуля FREG.ZF устанавливается при равенстве результата нулю. Поведение определяется FREG.SMOD (бит 14) и FREG.DBIT (бит 13).}{Итеративный сдвиговый регистр на D-триггерах: стоимость всего $\approx 300$ транзисторов вместо $\approx 30\,000$ для матричного однотактового сдвигателя. Сдвиг на 16 бит требует на 15 тактов больше, чем сдвиг на 1 бит.}
-\InstructionPage{MSP}{11010}{Система}{Манипуляция специальными регистрами (FREG, PTREG)}{%
+\InstructionPage{MSP}{11010}{Система}{Манипуляция спецрегистрами (FREG, PTREG, SREG, VEC)}{%
 \small
-Сигнатура: MSP sreg, [op], args : работа со спец-регистрами \\
+Сигнатура: MSP sreg, [op], args : работа со спец-регистрами (2--6 байт) \\
 Операция:  
   \textbf{Прямая загрузка (бит 10 = 0):} \\
-  \quad sreg=00 (FREG):  FREG <- Rs[15:0] (октет 1: [7:5]=Rs) \\
-  \quad sreg=01 (PTREG): PTREG <- (Rs\_hi $\ll$ 16) | Rs\_lo (октет 1: [7:5]=Rs\_hi, [4:2]=Rs\_lo) \\
+  \quad sreg=00 (FREG):  FREG <- Rs[15:0] или imm16 / [addr16] / [\$ptreg] \\
+  \quad sreg=01 (PTREG): 32-битный указатель PTREG (4 ГБ): из РОН, imm32, [\$ptreg], [addr32] \\
+  \quad sreg=10 (SREG):  32-битный указатель стека SREG: из РОН, imm32, [\$ptreg], [addr32] \\
+  \quad sreg=11 (VEC):   32-битный вектор прерывания (\$ir0..\$ir15) или зоны (\$pv0..\$pv15) \\
   \textbf{Модификация (бит 10 = 1):} \\
-  \quad sreg=00 (FREG):  FREG <- FREG $\odot$ Rs (октет 1: [7:6]=op \{AND,OR,XOR,XNOR\}, [5:3]=Rs) \\
-  \quad sreg=01 (PTREG): PTREG <- PTREG $\pm$ Rs (октет 1: [7]=op \{ADD,SUB\}, [6:4]=Rs) \\[2pt]
-Пример:    MSP FREG, R0         ; Загрузка во FREG значения R0 \\
-           MSP PTREG, R0, R1    ; Загрузка 24-битного PTREG = \{R0, R1\} \\
-           MSP FREG, OR, R2     ; Наложение маски: FREG = FREG | R2 \\
-           MSP PTREG, ADD, R3   ; Смещение адреса: PTREG = PTREG + R3
+  \quad sreg=00 (FREG):  FREG <- FREG $\odot$ Mask \{AND, OR, XOR, XNOR\} \\
+  \quad sreg=01 (PTREG): PTREG <- PTREG $\pm$ Offset \{ADD, SUB\} \\
+  \quad sreg=10 (SREG):  SREG <- SREG $\pm$ Offset \{ADD, SUB\} \\[2pt]
+Пример:    MSP.ld \$ir0, 0x00010000     ; Установка вектора IRQ0 (6 байт) \\
+           MSP.ld \$pv0, 0x00008000     ; Начало защищенной Зоны Привилегий 0 \\
+           MSP.ld \$pv1, 0x00008FFF     ; Конец защищенной Зоны Привилегий 0 \\
+           MSP.ld \$ptreg, [\$ptreg]    ; Нативное 1-тактовое разыменование \\
+           MSP.or \$freg, 0x0200        ; Включение глобальных прерываний MIE
 }{%
 \noindent\begin{tikzpicture}[x=0.9cm,y=0.55cm]
   \draw[thick,fill=limblue] (0,0) rectangle (4.2,1.05);
@@ -1281,7 +1497,7 @@ $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
   \draw[thick,fill=gray!20] (12.8,0) rectangle (15.2,1.05);
   \node[text=white,font=\bfseries\tiny,align=center] at (2.1,0.52) {MSP (5б)\\11010};
   \node[text=white,font=\bfseries\tiny,align=center] at (4.85,0.52) {Mode\\0/1};
-  \node[text=white,font=\bfseries\tiny,align=center] at (6.15,0.52) {Reg\\00/01};
+  \node[text=white,font=\bfseries\tiny,align=center] at (6.15,0.52) {Reg\\00..10};
   \node[font=\bfseries\tiny,align=center] at (8.6,0.52) {Оп/Рег 1\\бит [7:5]};
   \node[font=\bfseries\tiny,align=center] at (11.4,0.52) {Рег 2 / Маска\\бит [4:2]};
   \node[font=\bfseries\tiny,align=center] at (14.0,0.52) {RSV\\бит [1:0]};
@@ -1311,9 +1527,9 @@ $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
   \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (3.4,-0.05) {Октет 0: Опкод + Режим + Селектор};
   \node[anchor=north,font=\tiny\bfseries\color{limblue}] at (11.2,-0.05) {Октет 1: Параметры операции (2 байта)};
 \end{tikzpicture}\par\vspace{1.5mm}%
-\textbf{Октет 0:} код операции \bits{11010}. Бит $[10]$ (бит 2 октета 0) задаёт режим: $0$ --- прямая загрузка, $1$ --- модификация. Биты $[9:8]$ (биты 1--0 октета 0) задают селектор: $00$ = \reg{FREG}, $01$ = \reg{PTREG}.\\
-\textbf{Октет 1:} при загрузке ($[10]=0$) задаёт источник: \reg{Rs} для \reg{FREG} или пару \reg{Rs\_hi}, \reg{Rs\_lo} для \reg{PTREG}. При модификации ($[10]=1$) биты $[7:6]$ кодируют операцию (для \reg{FREG}: AND, OR, XOR, XNOR; для \reg{PTREG}: ADD, SUB), а биты $[5:3]$ задают ровно один регистр операнда/маски \reg{Rs}. Длина команды: 2 байта.%
-}{Флаги FREG модифицируются напрямую либо через маски. Арифметика PTREG формирует флаг переноса CF через АЛУ.}{Универсальный управляющий примитив системного уровня.}
+\textbf{Октет 0:} код операции \bits{11010}. Бит $[10]$ (бит 2 октета 0) задаёт режим: $0$ --- прямая загрузка, $1$ --- модификация. Биты $[9:8]$ (биты 1--0 октета 0) задают селектор: $00$ = \reg{FREG}, $01$ = \reg{PTREG}, $10$ = \reg{SREG}.\\
+\textbf{Октет 1:} при загрузке ($[10]=0$) задаёт источник: \reg{Rs} для \reg{FREG} или пару \reg{Rs\_hi}, \reg{Rs\_lo} для 24-битных регистров \reg{PTREG} и \reg{SREG}. При модификации ($[10]=1$) биты $[7:6]$ кодируют операцию (для \reg{FREG}: AND, OR, XOR, XNOR; для \reg{PTREG} и \reg{SREG}: ADD, SUB), а биты $[5:3]$ задают ровно один регистр операнда/маски \reg{Rs}. Длина команды: 2 байта.%
+}{Флаги FREG модифицируются напрямую либо через маски. Арифметика PTREG и SREG формирует флаг переноса CF через АЛУ.}{Универсальный управляющий примитив системного уровня для работы с флагами, указателем памяти и указателем стека.}
 \InstructionPage{MOD}{11011}{Арифметика}{Целочисленный остаток от деления (modulo)}{%
 \small
 Сигнатура: MOD arg0, arg1, arg2 : arg0 = arg1 \% arg2 \\
@@ -1324,14 +1540,17 @@ $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
 \textbf{Октет 0:} код операции \bits{11011}, биты $[2:0]$ задают целевой регистр \reg{Rd} (\texttt{R0}--\texttt{R7}, первый аргумент, получатель остатка).\\
 \textbf{Октет 1:} биты $[7:5]$ задают делимое \reg{Rs1} (\texttt{R0}--\texttt{R7}); биты $[4:2]$ задают делитель \reg{Rs2} (\texttt{R0}--\texttt{R7}); биты $[1:0]$ содержат \bits{00}. Длина команды: 2 байта.%
 }{При делении на ноль взводится аппаратный флаг ошибки EM (Error Math) без зависания ядра; обновляет ZF.}{Вычисляет остаток от целочисленного деления делимого Rs1 на делитель Rs2 и сохраняет результат непосредственно в целевой регистр Rd, не перезаписывая промежуточные результаты в аккумуляторах.}
-\InstructionPage{RSV28}{11100}{Резерв}{Аппаратное расширение функционала}{%
+\InstructionPage{INTR}{11100}{Система}{Программное прерывание по вектору из стека векторов ядра}{%
 \small
-Сигнатура: RSV28 : зарезервировано \\
-Операция:  Reserved for LIM architecture hardware extensions
+Сигнатура: INTR vec(IMM3) : вызов вектора прерывания 0..7 \\
+Операция:  SREG <- SREG - 2, MEM[SREG] <- PC \\
+           SREG <- SREG - 2, MEM[SREG] <- FREG \\
+           FREG.INTR <- 1, FREG.MIE <- 0, PC <- VECTORS[vec] \\[2pt]
+Пример:    INTR 3           ; Программное прерывание по вектору 3 (1 байт)
 }{%
-\BitDiagramOneByte{11100}{000}%
-Зарезервировано для будущих ревизий архитектуры LIM. Длина: 1 байт.%
-}{Не определено.}{Зарезервировано.}
+\BitDiagramOneByte{11100}{VEC [2:0]}%
+\textbf{Однобайтовая инструкция (длина: 1 байт).} Октет 0: биты $[7:3]$ содержат опкод \bits{11100}, а младшие 3 бита $[2:0]$ прямо задают номер вектора \field{vec} ($0$--$7$) из внутреннего стека векторов в процессоре. Второй байт из шины памяти не запрашивается.%
+}{Устанавливает флаг нахождения в прерывании FREG.INTR = 1 (бит 15) и сбрасывает маску внешних прерываний FREG.MIE = 0 (бит 9); исходное состояние FREG сохраняется в стек.}{Обеспечивает однотактовый программный вызов системных обработчиков и ловушек ОС (Syscall / Trap) по индексу из внутреннего стека векторов процессора с автоматическим сохранением контекста на стеке SREG.}
 \InstructionPage{RSV29}{11101}{Резерв}{Аппаратное расширение функционала}{%
 \small
 Сигнатура: RSV29 : зарезервировано \\
@@ -1358,27 +1577,28 @@ $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
 }{Не определено.}{Зарезервировано.}
 
 \clearpage
-\section{Физический интерфейс и цоколёвка (34-выводный корпус)}
-Процессор размещается в высоконадёжном компактном 34-выводном корпусе с двухрядным расположением выводов:
+\section{Физический интерфейс и цоколёвка (50-выводный корпус)}
+Процессор размещается в 50-выводном корпусе DIP-50 / QFP-52 с нативной 32-разрядной шиной адреса и 8-битной (однобайтовой) внешней шиной данных:
 
 \begin{center}
 \begin{tikzpicture}[font=\sffamily\scriptsize,
-  pinbox/.style={draw,thick,fill=white,minimum width=6mm,minimum height=4mm,inner sep=0pt,font=\bfseries\tiny}]
-\def\chipW{3.2}
-\def\chipH{9.9}
+  pinbox/.style={draw,thick,fill=white,minimum width=6mm,minimum height=3.5mm,inner sep=0pt,font=\bfseries\tiny}]
+\def\chipW{3.4}
+\def\chipH{10.8}
 \draw[thick,fill=limlight] (0,0) rectangle (\chipW,-\chipH);
 \draw[thick] ($(\chipW/2,0)+(-0.35,0)$) arc (180:360:0.35);
-\node[font=\bfseries\Large,text=limblue,rotate=-90] at (\chipW/2,-\chipH/2) {LIM M2};
+\node[font=\bfseries\large,text=limblue,rotate=-90] at (\chipW/2,-\chipH/2) {LIM M2 (50-pin)};
 \foreach \i/\sigL/\sigR in {
-  1/A0/D0, 2/A1/D1, 3/A2/D2, 4/A3/D3, 5/A4/D4, 6/A5/D5, 7/A6/D6, 8/A7/D7,
-  9/A8/IA, 10/A9/VCC, 11/A10/GND, 12/A11/RD, 13/A12/WD, 14/A13/RF, 15/A14/AL, 16/A15/RDI, 17/CLK1/CLK2
+  1/A0/A31, 2/A1/A30, 3/A2/A29, 4/A3/A28, 5/A4/A27, 6/A5/A26, 7/A6/A25, 8/A7/A24,
+  9/A8/D7, 10/A9/D6, 11/A10/D5, 12/A11/D4, 13/A12/D3, 14/A13/D2, 15/A14/D1, 16/A15/D0,
+  17/A16/GND, 18/A17/VCC, 19/A18/RD, 20/A19/WD, 21/A20/RF, 22/A21/IA, 23/A22/RDI, 24/A23/RESET, 25/CLK1/CLK2
 } {
-  \pgfmathsetmacro{\y}{-\i * 0.55}
-  \pgfmathtruncatemacro{\pinR}{35 - \i}
+  \pgfmathsetmacro{\y}{-\i * 0.40}
+  \pgfmathtruncatemacro{\pinR}{51 - \i}
   \node[pinbox] at (0,\y) {\i};
-  \node[anchor=east] at (-0.38,\y) {\sigL};
+  \node[anchor=east,font=\tiny] at (-0.38,\y) {\sigL};
   \node[pinbox] at (\chipW,\y) {\pinR};
-  \node[anchor=west] at (\chipW+0.38,\y) {\sigR};
+  \node[anchor=west,font=\tiny] at (\chipW+0.38,\y) {\sigR};
 }
 \end{tikzpicture}
 \end{center}
@@ -1388,15 +1608,15 @@ $$\texttt{LRR Rd, Rs} \quad \implies \quad \text{Rd} \leftarrow \text{Rs}$$
 \toprule
 Вывод & Тип & Описание системного сигнала \\
 \midrule
-A0--A15    & Выход / Tri-State & 16-разрядная магистраль адреса (мультиплексируется с защёлкой AL). \\
-D0--D7     & Двунаправленный   & 8-разрядная внешняя шина данных обмена с памятью и периферией. \\
+A0--A31    & Выход / Tri-State & 32-разрядная нативная магистраль адреса (прямой физический доступ к 4 ГБ памяти без окон и банков). \\
+D0--D7     & Двунаправленный   & 8-разрядная (однобайтовая) внешняя шина данных обмена с памятью и периферией. \\
 CLK1, CLK2 & Вход              & Двухфазная тактовая синхронизация с защитой от перекрытия фаз. \\
-VCC, GND   & Питание           & Основные шины питания логики (+5 В номинал). \\
-RD, WD     & Выход             & Стробы чтения (Read Enable) и записи (Write Enable) шины. \\
-AL         & Выход             & Address Latch: строб фиксации адреса во внешнем регистре. \\
-RF         & Вход              & Ready Flag: аппаратная квитанция готовности ведомого устройства. \\
+RESET      & Вход              & Аппаратный сигнал сброса процессора (активный низкий). \\
 RDI        & Вход              & Raw Direct Interrupt: приоритетный вход аппаратного прерывания. \\
-IA         & Выход             & Interruption Accepted / Interrupt Acknowledge: строб подтверждения прерывания устройствам; процессор ожидает считывания номера вектора с шины данных. \\
+IA         & Выход             & Interruption Accepted / Interrupt Acknowledge: строб подтверждения прерывания устройству. \\
+RF         & Вход              & Ready Flag: аппаратная квитанция готовности ведомого устройства памяти/периферии. \\
+RD, WD     & Выход             & Стробы чтения (Read Enable) и записи (Write Enable) системной шины. \\
+VCC, GND   & Питание           & Основные шины цифрового питания (+3.3 В / +5 В номинал) и земля. \\
 \bottomrule
 \end{tabularx}
 
@@ -1496,6 +1716,129 @@ VEC 8--15 & 0x08--0x0F & Общие (HW / SW) & Пользовательские
   $$\text{PC} \leftarrow \text{Memory}[\reg{SREG}], \quad \reg{SREG} \leftarrow \reg{SREG} + 2$$
   \item Процессор возобновляет выполнение прерванного потока инструкций со следующего такта без потерь промежуточных данных.
 \end{enumerate}
+
+\clearpage
+\section{Язык ассемблера и компилятор LIM M2 (\texttt{limasm.py})}
+
+Для разработки программного обеспечения, системных прошивок и операционных систем под архитектуру \textbf{LIM M2} реализован двухпроходный компилятор ассемблера \texttt{LIM2/sim/limasm.py}, транслирующий исходный код (\texttt{.asm} / \texttt{.lasm}) одновременно в бинарный образ памяти (\texttt{.bin}) и шестнадцатеричный дамп (\texttt{.hex}).
+
+\subsection{Именование регистров и суффиксы размера операндов}
+В языке ассемблера LIM M2 используется строгая, наглядная система обозначения регистров через префикс \texttt{\$}:
+\begin{itemize}
+  \item \textbf{Регистры общего назначения (16 бит):} обозначаются как \texttt{\$0}, \texttt{\$1}, \texttt{\$2}, \texttt{\$3}, \texttt{\$4}, \texttt{\$5}, \texttt{\$6}, \texttt{\$7} (для совместимости компилятор также принимает запись \texttt{R0}--\texttt{R7} и \texttt{\$r0}--\texttt{\$r7}).
+  \item \textbf{Специальные системные регистры:}
+    \begin{itemize}
+      \item \texttt{\$ptreg} --- 24-битный адресный регистр-указатель (\reg{PTREG});
+      \item \texttt{\$freg} --- 16-битный регистр состояния и флагов (\reg{FREG});
+      \item \texttt{\$sreg} (или \texttt{\$sp}) --- 24-битный системный указатель стека (\reg{SREG});
+      \item \texttt{\$vec0}--\texttt{\$vec7} --- регистры внутреннего стека векторов прерываний процессора.
+    \end{itemize}
+  \item \textbf{Суффиксы размера данных (\texttt{.b} / \texttt{.w} / \texttt{.d}):} в инструкциях, где требуется явно указать размер обрабатываемых данных, после мнемоники через точку пишется суффикс:
+    \begin{itemize}
+      \item \texttt{XXX.b} --- \textbf{byte} (1 байт / 8 бит, аппаратный бит $\field{SZ}=0$);
+      \item \texttt{XXX.w} --- \textbf{word} (1 слово / 16 бит, аппаратный бит $\field{SZ}=1$, используется по умолчанию);
+      \item \texttt{XXX.d} --- \textbf{doubleword} (двойное слово / 24--32 бита, для полных 24-битных адресов и составных пар).
+    \end{itemize}
+\end{itemize}
+
+\subsection{Арифметические и унарные регистровые инструкции}
+Вычислительные инструкции АЛУ работают исключительно с регистрами общего назначения, придерживаясь правила «сначала приёмник, затем источники»:
+\begin{itemize}
+  \item \textbf{Трёхоперандная арифметика (\texttt{ADD}, \texttt{SUB}, \texttt{MUL}, \texttt{DIV}, \texttt{MOD}, 2 байта):}
+\begin{verbatim}
+ADD $0, $1, $2      ; $0 = $1 + $2 (также допустима запись: ADD R0, R1, R1)
+SUB $3, $0, $1      ; $3 = $0 - $1
+MUL $4, $1, $2      ; $4 = $1 * $2 (старшие 16 бит фиксируются в остатке АЛУ)
+DIV $5, $4, $1      ; $5 = $4 / $1 (остаток от деления фиксируется в АЛУ)
+MOD $6, $0, $2      ; $6 = $0 % $2 (прямое получение остатка от деления)
+\end{verbatim}
+  \item \textbf{Унарные однобайтовые операции (\texttt{INC}, \texttt{DEC}, \texttt{NOT}, 1 байт):} кодируются ровно одним октетом (старшие 5 бит --- опкод, младшие 3 бита --- индекс регистра):
+\begin{verbatim}
+INC $0              ; $0 = $0 + 1 (1 байт, возможна запись INC R0)
+DEC $1              ; $1 = $1 - 1 (1 байт, возможна запись DEC R1)
+NOT $2              ; $2 = ~$2    (1 байт, побитовая инверсия)
+\end{verbatim}
+\end{itemize}
+
+\subsection{Загрузка и выгрузка памяти (\texttt{LMR} и \texttt{LRM}): числа, ссылки \texttt{[...]} и пары регистров}
+В командах обмена с памятью \texttt{LMR} (Load Memory to Register) и \texttt{LRM} (Load Register to Memory) тип второго аргумента однозначно определяет аппаратный режим адресации (\field{SRC} / \field{DST} = 0..3):
+\begin{enumerate}
+  \item \textbf{Просто число без скобок (непосредственное значение, $\field{SRC}=0$ / $\field{DST}=0$):} если аргумент записан просто числом, он трактуется как непосредственная константа в потоке кода сразу за инструкцией:
+\begin{verbatim}
+LMR.b $0, 0x42          ; Загрузить 1 байт (0x42) непосредственно в $0
+LMR.w $1, 0x1234        ; Загрузить 16-битное слово (0x1234) непосредственно в $1
+\end{verbatim}
+  \item \textbf{Число или метка в квадратных скобках \texttt{[addr]} (прямая ссылка на данные в памяти, $\field{SRC}=1$ / $\field{DST}=1$):} квадратные скобки означают разыменование адреса (обращение к ячейке памяти по указанной ссылке):
+\begin{verbatim}
+LMR.w $0, [0x1000]      ; Прочитать 16-битное слово из памяти по адресу 0x1000 в $0
+LRM.w $0, [0x1000]      ; Записать 16-битное слово из $0 в память по адресу 0x1000
+LMR.b $2, [0x8000]      ; Прочитать 1 байт по адресу 0x8000 в младший байт $2
+\end{verbatim}
+  \item \textbf{Ссылка через специальный регистр-указатель \texttt{[\$ptreg]} ($\field{SRC}=2$ / $\field{DST}=2$, 2 байта):} если адрес данных находится в 24-битном регистре \reg{PTREG}, он указывается в квадратных скобках. При установленном флаге \reg{FREG.AIP} указатель автоматически инкрементируется на 1 (\texttt{.b}) или 2 (\texttt{.w}) байта после каждого обращения:
+\begin{verbatim}
+LMR.w $0, [$ptreg]      ; $0 = MEM16[$ptreg] (команда занимает всего 2 байта)
+LRM.b $4, [$ptreg]      ; MEM8[$ptreg] = $4  (запись байта по указателю $ptreg)
+\end{verbatim}
+  \item \textbf{Составной 24-битный поинтер на основе пары регистров \texttt{[\$hi:\$lo]} ($\field{SRC}=3$ / $\field{DST}=3$, 2 байта):} позволяет сформировать полный 24-битный физический адрес из двух 16-битных регистров общего назначения ($\text{EA} = ((\$0 \ll 16) \mid \$1) \ \& \ \text{0xFFFFFF}$). При чтении (\texttt{LMR}) старший регистр пары перезаписывается считанными данными:
+\begin{verbatim}
+LMR $0, [$0:$1]         ; EA = ($0 << 16) | $1, результат MEM[EA] загружается в $0
+                        ; (также поддерживается запись с запятой: LMR, $0, [$0:$1])
+LRM $0, [$0:$1]         ; Запись значения $0 по 24-битному адресу ($0 << 16) | $1
+\end{verbatim}
+\end{enumerate}
+
+\subsection{Манипуляция специальными регистрами (\texttt{MSP}) и многократное разыменование указателей}
+Инструкция \texttt{MSP} использует точечную нотацию субопераций и поддерживает как регистры, так и непосредственные константы и ссылки в квадратных скобках:
+\begin{itemize}
+  \item \textbf{Модификация флагового регистра \texttt{\$freg} битовыми масками (\texttt{MSP.and}, \texttt{MSP.or}, \texttt{MSP.xor}, \texttt{MSP.xnor}):}
+\begin{verbatim}
+MSP.and $freg, 0x0001   ; Наложить маску AND на флаговый регистр: FREG = FREG & 0x0001
+MSP.or  $freg, 0x1000   ; Установить бит 12 (AIP — автоинкремент PTREG)
+MSP.xor $freg, $2       ; Инвертировать биты FREG по маске из регистра $2
+\end{verbatim}
+  \item \textbf{Прямая загрузка глухой настройки или поинтера (\texttt{MSP.ld}):}
+\begin{verbatim}
+MSP.ld $freg, 0x0000        ; Загрузить глухую настройку (0x0000) в регистр флагов
+MSP.ld [$ptreg], $0, $1     ; Собрать 24-битный поинтер в PTREG из пары ($0 << 16) | $1
+                            ; (эквивалентно MSP.ld $ptreg, $0, $1)
+MSP.ld $ptreg, 0xA000       ; Загрузить непосредственный адрес 0xA000 в PTREG
+MSP.ld $ptreg, [0xA000]     ; Загрузить в PTREG поинтер, лежащий в памяти по ссылке [0xA000]
+MSP.ld $sreg, 0x3F00        ; Инициализировать 24-битный указатель стека SREG
+MSP.add $ptreg, 0x0010      ; Сместить указатель PTREG на +16 байт (аналогично MSP.sub)
+\end{verbatim}
+  \item \textbf{Нативное многократное разыменование цепочки указателей через \texttt{\$ptreg}:}
+  В архитектуре LIM M2 нативное аппаратное разыменование указателя «сам в себя» ($\reg{PTREG} \leftarrow \text{MEM}[\reg{PTREG}]$) работает напрямую с регистром \reg{PTREG} за одну 2-байтовую инструкцию \texttt{MSP.ld \$ptreg, [\$ptreg]} (в то время как для обычных регистров пришлось бы вручную выгружать и перезагружать адрес). Поэтому при обходе многоуровневых указателей (списков, деревьев, таблиц дескрипторов) базовый адрес загружается в \texttt{\$ptreg}, после чего команда \texttt{MSP.ld \$ptreg, [\$ptreg]} выполняется столько раз (последовательно или в цикле), сколько уровней разыменования требуется пройти:
+\begin{verbatim}
+MSP.ld $ptreg, 0xA000       ; Загружаем начальный адрес цепочки указателей (0xA000)
+MSP.ld $ptreg, [$ptreg]     ; 1-е разыменование: PTREG = *0xA000
+MSP.ld $ptreg, [$ptreg]     ; 2-е разыменование: PTREG = **0xA000
+MSP.ld $ptreg, [$ptreg]     ; 3-е разыменование: PTREG = ***0xA000
+LMR.w  $0, [$ptreg]         ; Читаем финальные данные по разыменованному адресу в $0
+\end{verbatim}
+  Или в виде цикла, где счётчик в регистре \texttt{\$1} задаёт глубину разыменования:
+\begin{verbatim}
+    MSP.ld $ptreg, 0xA000   ; Начальный адрес цепочки
+    LMR.w  $1, 3            ; Количество разыменований = 3
+deref_loop:
+    MSP.ld $ptreg, [$ptreg] ; PTREG <- MEM16[PTREG]
+    DEC    $1               ; $1 = $1 - 1
+    JNZ    deref_loop       ; Повторять, пока $1 != 0
+    LMR.w  $0, [$ptreg]     ; Чтение целевого значения в $0
+\end{verbatim}
+\end{itemize}
+
+\subsection{Использование CLI-компилятора (\texttt{.bin} и \texttt{.hex})}
+Компилятор запускается из командной строки и автоматически создаёт как бинарный файл (\texttt{.bin}), так и шестнадцатеричный файл (\texttt{.hex}), готовые к запуску в симуляторе \texttt{sim.py}:
+\begin{verbatim}
+# Компиляция программы с выводом таблицы меток и дизассемблированного листинга (-l):
+python3 LIM2/sim/limasm.py LIM2/sim/demo.asm -l
+
+# Явное указание имен выходных .bin и .hex файлов и базового адреса:
+python3 LIM2/sim/limasm.py program.asm -o build/program.bin -x build/program.hex -b 0x0000
+
+# Прямой запуск .asm, .bin или .hex файла в интерактивном симуляторе LIM M2:
+python3 LIM2/sim/sim.py LIM2/sim/demo.asm -i
+\end{verbatim}
 
 \section{Заключение}
 Архитектура \textbf{LIM M2} сочетает в себе проверенную надёжность многотактового микропрограммного управления и современную эффективность мультиплексорного тракта без третьего состояния. Такое решение обеспечивает чистейшие цифровые фронты, исключает паразитные токи и гарантирует непревзойдённую стабильность при масштабировании тактовых частот от 200 МГц до пределов физического кремния.
