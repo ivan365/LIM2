@@ -227,10 +227,10 @@ The LIM M2 processor implements a clean, orthogonal instruction encoding scheme 
 | **11001** | `0x19` | **`BSR`** | Shift | Barrel Shift Right (zero-fill or cyclic rotate via `DBIT` if `SMOD=1`) |
 | **11010** | `0x1A` | **`MSP`** | System | Manage Special Registers (`FREG`, `PTREG`, `SREG`, `VEC`) |
 | **11011** | `0x1B` | **`MOD`** | Arithmetic | Integer remainder (modulo): `Rd = Rs1 % Rs2` |
-| **11100** | `0x1C` | **`INTR`** | System | Software interrupt (1 byte): lowest 3 bits `[2:0]` select vector `0..7` from the processor vector table |
-| **11101** | `0x1D` | **`RSV29`** | Reserved | Floating-Point Unit (FPU) slot |
-| **11110** | `0x1E` | **`RSV30`** | Reserved | Hardware cryptography accelerator slot |
-| **11111** | `0x1F` | **`RSV31`** | Reserved | Future architecture expansion slot |
+| **11100** | `0x1C` | **`INTR` / `INT`** | System | Software interrupt (2 bytes): lowest 4 bits of 2nd byte `[3:0]` select vector `0..15` (`$ir0..$ir15`) |
+| **11101** | `0x1D` | **`CALL`** | Jump | Subroutine call with 32-bit return address push (`SREG -= 4`, `MEM32[SREG] = PC`) |
+| **11110** | `0x1E` | **`RET`** | Jump | Subroutine return with 32-bit PC pop (`PC = MEM32[SREG]`, `SREG += 4`) |
+| **11111** | `0x1F` | **`HALT`** | Control | Hardware core execution halt (`HLT`) |
 
 ---
 
@@ -679,9 +679,8 @@ Variant 3.1: Load from GPR pair ($rd, $rs or [$rd:$rs]) (length 2 bytes):
 |    Rd_hi      |    Rs_lo      | 0   0 |
 +---+---+---+---+---+---+---+---+
  \___ 3 bits ___/ \___ 3 bits ___/ \SRC=00/
-   High 16 bits     Low 16 bits
-Example: MSP.ld $ptreg, $0, $1 -> D1 04 (Rd_hi=0, Rs_lo=1, SRC=00)
-Example: MSP.ld [$ptreg], $0, $1 -> D1 04 (pointer builder alias)
+Example: MSP.ld $ptreg, [$0:$1] -> D1 04 (PTREG = ($0 << 16) | $1)
+Example: MSP.ld $sreg, [$0:$1]  -> D2 04 (SREG = ($0 << 16) | $1)
 
 Variant 3.2: Direct load of imm32 / imm16 (length 4–6 bytes):
 Octet 1: [ 0   0   0   0   0 | SZ | 0   1 ] (SZ: 0=16b, 1=24/32b; SRC=01)
@@ -748,11 +747,11 @@ Commands: `MSP.ld $ir0..$ir15, ...` (interrupt vectors, IDs: 0..15), `MSP.ld $pv
 ```text
 Octet 0: [ 11010 | 0 | 11 ] = 0xD3 (26, LD, VEC)
 
-Variant 5.1: From GPR pair ($rd, $rs or $rd:$rs) (length 3 bytes):
+Variant 5.1: From compound register pair [$rd:$rs] (length 3 bytes):
 Octet 1: [      Vector_ID [7:3]      | 0   0 | 0 ] (SRC=00, SUB=0)
 Octet 2: [    Rd_hi [7:5]    |    Rs_lo [4:2]    | 0   0 ]
-Example: MSP.ld $ir0, $0, $1  -> D3 00 04 (3 bytes: ID=0, Rd=0, Rs=1)
-Example: MSP.ld $pv0, $2, $3  -> D3 80 4C (3 bytes: ID=16, Rd=2, Rs=3)
+Example: MSP.ld $ir0, [$0:$1] -> D3 00 04 (3 bytes: ID=0, Rd=0, Rs=1)
+Example: MSP.ld $pv0, [$2:$3] -> D3 80 4C (3 bytes: ID=16, Rd=2, Rs=3)
 
 Variant 5.2: Direct 32-bit address vector imm32 (length 6 bytes):
 Octet 1: [      Vector_ID [7:3]      | 0   1 | 0 ] (SRC=01, SUB=0)
@@ -789,8 +788,8 @@ Example: MSP.ld $ir0, [0x00005000] -> D3 07 00 00 50 00 (6 bytes)
 | **2** | `MSP.ld $ir1, 0x00025000` | `11010 0 11` (`0xD3`) | `00001 01 0` (`0x0A`) | `00 02 50 00` | `D3 0A 00 02 50 00` | Configure IRQ1 interrupt vector to address 0x00025000 |
 | **3** | `MSP.ld $pv0, 0x00008000` | `11010 0 11` (`0xD3`) | `10000 01 0` (`0x82`) | `00 00 80 00` | `D3 82 00 00 80 00` | Lower boundary of Privilege Zone 0 ($pv0 = 0x8000) |
 | **4** | `MSP.ld $pv1, 0x00008FFF` | `11010 0 11` (`0xD3`) | `10001 01 0` (`0x8A`) | `00 00 8F FF` | `D3 8A 00 00 8F FF` | Upper boundary of Privilege Zone 0 ($pv1 = 0x8FFF) |
-| **5** | `MSP.ld $ir2, $0:$1` | `11010 0 11` (`0xD3`) | `00010 00 0` (`0x10`) | `000 001 00` (`0x04`) | `D3 10 04` | Load IRQ2 vector from GPR pair ($0 = high, $1 = low) |
-| **6** | `MSP.ld $pv2, $2, $3` | `11010 0 11` (`0xD3`) | `10010 00 0` (`0x90`) | `010 011 00` (`0x4C`) | `D3 90 4C` | Load Zone 1 start ($pv2) from GPR pair $2 and $3 |
+| **5** | `MSP.ld $ir2, [$0:$1]` | `11010 0 11` (`0xD3`) | `00010 00 0` (`0x10`) | `000 001 00` (`0x04`) | `D3 10 04` | Load IRQ2 vector from GPR pair ($0 = high, $1 = low) |
+| **6** | `MSP.ld $pv2, [$2:$3]` | `11010 0 11` (`0xD3`) | `10010 00 0` (`0x90`) | `010 011 00` (`0x4C`) | `D3 90 4C` | Load Zone 1 start ($pv2) from GPR pair $2 and $3 |
 | **7** | `MSP.ld $ir3, [$ptreg]` | `11010 0 11` (`0xD3`) | `00011 10 0` (`0x1C`) | — | `D3 1C` | Indirect load of IRQ3 vector from memory via PTREG (2 bytes) |
 | **8** | `MSP.ld $pv3, [$ptreg]` | `11010 0 11` (`0xD3`) | `10011 10 0` (`0x9C`) | — | `D3 9C` | Indirect load of Zone 1 limit ($pv3) via PTREG (2 bytes) |
 | **9** | `MSP.ld $ir4, [$4:$5]` | `11010 0 11` (`0xD3`) | `00100 11 0` (`0x26`) | `100 101 00` (`0x94`) | `D3 26 94` | Load IRQ4 vector via 32-bit pointer in registers [$4:$5] |
@@ -803,7 +802,7 @@ Example: MSP.ld $ir0, [0x00005000] -> D3 07 00 00 50 00 (6 bytes)
 | **16** | `MSP.ld $freg, $2` | `11010 0 00` (`0xD0`) | `010 00 00 0` (`0x40`) | — | `D0 40` | Direct restoration of FREG from register $2 |
 | **17** | `MSP.ld $freg, [$ptreg]` | `11010 0 00` (`0xD0`) | `000 00 10 0` (`0x04`) | — | `D0 04` | Load saved flags word from stack buffer via PTREG |
 | **18** | `MSP.ld $ptreg, 0x00100000` | `11010 0 01` (`0xD1`) | `000 000 01` (`0x01`) | `00 10 00 00` | `D1 01 00 10 00 00` | Direct load of 32-bit address into PTREG (1 Megabyte) |
-| **19** | `MSP.ld $ptreg, $0, $1` | `11010 0 01` (`0xD1`) | `000 001 00` (`0x04`) | — | `D1 04` | Assemble 32-bit PTREG from two GPRs ($0 = high, $1 = low) |
+| **19** | `MSP.ld $ptreg, [$0:$1]` | `11010 0 01` (`0xD1`) | `000 001 00` (`0x04`) | — | `D1 04` | Assemble 32-bit PTREG from compound pointer [$0:$1] ($0 = high, $1 = low) |
 | **20** | `MSP.ld $ptreg, [$ptreg]` | `11010 0 01` (`0xD1`) | `000 000 10` (`0x02`) | — | `D1 02` | **Single-cycle native pointer dereference** (PTREG <- MEM[PTREG]) |
 | **21** | `MSP.ld $ptreg, [0x5000]` | `11010 0 01` (`0xD1`) | `000 000 11` (`0x03`) | `50 00` | `D1 03 50 00` | Load pointer from fixed address table in memory |
 | **22** | `MSP.add $ptreg, 0x0020` | `11010 1 01` (`0xD5`) | `0 000 01 00` (`0x04`) | `00 20` | `D5 04 00 20` | Hardware advance of PTREG by +32 bytes |
@@ -875,14 +874,26 @@ LIM2/
 
 ### 1. Running the Simulator
 
-Run the interactive architectural simulation with the bundled demo program:
+The LIM M2 simulation environment offers both a modern Tkinter **GUI** and a full-featured terminal **TUI**:
 
 ```bash
-# Launch interactive terminal simulation (accepts .asm, .bin, or .hex)
+# Launch modern desktop GUI (embedded displays, inline memory editor, zero-leak rendering):
+python3 sim/sim.py compiler/demo.asm
+python3 sim/sim.py compiler/demo.hex
+
+# Launch interactive terminal simulation (TUI with multi-column layout):
 python3 sim/sim.py compiler/demo.asm -i
+python3 sim/sim.py compiler/demo.hex -i
 ```
 
-### 2. Compiling the Datasheets
+### 2. Desktop GUI Highlights
+* **Integrated Display Subsystem:** Single-window interface with dropdown selection across UART serial console, CRT text terminal, 256-color pixel screen (`3-2-3` / `3-3-2`), and 16.7M TrueColor 24bpp display.
+* **Inline Memory Editing:** 16-row hex dump panel with instant byte editing directly in the table on click.
+* **Full Mousewheel & Touchpad Navigation:** Smooth scrolling across registers, code disassembly, memory, and monitor panels on macOS, Linux, and Windows.
+* **Peak Performance:** VRAM version dirty tracking (`_vram_version`), leak-free in-place C-level zoom scaling, and a smooth 30 FPS redraw throttle during continuous execution.
+* **Clean Hardware IRQ:** Dedicated physical line control via the bus pin dashboard.
+
+### 3. Compiling the Datasheets
 
 To rebuild the formal LaTeX documentation and export fresh PDF specifications:
 

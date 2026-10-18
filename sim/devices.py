@@ -44,6 +44,9 @@ class BaseDevice:
         latency: int = 0,
         ready_pin: str = "RF",
         default_data: Optional[Union[bytes, bytearray, List[int], str]] = None,
+        file: Optional[str] = None,
+        image: Optional[str] = None,
+        persist: bool = False,
         default_offset: int = 0
     ):
         self.start = start
@@ -69,6 +72,7 @@ class BaseDevice:
 
         self.bus: Any = None
         self._raw = bytearray(self.size)
+        self._vram_version: int = 0
         self._last_accessed_offset: int = 0
         self._last_modified_step: Dict[int, int] = {}
         self.orphaned_bytes: int = 0
@@ -76,8 +80,20 @@ class BaseDevice:
         self.data_ranges: List[dict] = []
         self.annotations: Dict[int, str] = {}
 
-        if default_data is not None:
-            self.load_data(default_data, offset=default_offset)
+        self.persist = bool(persist)
+        self.file_path: Optional[str] = None
+
+        target_file = image if image is not None else file
+        init_payload = target_file if target_file is not None else default_data
+
+        if init_payload is not None:
+            self.load_data(init_payload, offset=default_offset)
+        elif self.persist and target_file:
+            self.file_path = target_file
+
+        if self.persist and self.file_path:
+            import atexit
+            atexit.register(self.save)
 
     # --------------------------------------------------------------------------
     # Основные методы чтения/записи (пользователь переопределяет их)
@@ -99,6 +115,7 @@ class BaseDevice:
         if 0 <= offset < self.size:
             val8 = value & 0xFF
             self._raw[offset] = val8
+            self._vram_version = getattr(self, "_vram_version", 0) + 1
             cur_st = getattr(self.bus, "current_step", 0) if self.bus else 0
             self._last_modified_step[offset] = cur_st
 
@@ -120,6 +137,7 @@ class BaseDevice:
         idx = address - self.start
         if 0 <= idx < self.size:
             self._last_accessed_offset = idx
+            self._vram_version = getattr(self, "_vram_version", 0) + 1
             self.write(idx, value & 0xFF)
 
     read_physical = read_phys
@@ -206,6 +224,28 @@ class BaseDevice:
         """Реакция на изменение ножки шины (CS, IRQ, RESET, ALE и т.д.)."""
         pass
 
+    def on_bus_cycle(self, bus: Any):
+        """
+        Низкоуровневый физический хук прямого контроля над шиной.
+        Вызывается при любом стробе/такте шины.
+        Позволяет писать проверки вида:
+            if bus.rd == 1: ...
+            if bus.wr == 1: ...
+            if bus.addressbus == 0x1234: ...
+        """
+        pass
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("_"):
+            raise AttributeError(name)
+        if hasattr(self, "bus") and self.bus is not None:
+            uname = name.upper()
+            if uname in ("RD", "WR", "MREQ", "IORQ", "IRQ", "RF", "HALT", "RESET", "CS") or (hasattr(self.bus, "pins") and uname in self.bus.pins):
+                return getattr(self.bus, name)
+            if name in ("addressbus", "databus"):
+                return getattr(self.bus, name)
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+
     # --------------------------------------------------------------------------
     # Вспомогательные методы работы с буфером
     # --------------------------------------------------------------------------
@@ -219,18 +259,65 @@ class BaseDevice:
               * иначе — записывает строку символов в кодировке ASCII
         """
         import os
+        from pathlib import Path
+
+        def _find_file(p: str) -> Optional[str]:
+            candidates = [
+                p,
+                os.path.join(os.getcwd(), p),
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), p),
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "compiler", p),
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", p),
+            ]
+            for c in candidates:
+                if os.path.isfile(c):
+                    return os.path.abspath(c)
+            return None
+
         if isinstance(data, (bytes, bytearray, list)):
             self.flash(data, offset=offset)
         elif isinstance(data, str):
-            if os.path.exists(data):
-                with open(data, "rb") as f:
-                    self.flash(f.read(), offset=offset)
-            else:
-                toks = data.strip().split()
-                if toks and all(re.match(r'^(?:0x)?[0-9a-fA-F]{1,4}$', t) for t in toks):
-                    self.flash([int(t, 16) & 0xFF for t in toks], offset=offset)
+            fpath = _find_file(data)
+            if fpath:
+                self.file_path = fpath
+                if fpath.endswith(".hex"):
+                    # Читаем hex-файл
+                    hex_bytes = []
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        for line in f:
+                            line = line.strip()
+                            if not line or line.startswith(";") or line.startswith("#"):
+                                continue
+                            if ":" in line:
+                                line = line.split(":", 1)[1]
+                            for tok in line.split():
+                                try:
+                                    hex_bytes.append(int(tok, 16) & 0xFF)
+                                except ValueError:
+                                    pass
+                    self.flash(hex_bytes, offset=offset)
                 else:
-                    self.flash([ord(c) for c in data], offset=offset)
+                    # Читаем бинарный файл
+                    with open(fpath, "rb") as f:
+                        self.flash(f.read(), offset=offset)
+            else:
+                # Если файл еще не существует на диске, но передан путь (например, 'drive.bin' или включен persist):
+                is_filename = data.endswith((".bin", ".hex", ".img", ".rom", ".dat")) or "/" in data or "\\" in data or self.persist
+                if is_filename:
+                    target_abs = os.path.abspath(data)
+                    dirname = os.path.dirname(target_abs)
+                    if dirname and not os.path.exists(dirname):
+                        os.makedirs(dirname, exist_ok=True)
+                    # Создаем пустой образ нужного размера
+                    with open(target_abs, "wb") as f:
+                        f.write(bytes(self.size))
+                    self.file_path = target_abs
+                else:
+                    toks = data.strip().split()
+                    if toks and all(re.match(r'^(?:0x)?[0-9a-fA-F]{1,4}$', t) for t in toks):
+                        self.flash([int(t, 16) & 0xFF for t in toks], offset=offset)
+                    else:
+                        self.flash([ord(c) for c in data], offset=offset)
 
     def flash(self, data: Union[List[int], bytes, bytearray], offset: int = 0):
         """Записывает массив байтов в память устройства напрямую."""
@@ -238,9 +325,30 @@ class BaseDevice:
             target = offset + i
             if target < self.size:
                 self._raw[target] = val & 0xFF
+        self._vram_version = getattr(self, "_vram_version", 0) + 1
 
     def dump(self) -> bytes:
         return bytes(self._raw)
+
+    def save(self, path: Optional[str] = None) -> Optional[str]:
+        """
+        Сохраняет текущий дамп памяти устройства в бинарный образ на диск.
+        Если path не указан, использует self.file_path.
+        """
+        target = path or self.file_path
+        if not target:
+            return None
+        import os
+        try:
+            dirname = os.path.dirname(os.path.abspath(target))
+            if dirname and not os.path.exists(dirname):
+                os.makedirs(dirname, exist_ok=True)
+            with open(target, "wb") as f:
+                f.write(bytes(self._raw))
+            return target
+        except Exception as e:
+            print(f"[DEVICE:{self.name}] Ошибка сохранения образа в '{target}': {e}")
+            return None
 
     def __getitem__(self, offset: int) -> int:
         return self.read(offset)
@@ -320,11 +428,12 @@ class BaseDevice:
             start_row = max(0, min(total_dev_rows - w_rows, center_row - w_rows // 2))
         end_row = start_row + w_rows
 
+        fmt = "06X" if self.end > 0xFFFF else "04X"
         lines = []
         if start_row > 0:
-            lines.append(f"... [пропущено 0x{self.start:04X}..0x{self.start + start_row * 16 - 1:04X}] ...")
+            lines.append(f"... [пропущено 0x{self.start:{fmt}}..0x{self.start + start_row * 16 - 1:{fmt}}] ...")
         else:
-            lines.append(f"... [0x{self.start:04X} начало памяти] ...")
+            lines.append(f"... [0x{self.start:{fmt}} начало памяти] ...")
 
         for r in range(start_row, end_row):
             row_start = r * 16
@@ -352,16 +461,21 @@ class BaseDevice:
                 else:
                     hex_right.append(token)
 
-                h_l = " ".join(hex_left)
-                h_r = " ".join(hex_right)
-                a_s = "".join(ascii_parts)
-            lines.append(f"0x{self.start + row_start:04X}: {h_l}  {h_r}  |{a_s}|")
+            h_l = " ".join(hex_left)
+            h_r = " ".join(hex_right)
+            a_s = "".join(ascii_parts)
+            addr_val = self.start + row_start
+            if self.end > 0xFFFF:
+                lines.append(f"0x{addr_val:06X}: {h_l} {h_r} |{a_s}|")
+            else:
+                lines.append(f"0x{addr_val:04X}: {h_l}  {h_r}  |{a_s}|")
 
         if end_row < total_dev_rows:
-            lines.append(f"... [пропущено 0x{self.start + end_row * 16:04X}..0x{self.end:04X}] ...")
+            lines.append(f"... [пропущено 0x{self.start + end_row * 16:{fmt}}..0x{self.end:{fmt}}] ...")
         else:
-            lines.append(f"... [0x{self.end:04X} конец памяти] ...")
+            lines.append(f"... [0x{self.end:{fmt}} конец памяти] ...")
         return "\n".join(lines)
+
 
 
 # ==============================================================================
@@ -369,7 +483,7 @@ class BaseDevice:
 # ==============================================================================
 
 class RAMDevice(BaseDevice):
-    """Блок оперативной памяти (Read/Write RAM) с настраиваемым временем доступа и начальными данными."""
+    """Блок оперативной памяти (Read/Write RAM) с настраиваемым временем доступа, файлом образа и сохранением состояния (persist=True)."""
     def __init__(
         self,
         start: int,
@@ -379,8 +493,13 @@ class RAMDevice(BaseDevice):
         latency: int = 0,
         ready_pin: str = "RF",
         default_data: Optional[Union[bytes, bytearray, List[int], str]] = None,
+        file: Optional[str] = None,
+        image: Optional[str] = None,
+        persist: bool = False,
         default_offset: int = 0
     ):
+        target_file = image if image is not None else file
+        init_data = target_file if target_file is not None else default_data
         super().__init__(
             start=start,
             end=end,
@@ -389,13 +508,15 @@ class RAMDevice(BaseDevice):
             readonly=False,
             latency=latency,
             ready_pin=ready_pin,
-            default_data=default_data,
+            default_data=init_data,
+            file=target_file,
+            persist=persist,
             default_offset=default_offset
         )
 
 
 class ROMDevice(BaseDevice):
-    """Блок постоянной памяти (Read-Only ROM) с поддержкой времени выборки и начальных данных."""
+    """Блок постоянной памяти (Read-Only ROM) с поддержкой времени выборки, файла образа и сохранения."""
     def __init__(
         self,
         start: int,
@@ -406,9 +527,13 @@ class ROMDevice(BaseDevice):
         latency: int = 0,
         ready_pin: str = "RF",
         default_data: Optional[Union[bytes, bytearray, List[int], str]] = None,
+        file: Optional[str] = None,
+        image: Optional[str] = None,
+        persist: bool = False,
         default_offset: int = 0
     ):
-        init_data = default_data if default_data is not None else data
+        target_file = image if image is not None else file
+        init_data = target_file if target_file is not None else (default_data if default_data is not None else data)
         super().__init__(
             start=start,
             end=end,
@@ -418,6 +543,8 @@ class ROMDevice(BaseDevice):
             latency=latency,
             ready_pin=ready_pin,
             default_data=init_data,
+            file=target_file,
+            persist=persist,
             default_offset=default_offset
         )
 
@@ -475,6 +602,7 @@ class UARTDevice(BaseDevice):
 
     def write(self, offset: int, value: int):
         val8 = value & 0xFF
+        self._vram_version = getattr(self, "_vram_version", 0) + 1
         if offset == 0:  # DATA TX
             char = chr(val8) if 32 <= val8 <= 126 else ("\n" if val8 == 10 else f"\\x{val8:02X}")
             self.tx_history.append(char)
@@ -503,6 +631,7 @@ class UARTDevice(BaseDevice):
             self.rx_buffer.append(ord(ch))
         if self.rx_buffer:
             self._raw[1] |= 0x02  # RX_AVAIL = 1
+        self._vram_version = getattr(self, "_vram_version", 0) + 1
 
     def render_panel(self) -> Optional[str]:
         """Виджет консоли UART."""
@@ -593,3 +722,37 @@ class CustomDevice(BaseDevice):
             self.state_var = val8
             # Можно проверить ножки шины или послать прерывание:
             # if self.bus: self.bus.pins.IRQ.pulse()
+
+
+# ------------------------------------------------------------------------------
+# Удобный импорт графических мониторов и дисплеев (Addons integration)
+# ------------------------------------------------------------------------------
+try:
+    from .addons.display_8bpp import Display8bppDevice, Display256Device
+    from .addons.display_24bpp import Display24bppDevice, Display16MDevice
+    from .addons.pixel_monitor import PixelMonitorDevice
+except Exception:
+    try:
+        from addons.display_8bpp import Display8bppDevice, Display256Device
+        from addons.display_24bpp import Display24bppDevice, Display16MDevice
+        from addons.pixel_monitor import PixelMonitorDevice
+    except Exception:
+        Display8bppDevice = None
+        Display256Device = None
+        Display24bppDevice = None
+        Display16MDevice = None
+        PixelMonitorDevice = None
+
+# Короткие и интуитивные псевдонимы (Aliases) для максимально простого подключения:
+#   from sim.devices import TextScreen, Display256, Display16M, PixelScreen
+TextScreen = TextScreenDevice
+TextTerminal = TextScreenDevice
+Monitor = TextScreenDevice
+Display256 = Display256Device
+Display8bpp = Display8bppDevice
+Display16M = Display16MDevice
+Display24bpp = Display24bppDevice
+PixelScreen = PixelMonitorDevice
+PixelMonitor = PixelMonitorDevice
+UART = UARTDevice
+

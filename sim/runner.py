@@ -154,13 +154,19 @@ class SimulationRunner:
                 print("Выполнение (Ctrl+C для паузы)...")
                 try:
                     start_t = time.time()
+                    last_draw = time.time()
                     steps = 0
+                    print("\033[?25l", end="", flush=True)
                     while not self.cpu.is_halted:
                         if not self.cpu.step():
                             break
                         steps += 1
                         if sim_delay > 0:
                             time.sleep(sim_delay)
+                        now = time.time()
+                        if now - last_draw >= 0.033:
+                            print(self.render_dashboard(clear_screen=True))
+                            last_draw = now
                     el = time.time() - start_t
                     print(self.render_dashboard(clear_screen=True))
                     print(f"Выполнено {steps} тактов за {el:.4f} сек.")
@@ -169,6 +175,8 @@ class SimulationRunner:
                 except KeyboardInterrupt:
                     print(self.render_dashboard(clear_screen=True))
                     print(f"\n[ПАУЗА] Выполнение приостановлено пользователем.")
+                finally:
+                    print("\033[?25h", end="", flush=True)
 
             elif cmd in ("layout", "l"):
                 if len(cmd_parts) > 1:
@@ -472,6 +480,7 @@ def run_cli(
     parser.add_argument("--mode", choices=["16bit", "24bit", "32bit"], default="32bit", help="Режим адресации шины памяти (16bit, 24bit или 32bit)")
     parser.add_argument("-m", "--memory", action="append", nargs="+", help="Диапазоны памяти RAM (напр: -m 0x0000;0x1000)")
     parser.add_argument("-v", "--video-memory", action="append", nargs="+", help="Видеопамять монитора (напр: -v 0x20;0x04;0x8000)")
+    parser.add_argument("-g", "--gui", action="store_true", help="Открыть графическое окно Tkinter для подключенных дисплеев")
     parser.add_argument("-L", "--long-term", nargs="?", const="lim2_state.dump", default=None, metavar="DUMP_FILE", help="Режим долговременной работы (Long-term work): авто-загрузка и сохранение дампа памяти и регистров")
     parser.add_argument("--col-cpu", type=int, default=None, help="Колонка для регистров CPU (1, 2, 3)")
     parser.add_argument("--col-code", type=int, default=None, help="Колонка для дизассемблера (1, 2, 3)")
@@ -558,9 +567,22 @@ def run_cli(
         loaded = runner.load(args.file, at=args.org)
         if not args.quiet:
             print(f"[RUNNER] Загружено {loaded} байт из '{args.file}' по адресу 0x{args.org:04X}")
+    else:
+        # Если файл не указан, автоматически загружаем demo.asm для немедленного старта
+        try:
+            loaded = runner.load("demo.asm", at=args.org)
+            if not args.quiet:
+                print(f"[RUNNER] Файл не указан. Загружена программа по умолчанию: 'demo.asm' ({loaded} байт)")
+        except Exception:
+            pass
 
     if args.pc is not None:
         cpu.pc = args.pc
+
+    if args.gui:
+        for dev in bus.devices:
+            if hasattr(dev, "launch_gui"):
+                dev.launch_gui()
 
     if args.interactive or not args.file:
         runner.run_interactive()
@@ -568,6 +590,12 @@ def run_cli(
         runner.run_batch(max_steps=args.max_steps, verbose=not args.quiet)
         if not args.quiet:
             print(runner.render_dashboard(clear_screen=False))
+        if args.gui:
+            print("\n[GUI] Графическое окно открыто. Нажмите Enter для завершения...")
+            try:
+                input()
+            except (KeyboardInterrupt, EOFError):
+                pass
 
     if args.dump:
         addr, length = args.dump

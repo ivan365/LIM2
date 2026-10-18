@@ -975,7 +975,7 @@ Príkazy \texttt{MSP.ld \$ptreg} ($\field{REG}=01_2$, opkód \texttt{0xD1}) a \t
 \end{center}
 
 \begin{itemize}
-  \item $\field{SRC} = 00_2$ (2 bajty): zloženie adresy z dvojice GPR \reg{Rd\_hi}:\reg{Rs\_lo} (\texttt{MSP.ld \$ptreg, \$0, \$1}).
+  \item $\field{SRC} = 00_2$ (2 bajty): zloženie adresy z dvojice GPR \reg{Rd\_hi}:\reg{Rs\_lo} (\texttt{MSP.ld \$ptreg, [\$0:\$1]}).
   \item $\field{SRC} = 01_2$ (4--6 bajtov): priama adresa \texttt{imm32} (6 bajtov) alebo \texttt{imm16} (4 bajty).
   \item $\field{SRC} = 10_2$ (\textbf{2 bajty}): \textbf{natívne 1-taktové dereferencovanie ukazovateľa} \texttt{[\$ptreg]} (\texttt{PTREG <- MEM[PTREG]}).
   \item $\field{SRC} = 11_2$ (4--6 bajtov): načítanie ukazovateľa z pamäte z priamej adresy \texttt{[addr]} (\texttt{MSP.ld \$ptreg, [0xA000]}).
@@ -1095,7 +1095,7 @@ Príkaz \texttt{MSP.ld} načítava 32-bitové adresy do jedného z 32 vektorový
 \end{center}
 
 \begin{itemize}
-  \item \textbf{Variant 5.1 ($\field{SRC}=00_2$, $\field{SUB}=0$, 3 bajty):} načítanie vektora z dvojice GPR \reg{Rd\_hi}:\reg{Rs\_lo} (\texttt{MSP.ld \$ir0, \$0, \$1}).
+  \item \textbf{Variant 5.1 ($\field{SRC}=00_2$, $\field{SUB}=0$, 3 bajty):} načítanie vektora z dvojice GPR \reg{Rd\_hi}:\reg{Rs\_lo} (\texttt{MSP.ld \$ir0, [\$0:\$1]}).
   \item \textbf{Variant 5.2 ($\field{SRC}=01_2$, $\field{SUB}=0$, 6 bajtov):} priamy 32-bitový vektor adresy \texttt{imm32} v oktetoch 2--5 (\texttt{MSP.ld \$pv0, 0x00008000}).
   \item \textbf{Variant 5.3 ($\field{SRC}=10_2$, $\field{SUB}=0$, \textbf{2 bajty}):} čítanie vektora z pamäte cez ukazovateľ \texttt{[\$ptreg]} (\texttt{MSP.ld \$ir1, [\$ptreg]}).
   \item \textbf{Variant 5.4 ($\field{SRC}=11_2$, $\field{SUB}=0$, 3 bajty):} čítanie vektora z pamäte cez 32-bitový ukazovateľ v dvojici GPR \texttt{[\$rd:\$rs]} (\texttt{MSP.ld \$ir2, [\$0:\$1]}).
@@ -1158,10 +1158,10 @@ Konfiguračné pole oktetu 0 (\bits{[2:0]}) kóduje:
 25 & 11001 & BSR  & Posuny     & Barelový posun doprava s ukladaním do DBIT \\
 26 & 11010 & MSP  & Systém     & Manipulácia so špeciálnymi registrami (FREG, PTREG, SREG) \\
 27 & 11011 & MOD  & Aritmetika & Výpočet zvyšku po celočíselnom delení (modulo) \\
-28 & 11100 & INTR  & Systém    & Softvérové prerušenie podľa indexu vektora v bitoch [2:0] \\
-29 & 11101 & RSV29 & Rezerva   & Rezervované pre koprocesor s pohyblivou rádovou čiarkou \\
-30 & 11110 & RSV30 & Rezerva   & Rezervované pre kryptografické inštrukcie \\
-31 & 11111 & RSV31 & Rezerva   & Rezervované pre budúce rozšírenia architektúry \\
+28 & 11100 & INTR / INT & Systém    & Softvérové prerušenie (2 bajty, bity [3:0] 2. bajtu --- vektor 0..15) \\
+29 & 11101 & CALL  & Skoky       & Volanie podprogramu s uložením 32-bitovej návratovej adresy na zásobník \\
+30 & 11110 & RET   & Skoky       & Návrat z podprogramu s obnovením 32-bitového PC zo zásobníka SREG \\
+31 & 11111 & HALT  & Riadenie   & Hardvérové zastavenie procesora (HLT) \\
 \bottomrule
 \end{longtable}
 \normalsize
@@ -1538,41 +1538,50 @@ Príklad:   MOD R0, R1, R2   ; R0 = R1 \% R2 (zvyšok po delení)
 \textbf{Oktet 0:} kód operácie \bits{11011}, bity $[2:0]$ zadávajú cieľový register \reg{Rd} (\texttt{R0}--\texttt{R7}, prvý argument, príjemca zvyšku).\\
 \textbf{Oktet 1:} bity $[7:5]$ určujú delenec \reg{Rs1} (\texttt{R0}--\texttt{R7}); bity $[4:2]$ určujú deliteľ \reg{Rs2} (\texttt{R0}--\texttt{R7}); bity $[1:0]$ obsahujú \bits{00}. Dĺžka inštrukcie: 2 bajty.%
 }{Pri delení nulou sa aktivuje hardvérový chybový príznak EM (Error Math) bez zamrznutia jadra; aktualizuje ZF.}{Vypočíta zvyšok po celočíselnom delení delenca Rs1 deliteľom Rs2 a uloží výsledok priamo do cieľového registra Rd bez prepisovania medzivýsledkov v akumulátoroch.}
-\InstructionPage{INTR}{11100}{Systém}{Softvérové prerušenie podľa indexu vektora (1 bajt)}{%
+\InstructionPage{INTR}{11100}{Systém}{Softvérové prerušenie podľa tabuľky vektorov (2 bajty)}{%
 \small
-Signatúra: INTR vec3 : vyvolanie vektora prerušenia vec3 (0..7) \\
-Operácia:  SREG <- SREG - 2; MEM16[SREG] <- PC\_next \\
+Signatúra: INTR vec(IMM4) / INT vec : vyvolanie vektora prerušenia 0..15 \\
+Operácia:  SREG <- SREG - 4; MEM32[SREG] <- PC \\
            SREG <- SREG - 2; MEM16[SREG] <- FREG \\
-           FREG.INTR <- 1; FREG.MIE <- 0; PC <- VECTORS[vec3] \\[2pt]
-Príklad:   INTR 3   ; Softvérové prerušenie podľa vektora č. 3 (kód 0xE3)
+           FREG.INTR <- 1; FREG.PRV <- 1; FREG.MIE <- 0; PC <- VECTORS[vec] \\[2pt]
+Príklad:   INT 5    ; Softvérové prerušenie podľa vektora č. 5 (2 bajty)
 }{%
-\BitDiagramOneByte{11100}{vec [2:0]}%
-\textbf{Oktet 0:} kód operácie \bits{11100}, najnižšie 3 bity $[2:0]$ priamo určujú index vektora prerušenia \field{vec3} ($0$--$7$) z vnútorného zásobníka vektorov v procesore. Dĺžka inštrukcie: 1 bajt.%
-}{Nastaví príznak aktívneho prerušenia FREG.INTR (bit 15) na 1 a vynuluje FREG.MIE (bit 9) na 0. Predchádzajúci stav FREG a návratová adresa sa uložia na zásobník.}{Jednobajtová inštrukcia softvérového prerušenia (systémového volania alebo ladiacej pasce) pre okamžitý skok na obslužnú rutinu z vnútornej tabuľky vektorov procesora.}
-\InstructionPage{RSV29}{11101}{Rezerva}{Hardvérové rozšírenie}{%
+\BitDiagramDynamic{11100}{000}{RSV [7:4]}{VEC [3:0]}{Dĺžka: 2 bajty}%
+\textbf{Oktet 0:} kód operácie \bits{11100}, najnižšie 3 bity $[2:0]$ obsahujú \bits{000}. \textbf{Oktet 1:} najvyššie 4 bity $[7:4]$ sú rezervované (\bits{0000}), zatiaľ čo najnižšie 4 bity $[3:0]$ určujú index vektora \field{vec} ($0$--$15$) zo 16 systémových vektorov prerušení (\$ir0..\$ir15). Dĺžka inštrukcie: 2 bajty.%
+}{Nastaví príznak aktívneho prerušenia FREG.INTR (bit 15) na 1, prejde do režimu supervízora (FREG.PRV = 1) a vynuluje FREG.MIE (bit 9) na 0. 32-bitová návratová adresa a 16-bitový stav FREG sa uložia na zásobník SREG.}{Bezpečné systémové volanie (Syscall) alebo ladiaca pasca podľa čísla vektora 0..15 s úplným zachovaním kontextu na zásobníku SREG.}
+\InstructionPage{CALL}{11101}{Skoky}{Volanie podprogramu s uložením PC na zásobník}{%
 \small
-Signatúra: RSV29 : rezervované \\
-Operácia:  Reserved for LIM architecture hardware extensions
+Signatúra: CALL target : SREG -= 4, MEM32[SREG] = PC, PC = target \\
+Kódovanie: Oktet 0: [7:3]=11101, [2:0]=cfg (0: imm16, 1: Rd, 2: [\$ptreg], 3: [addr16]) \\
+Operácia:  ret\_addr <- PC \\
+           SREG <- SREG - 4, MEM32[SREG] <- ret\_addr \\
+           PC <- target \\[2pt]
+Príklad:   CALL func        ; Volanie podprogramu na adrese func (3 bajty) \\
+           CALL \$0          ; Nepriame volanie cez register R0 (2 bajty) \\
+           CALL [\$ptreg]    ; Nepriame volanie cez 32-bitový ukazovateľ PTREG (2 bajty)
 }{%
-\BitDiagramOneByte{11101}{000}%
-Vyhradené pre budúce revízie architektúry LIM. Dĺžka: 1 bajt.%
-}{Nedefinované.}{Rezervované.}
-\InstructionPage{RSV30}{11110}{Rezerva}{Hardvérové rozšírenie}{%
+\BitDiagramDynamic{11101}{CFG}{Target Reg [7:5] \enspace | \enspace RSV}{16-bit Imm Addr}{Dĺžka: 2--3 bajty}%
+\textbf{Oktet 0:} kód operácie \bits{11101}, bity $[2:0]$ určujú režim adresácie cieľa skoku (\field{cfg}): \texttt{0} --- priama 16-bitová adresa (3 bajty), \texttt{1} --- nepriamo cez register \reg{Rd} (2 bajty), \texttt{2} --- cez 32-bitový ukazovateľ \reg{PTREG} (2 bajty), \texttt{3} --- nepriamo cez pamäťový ukazovateľ (3 bajty).\\
+Pred vykonaním skoku sa celá 32-bitová návratová adresa (adresa nasledujúcej inštrukcie) zapíše na vrchol systémového zásobníka \reg{SREG}.%
+}{Príznaky sa nemenia.}{Štandardná inštrukcia volania procedúr a funkcií so zachovaním 32-bitového kontextu na zásobníku SREG.}
+\InstructionPage{RET}{11110}{Skoky}{Návrat z podprogramu s obnovením PC zo zásobníka}{%
 \small
-Signatúra: RSV30 : rezervované \\
-Operácia:  Reserved for LIM architecture hardware extensions
+Signatúra: RET : PC = MEM32[SREG], SREG += 4 \\
+Operácia:  PC <- MEM32[SREG], SREG <- SREG + 4 \\[2pt]
+Príklad:   RET              ; Návrat z podprogramu (1 bajt)
 }{%
 \BitDiagramOneByte{11110}{000}%
-Vyhradené pre budúce revízie architektúry LIM. Dĺžka: 1 bajt.%
-}{Nedefinované.}{Rezervované.}
-\InstructionPage{RSV31}{11111}{Rezerva}{Hardvérové rozšírenie}{%
+\textbf{Jednobajtová inštrukcia (dĺžka: 1 bajt).} Oktet 0: kód operácie \bits{11110}, bity $[2:0]$ obsahujú \bits{000}. Obnoví 32-bitový programový čítač \reg{PC} z vrcholu systémového zásobníka \reg{SREG} a uvoľní 4 bajty zásobníka (\texttt{SREG += 4}).%
+}{Príznaky sa nemenia.}{Symetrická inštrukcia návratu z procedúr a funkcií volaných inštrukciou \texttt{CALL}.}
+\InstructionPage{HALT}{11111}{Riadenie}{Hardvérové zastavenie procesora}{%
 \small
-Signatúra: RSV31 : rezervované \\
-Operácia:  Reserved for LIM architecture hardware extensions
+Signatúra: HALT / HLT : zastavenie jadra \\
+Operácia:  CPU.HALTED <- 1, PINS.HALT <- 1 \\[2pt]
+Príklad:   HALT             ; Úplné zastavenie procesora (1 bajt)
 }{%
 \BitDiagramOneByte{11111}{000}%
-Vyhradené pre budúce revízie architektúry LIM. Dĺžka: 1 bajt.%
-}{Nedefinované.}{Rezervované.}
+\textbf{Jednobajtová inštrukcia (dĺžka: 1 bajt).} Oktet 0: kód operácie \bits{11111}, bity $[2:0]$ obsahujú \bits{000}. Prepne procesor do stavu zastavenia jadra až do prijatia hardvérového signálu RESET alebo prerušenia IRQ.%
+}{Príznaky sa nemenia.}{Ukončenie behu programu alebo prechod do úsporného režimu.}
 
 \clearpage
 \section{Fyzické rozhranie a rozloženie vývodov (50-vývodové puzdro)}
@@ -1741,7 +1750,8 @@ LMR $0, [$0:$1]         ; 24-bitový ukazovateľ z dvojice registrov [$0:$1] (SR
 \begin{verbatim}
 MSP.and $freg, 0x0001       ; Maska AND na stavový register: FREG &= 0x0001
 MSP.ld  $freg, 0x0000       ; Priame nastavenie stavového registra FREG
-MSP.ld  [$ptreg], $0, $1    ; Zostavenie 24-bitového ukazovateľa z dvojice $0, $1
+MSP.ld  $ptreg, [$0:$1]     ; Zostavenie 32-bitového ukazovateľa do PTREG z dvojice [$0:$1]
+MSP.ld  $sreg, [$0:$1]      ; Načítanie 32-bitového ukazovateľa zásobníka SREG z dvojice [$0:$1]
 MSP.ld  $ptreg, 0xA000      ; Priama adresa 0xA000 do PTREG
 MSP.ld  $ptreg, [0xA000]    ; Načítanie ukazovateľa z pamäti [0xA000] do PTREG
 

@@ -1,5 +1,0 @@
-mem_start: 
-    dp 0x100000
-
-kernel_entry:
-    

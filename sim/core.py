@@ -186,6 +186,7 @@ class RegisterSpec:
         is_aux: bool = False,
         is_flag: bool = False,
         is_virtual: bool = False,
+        is_compact: bool = False,
         flag_layout: Optional[List[Tuple[str, str, int]]] = None
     ):
         self.name = name.lower()
@@ -202,6 +203,7 @@ class RegisterSpec:
         self.is_aux = is_aux
         self.is_flag = is_flag
         self.is_virtual = is_virtual
+        self.is_compact = is_compact
         self.flag_layout = flag_layout
         self.hex_len = max(2, (bits + 3) // 4)
 
@@ -236,6 +238,7 @@ class RegisterBank:
         is_aux: bool = False,
         is_flag: bool = False,
         is_virtual: bool = False,
+        is_compact: bool = False,
         flag_layout: Optional[List[Tuple[str, str, int]]] = None
     ):
         """Объявляет регистр заданной разрядности."""
@@ -252,6 +255,7 @@ class RegisterBank:
             is_aux=is_aux,
             is_flag=is_flag,
             is_virtual=is_virtual,
+            is_compact=is_compact,
             flag_layout=flag_layout
         )
         norm = spec.name
@@ -347,11 +351,12 @@ class BaseCPU:
     def __init__(self, name: str = "CPU", bus: Optional[MemoryBus] = None, pc_bits: int = 16):
         self.name = name
         self.bus = bus if bus is not None else MemoryBus()
+        self.bus.cpu = self
         self.regs = RegisterBank(owner=self)
 
         # Системные шины и счетчики
-        self.databus: int = 0
-        self.addressbus: int = 0
+        self._databus: int = 0
+        self._addressbus: int = 0
         self.step_count: int = 0
         self.cycles: int = 0  # Аппаратный счетчик тактов ядра (Clock Cycles)
         self.is_halted: bool = False
@@ -407,6 +412,7 @@ class BaseCPU:
         is_aux: bool = False,
         is_flag: bool = False,
         is_virtual: bool = False,
+        is_compact: bool = False,
         flag_layout: Optional[List[Tuple[str, str, int]]] = None
     ):
         """Объявляет регистр с заданной разрядностью и параметрами отображения."""
@@ -424,8 +430,57 @@ class BaseCPU:
             is_aux=is_aux,
             is_flag=is_flag,
             is_virtual=is_virtual,
+            is_compact=is_compact,
             flag_layout=flag_layout
         )
+
+    def compact_reg(
+        self,
+        name: str,
+        bits: int = 32,
+        default: int = 0,
+        aliases: Optional[List[str]] = None,
+        title: Optional[str] = None,
+        role: str = "",
+        block: str = "TABLE",
+        is_virtual: bool = False
+    ):
+        """
+        Отдельный способ создания табличных/векторных регистров.
+        Функционально не отличается от обычного регистра, но в интерфейсе
+        (TUI и GUI) отображается отдельным окном в виде компактных текстовых строк,
+        а не громоздких блоков.
+        """
+        return self.regs.define(
+            name=name,
+            bits=bits,
+            default=default,
+            aliases=aliases,
+            indexed=False,
+            title=title,
+            role=role,
+            block=block,
+            is_compact=True,
+            is_virtual=is_virtual
+        )
+
+    # Удобные псевдонимы:
+    table_reg = compact_reg
+    vector_reg = compact_reg
+
+    @property
+    def pins(self):
+        """Прямой доступ к ножкам процессора и системной шины: self.pins.IRQ, self.pins.IA."""
+        return self.bus.pins
+
+    def pin(self, name: str, mode: str = "IO", default: int = 0, title: Optional[str] = None):
+        """
+        Объявляет физическую ножку процессора (PINS).
+        Настраивает направление (IN/OUT/IO), начальное состояние и связывает её с шиной:
+          self.pin("IRQ", mode="IN", title="Interrupt Request")
+          self.pin("IA", mode="OUT", title="Interrupt Acknowledge")
+        """
+        return self.bus.pins.define(name=name, mode=mode, default=default, title=title)
 
     def get_register_specs(self) -> List[RegisterSpec]:
         """Возвращает список всех зарегистрированных спецификаций регистров для UI."""
@@ -471,6 +526,49 @@ class BaseCPU:
 
     def __setitem__(self, key: Union[str, int], val: int):
         self.regs.set(key, val)
+
+    # --------------------------------------------------------------------------
+    # Физические шины и стробы (Address Bus, Data Bus, Memory Access)
+    # --------------------------------------------------------------------------
+    @property
+    def databus(self) -> int:
+        return self._databus
+
+    @databus.setter
+    def databus(self, val: int):
+        self._databus = val
+        if self.bus is not None and getattr(self.bus, "_databus", None) != (val & 0xFF):
+            self.bus._databus = val & 0xFF
+
+    @property
+    def addressbus(self) -> int:
+        return self._addressbus
+
+    @addressbus.setter
+    def addressbus(self, val: int):
+        self._addressbus = val
+        if self.bus is not None and getattr(self.bus, "_addressbus", None) != val:
+            self.bus._addressbus = val
+
+    def mem_read8(self, addr: int) -> int:
+        """Физическое чтение байта через шину с выставлением адреса и строба RD."""
+        return self.bus.read8(addr, physical=True)
+
+    def mem_write8(self, addr: int, val: int):
+        """Физическая запись байта через шину с выставлением адреса, данных и строба WR."""
+        self.bus.write8(addr, val, physical=True)
+
+    def mem_read16(self, addr: int, little_endian: bool = False) -> int:
+        return self.bus.read16(addr, little_endian=little_endian, physical=True)
+
+    def mem_write16(self, addr: int, val: int, little_endian: bool = False):
+        self.bus.write16(addr, val, little_endian=little_endian, physical=True)
+
+    def mem_read32(self, addr: int, little_endian: bool = False) -> int:
+        return self.bus.read32(addr, little_endian=little_endian, physical=True)
+
+    def mem_write32(self, addr: int, val: int, little_endian: bool = False):
+        self.bus.write32(addr, val, little_endian=little_endian, physical=True)
 
     # --------------------------------------------------------------------------
     # Program Counter и выборка байтов (Fetch)

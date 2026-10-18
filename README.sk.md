@@ -679,8 +679,8 @@ Variant 3.1: Načítanie z páru registrov GPR ($rd, $rs alebo [$rd:$rs]) (dĺž
 +---+---+---+---+---+---+---+---+
  \___ 3 bity ___/ \___ 3 bity ___/ \SRC=00/
    Vyšších 16 b     Nižších 16 b
-Príklad: MSP.ld $ptreg, $0, $1 -> D1 04 (Rd_hi=0, Rs_lo=1, SRC=00)
-Príklad: MSP.ld [$ptreg], $0, $1 -> D1 04 (alias pre zostavenie ukazovateľa)
+Príklad: MSP.ld $ptreg, [$0:$1] -> D1 04 (PTREG = ($0 << 16) | $1)
+Príklad: MSP.ld $sreg, [$0:$1]  -> D2 04 (SREG = ($0 << 16) | $1)
 
 Variant 3.2: Priame načítanie imm32 / imm16 (dĺžka 4–6 bajtov):
 Oktet 1: [ 0   0   0   0   0 | SZ | 0   1 ] (SZ: 0=16b, 1=24/32b; SRC=01)
@@ -747,11 +747,11 @@ Príkazy: `MSP.ld $ir0..$ir15, ...` (vektory prerušení, ID: 0..15), `MSP.ld $p
 ```text
 Oktet 0: [ 11010 | 0 | 11 ] = 0xD3 (26, LD, VEC)
 
-Variant 5.1: Z páru GPR ($rd, $rs alebo $rd:$rs) (dĺžka 3 bajty):
+Variant 5.1: Zo zloženej dvojice registrov [$rd:$rs] (dĺžka 3 bajty):
 Oktet 1: [      Vector_ID [7:3]      | 0   0 | 0 ] (SRC=00, SUB=0)
 Oktet 2: [    Rd_hi [7:5]    |    Rs_lo [4:2]    | 0   0 ]
-Príklad: MSP.ld $ir0, $0, $1  -> D3 00 04 (3 bajty: ID=0, Rd=0, Rs=1)
-Príklad: MSP.ld $pv0, $2, $3  -> D3 80 4C (3 bajty: ID=16, Rd=2, Rs=3)
+Príklad: MSP.ld $ir0, [$0:$1] -> D3 00 04 (3 bajty: ID=0, Rd=0, Rs=1)
+Príklad: MSP.ld $pv0, [$2:$3] -> D3 80 4C (3 bajty: ID=16, Rd=2, Rs=3)
 
 Variant 5.2: Priamy 32-bitový vektor adresy imm32 (dĺžka 6 bajtov):
 Oktet 1: [      Vector_ID [7:3]      | 0   1 | 0 ] (SRC=01, SUB=0)
@@ -788,8 +788,8 @@ Príklad: MSP.ld $ir0, [0x00005000] -> D3 07 00 00 50 00 (6 bajtov)
 | **2** | `MSP.ld $ir1, 0x00025000` | `11010 0 11` (`0xD3`) | `00001 01 0` (`0x0A`) | `00 02 50 00` | `D3 0A 00 02 50 00` | Nastavenie vektora prerušenia IRQ1 na adresu 0x00025000 |
 | **3** | `MSP.ld $pv0, 0x00008000` | `11010 0 11` (`0xD3`) | `10000 01 0` (`0x82`) | `00 00 80 00` | `D3 82 00 00 80 00` | Spodná hranica Zóny Privilégií 0 ($pv0 = 0x8000) |
 | **4** | `MSP.ld $pv1, 0x00008FFF` | `11010 0 11` (`0xD3`) | `10001 01 0` (`0x8A`) | `00 00 8F FF` | `D3 8A 00 00 8F FF` | Horná hranica Zóny Privilégií 0 ($pv1 = 0x8FFF) |
-| **5** | `MSP.ld $ir2, $0:$1` | `11010 0 11` (`0xD3`) | `00010 00 0` (`0x10`) | `000 001 00` (`0x04`) | `D3 10 04` | Načítanie vektora IRQ2 z páru registrov ($0 = vyššie, $1 = nižšie) |
-| **6** | `MSP.ld $pv2, $2, $3` | `11010 0 11` (`0xD3`) | `10010 00 0` (`0x90`) | `010 011 00` (`0x4C`) | `D3 90 4C` | Načítanie začiatku Zóny 1 ($pv2) z páru registrov $2 a $3 |
+| **5** | `MSP.ld $ir2, [$0:$1]` | `11010 0 11` (`0xD3`) | `00010 00 0` (`0x10`) | `000 001 00` (`0x04`) | `D3 10 04` | Načítanie vektora IRQ2 zo zloženej dvojice [$0:$1] ($0 = vyššie, $1 = nižšie) |
+| **6** | `MSP.ld $pv2, [$2:$3]` | `11010 0 11` (`0xD3`) | `10010 00 0` (`0x90`) | `010 011 00` (`0x4C`) | `D3 90 4C` | Načítanie začiatku Zóny 1 ($pv2) zo zloženej dvojice [$2:$3] |
 | **7** | `MSP.ld $ir3, [$ptreg]` | `11010 0 11` (`0xD3`) | `00011 10 0` (`0x1C`) | — | `D3 1C` | Nepriame načítanie vektora IRQ3 z pamäte cez PTREG (2 bajty) |
 | **8** | `MSP.ld $pv3, [$ptreg]` | `11010 0 11` (`0xD3`) | `10011 10 0` (`0x9C`) | — | `D3 9C` | Nepriame načítanie hranice Zóny 1 ($pv3) cez PTREG (2 bajty) |
 | **9** | `MSP.ld $ir4, [$4:$5]` | `11010 0 11` (`0xD3`) | `00100 11 0` (`0x26`) | `100 101 00` (`0x94`) | `D3 26 94` | Načítanie vektora IRQ4 cez 32-bitový ukazovateľ v registroch [$4:$5] |
@@ -802,7 +802,7 @@ Príklad: MSP.ld $ir0, [0x00005000] -> D3 07 00 00 50 00 (6 bajtov)
 | **16** | `MSP.ld $freg, $2` | `11010 0 00` (`0xD0`) | `010 00 00 0` (`0x40`) | — | `D0 40` | Priame obnovenie príznakov FREG z registra $2 |
 | **17** | `MSP.ld $freg, [$ptreg]` | `11010 0 00` (`0xD0`) | `000 00 10 0` (`0x04`) | — | `D0 04` | Načítanie uloženého slova príznakov zo zásobníkového buffera cez PTREG |
 | **18** | `MSP.ld $ptreg, 0x00100000` | `11010 0 01` (`0xD1`) | `000 000 01` (`0x01`) | `00 10 00 00` | `D1 01 00 10 00 00` | Priame načítanie 32-bitovej adresy do PTREG (1 Megabajt) |
-| **19** | `MSP.ld $ptreg, $0, $1` | `11010 0 01` (`0xD1`) | `000 001 00` (`0x04`) | — | `D1 04` | Zloženie 32-bitového PTREG z dvoch GPR ($0 = vyššie, $1 = nižšie) |
+| **19** | `MSP.ld $ptreg, [$0:$1]` | `11010 0 01` (`0xD1`) | `000 001 00` (`0x04`) | — | `D1 04` | Zloženie 32-bitového PTREG zo zloženej dvojice [$0:$1] ($0 = vyššie, $1 = nižšie) |
 | **20** | `MSP.ld $ptreg, [$ptreg]` | `11010 0 01` (`0xD1`) | `000 000 10` (`0x02`) | — | `D1 02` | **1-taktová natívna dereferencia ukazovateľa** (PTREG <- MEM[PTREG]) |
 | **21** | `MSP.ld $ptreg, [0x5000]` | `11010 0 01` (`0xD1`) | `000 000 11` (`0x03`) | `50 00` | `D1 03 50 00` | Načítanie ukazovateľa z fixnej bunky tabuľky pamäte |
 | **22** | `MSP.add $ptreg, 0x0020` | `11010 1 01` (`0xD5`) | `0 000 01 00` (`0x04`) | `00 20` | `D5 04 00 20` | Hardvérový posun ukazovateľa PTREG dopredu o +32 bajtov |

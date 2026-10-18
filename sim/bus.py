@@ -7,15 +7,17 @@ import re
 from typing import Dict, List, Optional, Tuple, Union, Callable, Any
 
 try:
-    from .devices import BaseDevice
+    from .devices import BaseDevice, RAMDevice, ROMDevice, TextScreenDevice, UARTDevice, TimerDevice
 except (ImportError, ValueError):
-    from devices import BaseDevice
+    from devices import BaseDevice, RAMDevice, ROMDevice, TextScreenDevice, UARTDevice, TimerDevice
 
 
 class Pin:
     """Одиночная сигнальная линия (ножка) с поддержкой стробов и коллбэков."""
-    def __init__(self, name: str, default: int = 0):
+    def __init__(self, name: str, default: int = 0, mode: str = "IO", title: Optional[str] = None):
         self.name = name
+        self.mode = mode.upper()  # "IN", "OUT", "IO"
+        self.title = title or name
         self._val = default & 1
         self._listeners: List[Callable[[int], None]] = []
 
@@ -43,35 +45,67 @@ class Pin:
     def __int__(self) -> int:
         return self._val
 
+    def __index__(self) -> int:
+        return self._val
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, int):
+            return self._val == other
+        if isinstance(other, Pin):
+            return self._val == other._val
+        if isinstance(other, bool):
+            return bool(self._val) is other
+        return False
+
+    def __ne__(self, other: Any) -> bool:
+        return not self.__eq__(other)
+
     def __repr__(self) -> str:
-        return f"Pin({self.name}={self._val})"
+        return f"Pin({self.name}={self._val}, mode={self.mode})"
 
 
 class PinBank:
-    """Банк ножек шины процессора (RD, WR, MREQ, IORQ, CS, IRQ и любые кастомные)."""
+    """Банк ножек шины процессора (RD, WR, MREQ, IORQ, CS, IRQ, IA и любые кастомные)."""
     def __init__(self):
         self._pins: Dict[str, Pin] = {}
+
+    def define(self, name: str, mode: str = "IO", default: int = 0, title: Optional[str] = None) -> Pin:
+        uname = name.upper()
+        if uname not in self._pins:
+            self._pins[uname] = Pin(uname, default=default, mode=mode, title=title)
+        else:
+            self._pins[uname].mode = mode.upper()
+            if title:
+                self._pins[uname].title = title
+            if default:
+                self._pins[uname].set(default)
+        return self._pins[uname]
 
     def __getattr__(self, name: str) -> Pin:
         if name.startswith("_"):
             raise AttributeError(name)
-        if name not in self._pins:
-            self._pins[name] = Pin(name)
-        return self._pins[name]
+        uname = name.upper()
+        if uname not in self._pins:
+            self._pins[uname] = Pin(uname)
+        return self._pins[uname]
 
     def __setattr__(self, name: str, val: Any):
         if name.startswith("_"):
             super().__setattr__(name, val)
         else:
-            if name not in self._pins:
-                self._pins[name] = Pin(name)
-            self._pins[name].set(int(val))
+            uname = name.upper()
+            if uname not in self._pins:
+                self._pins[uname] = Pin(uname)
+            self._pins[uname].set(int(val))
 
     def __getitem__(self, name: str) -> int:
-        return int(getattr(self, name))
+        return int(getattr(self, name.upper()))
 
     def __setitem__(self, name: str, val: int):
-        setattr(self, name, val)
+        setattr(self, name.upper(), val)
+
+    def __contains__(self, name: str) -> bool:
+        return name.upper() in self._pins
 
 
 class MemoryFrame(BaseDevice):
@@ -222,11 +256,12 @@ class MemoryFrame(BaseDevice):
             start_row = max(0, min(total_dev_rows - w_rows, center_row - w_rows // 2))
         end_row = start_row + w_rows
 
+        fmt = "06X" if self.end > 0xFFFF else "04X"
         lines = []
         if start_row > 0:
-            lines.append(f"... [пропущено 0x{self.start:04X}..0x{self.start + start_row * 16 - 1:04X}] ...")
+            lines.append(f"... [пропущено 0x{self.start:{fmt}}..0x{self.start + start_row * 16 - 1:{fmt}}] ...")
         else:
-            lines.append(f"... [0x{self.start:04X} начало памяти] ...")
+            lines.append(f"... [0x{self.start:{fmt}} начало памяти] ...")
 
         for r in range(start_row, end_row):
             row_start = r * 16
@@ -257,32 +292,347 @@ class MemoryFrame(BaseDevice):
             h_l = " ".join(hex_left)
             h_r = " ".join(hex_right)
             a_s = "".join(ascii_parts)
-            lines.append(f"0x{self.start + row_start:04X}: {h_l}  {h_r}  |{a_s}|")
+            addr_val = self.start + row_start
+            if self.end > 0xFFFF:
+                lines.append(f"0x{addr_val:06X}: {h_l} {h_r} |{a_s}|")
+            else:
+                lines.append(f"0x{addr_val:04X}: {h_l}  {h_r}  |{a_s}|")
 
         if end_row < total_dev_rows:
-            lines.append(f"... [пропущено 0x{self.start + end_row * 16:04X}..0x{self.end:04X}] ...")
+            lines.append(f"... [пропущено 0x{self.start + end_row * 16:{fmt}}..0x{self.end:{fmt}}] ...")
         else:
-            lines.append(f"... [0x{self.end:04X} конец памяти] ...")
+            lines.append(f"... [0x{self.end:{fmt}} конец памяти] ...")
+
         return "\n".join(lines)
 
 
 class MemoryBus:
     """
-    Универсальная шина памяти для симулятора с поддержкой нескольких режимов.
+    Универсальная шина памяти для симулятора с поддержкой нескольких режимов
+    и строгой физической симуляцией линий управления (RD, WR, MREQ, IORQ, ножек адреса и данных).
     """
 
     def __init__(self, size: int = 65536, address_bits: int = 32, data_bits: int = 8, mode: str = "32bit"):
-        self.address_bits = address_bits
-        self.data_bits = data_bits
         self.mode = mode.lower()  # "16bit", "24bit" или "32bit"
-        self.size = size if size != 65536 or address_bits == 16 else (1 << min(address_bits, 24))
+        if "16" in self.mode:
+            self.address_bits = 16
+        elif "24" in self.mode:
+            self.address_bits = 24
+        else:
+            self.address_bits = address_bits
+        self.data_bits = data_bits
         self.mask = (1 << self.address_bits) - 1
+        self.size = size if size != 65536 or self.address_bits == 16 else (1 << min(self.address_bits, 24))
         self.ram = bytearray(min(self.size, 16 * 1024 * 1024))
         self.pins = PinBank()
         self.devices: List[Tuple[int, int, str, Callable[[int], int], Callable[[int, int], None], Optional[Any]]] = []
         self.devices_by_name: Dict[str, Any] = {}
         self._devices_list: List[Any] = []
         self.current_step: int = 0
+        self.cpu: Optional[Any] = None
+
+        # Физические шины адреса и данных
+        self._addressbus: int = 0
+        self._databus: int = 0
+
+        # Мониторинг конфликтов (Bus Contention)
+        self.collision_warnings: List[str] = []
+        self.last_collision: Optional[str] = None
+        self.on_collision: Optional[Callable[[str], None]] = None
+
+        # Подключение обработчиков аппаратных стробов RD и WR
+        self.pins.RD.listen(self._on_pin_rd_change)
+        self.pins.WR.listen(self._on_pin_wr_change)
+
+    # --------------------------------------------------------------------------
+    # Физические шины: Address Bus и Data Bus
+    # --------------------------------------------------------------------------
+    @property
+    def addressbus(self) -> int:
+        return self._addressbus
+
+    @addressbus.setter
+    def addressbus(self, val: int):
+        val &= self.mask
+        self._addressbus = val
+        if self.cpu is not None and getattr(self.cpu, "_addressbus", None) != val:
+            self.cpu._addressbus = val
+        # Если сигнал чтения уже поднят на ножке, смена адреса немедленно меняет данные на шине
+        if self.pins.RD.get() == 1:
+            self._update_read_databus()
+
+    @property
+    def address(self) -> int:
+        return self._addressbus
+
+    @address.setter
+    def address(self, val: int):
+        self.addressbus = val
+
+    @property
+    def databus(self) -> int:
+        return self._databus
+
+    @databus.setter
+    def databus(self, val: int):
+        val &= 0xFF
+        self._databus = val
+        if self.cpu is not None and getattr(self.cpu, "_databus", None) != val:
+            self.cpu._databus = val
+        # Если сигнал записи уже активен, смена данных фиксируется адресуемым устройством
+        if self.pins.WR.get() == 1:
+            self._update_write_latch()
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("_"):
+            raise AttributeError(name)
+        if hasattr(self, "pins"):
+            uname = name.upper()
+            if uname in ("RD", "WR", "MREQ", "IORQ", "IRQ", "IA", "RF", "HALT", "RESET", "CS") or (hasattr(self.pins, "_pins") and uname in self.pins._pins):
+                return getattr(self.pins, uname)
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+
+    def __setattr__(self, name: str, value: Any):
+        if name.startswith("_") or name in (
+            "mode", "address_bits", "data_bits", "mask", "size", "ram", "pins",
+            "devices", "devices_by_name", "_devices_list", "current_step", "cpu",
+            "collision_warnings", "last_collision", "on_collision", "addressbus", "address", "databus"
+        ):
+            super().__setattr__(name, value)
+            return
+        uname = name.upper()
+        if hasattr(self, "pins") and (uname in ("RD", "WR", "MREQ", "IORQ", "IRQ", "IA", "RF", "HALT", "RESET", "CS") or (hasattr(self.pins, "_pins") and uname in self.pins._pins)):
+            if isinstance(value, (int, bool)):
+                getattr(self.pins, uname).set(int(value))
+                return
+        super().__setattr__(name, value)
+
+    # --------------------------------------------------------------------------
+    # Определение активных устройств и детектирование аппаратных конфликтов
+    # --------------------------------------------------------------------------
+    def get_matching_devices(self, addr: int) -> List[Tuple[str, Callable[[], int], Callable[[int], None], Any]]:
+        """
+        Возвращает список всех активных устройств, подключенных к физическому адресу addr.
+        Каждый элемент кортежа: (name, read_fn, write_fn, dev_obj)
+        """
+        addr &= self.mask
+        matched = []
+        seen_objs = set()
+
+        for dev in self._devices_list:
+            if dev.start <= addr <= dev.end:
+                seen_objs.add(id(dev))
+                name = getattr(dev, "name", "DEV")
+                r_fn = lambda d=dev, a=addr: d.read_phys(a) if hasattr(d, "read_phys") else (d.read(a - d.start) if hasattr(d, "read") else 0)
+                w_fn = lambda v, d=dev, a=addr: d.write_phys(a, v) if hasattr(d, "write_phys") else (d.write(a - d.start, v) if hasattr(d, "write") else None)
+                matched.append((name, r_fn, w_fn, dev))
+
+        for start, end, name, read_fn, write_fn, dev_obj in self.devices:
+            if start <= addr <= end:
+                if dev_obj is not None and id(dev_obj) in seen_objs:
+                    continue
+                if dev_obj is not None:
+                    seen_objs.add(id(dev_obj))
+                r_fn = lambda rf=read_fn, st=start, a=addr: rf(a - st)
+                w_fn = lambda v, wf=write_fn, st=start, a=addr: wf(a - st, v)
+                matched.append((name, r_fn, w_fn, dev_obj))
+
+        return matched
+
+    def _record_collision(self, warning: str):
+        self.last_collision = warning
+        self.collision_warnings.append(warning)
+        if len(self.collision_warnings) > 100:
+            self.collision_warnings.pop(0)
+        if self.on_collision is not None:
+            try:
+                self.on_collision(warning)
+            except Exception:
+                pass
+        print(f"\033[91m{warning}\033[0m")
+
+    def _on_pin_rd_change(self, val: int):
+        if val == 1:
+            self._update_read_databus()
+
+    def _update_read_databus(self):
+        """
+        Физический такт чтения: устройство(а) выставляют данные на шину данных databus.
+        Чтение происходит ТОЛЬКО при наличии строба RD = 1.
+        Если к одной линии адреса одновременно обращаются несколько устройств,
+        фиксируется аппаратный конфликт (Bus Contention).
+        """
+        addr = self._addressbus
+        matched = self.get_matching_devices(addr)
+        # Опрашиваем устройства: None означает третье состояние (Hi-Z, шина не нагружена)
+        active_drivers = []
+        for d_name, r_fn, _, _ in matched:
+            v = r_fn()
+            if v is not None:
+                active_drivers.append((d_name, v & 0xFF))
+
+        if len(active_drivers) > 1:
+            dev_names = [d[0] for d in active_drivers]
+            warning = (
+                f"⚠️ [КОНФЛИКТ ШИНЫ / BUS CONTENTION]: Несколько устройств одновременно "
+                f"выдают данные на шину данных по адресу 0x{addr:06X} (устройства: {', '.join(dev_names)})"
+            )
+            self._record_collision(warning)
+            # При аппаратном конфликте сигналы нескольких драйверов накладываются (open-collector AND):
+            resolved = active_drivers[0][1]
+            for _, val in active_drivers[1:]:
+                resolved &= val
+            self._databus = resolved
+        elif len(active_drivers) == 1:
+            self._databus = active_drivers[0][1]
+        else:
+            if addr < len(self.ram) and not matched:
+                self._databus = self.ram[addr]
+            else:
+                self._databus = 0xFF  # Подтяжка висящей в воздухе шины (Floating bus pull-up)
+
+        # Вызов пользовательского хука прямого управления шиной (максимальный приоритет)
+        for dev in list(self._devices_list):
+            if hasattr(dev, "on_bus_cycle"):
+                dev.on_bus_cycle(self)
+
+    def _on_pin_wr_change(self, val: int):
+        if val == 1:
+            self._update_write_latch()
+
+    def _update_write_latch(self):
+        """
+        Физический такт записи: устройство(а) фиксируют (latch) данные с шины databus.
+        Запись в память происходит ТОЛЬКО когда на ножке WR выставлена логическая 1.
+        """
+        addr = self._addressbus
+        val = self._databus
+        matched = self.get_matching_devices(addr)
+
+        # Вызов пользовательского хука прямого управления шиной
+        for dev in list(self._devices_list):
+            if hasattr(dev, "on_bus_cycle"):
+                dev.on_bus_cycle(self)
+
+        if len(matched) > 1:
+            dev_names = [d[0] for d in matched]
+            warning = (
+                f"⚠️ [КОНФЛИКТ ШИНЫ / BUS CONTENTION]: Попытка одновременной записи нескольких "
+                f"устройств по адресу 0x{addr:06X} (устройства: {', '.join(dev_names)})"
+            )
+            self._record_collision(warning)
+            for _, _, w_fn, _ in matched:
+                w_fn(val)
+        elif len(matched) == 1:
+            _, _, w_fn, _ = matched[0]
+            w_fn(val)
+        else:
+            if addr < len(self.ram):
+                self.ram[addr] = val
+
+    # --------------------------------------------------------------------------
+    # Физические такты шины (Physical Bus Cycles)
+    # --------------------------------------------------------------------------
+    def read_cycle(self, addr: int) -> int:
+        """
+        Выполняет физический цикл чтения:
+          1. Выставляет адрес на шину адреса.
+          2. Поднимает сигналы MREQ = 1 и RD = 1 (WR = 0).
+          3. Устройство(а) выставляют данные на databus.
+          4. Считывает байт с шины databus.
+          5. Сбрасывает сигналы RD и MREQ в 0.
+        """
+        addr &= self.mask
+        self.addressbus = addr
+        self.pins.MREQ.set(1)
+        self.pins.WR.set(0)
+        self.pins.RD.set(1)
+        data = self._databus
+        self.pins.RD.set(0)
+        self.pins.MREQ.set(0)
+        return data
+
+    def write_cycle(self, addr: int, val: int):
+        """
+        Выполняет физический цикл записи:
+          1. Выставляет адрес на шину адреса.
+          2. Выставляет данные на шину данных databus.
+          3. Поднимает сигналы MREQ = 1 и WR = 1 (RD = 0).
+          4. Адресуемое устройство(а) или ОЗУ фиксируют данные.
+          5. Сбрасывает сигналы WR и MREQ в 0.
+        """
+        addr &= self.mask
+        val &= 0xFF
+        self.addressbus = addr
+        self.databus = val
+        self.pins.MREQ.set(1)
+        self.pins.RD.set(0)
+        self.pins.WR.set(1)
+        self.pins.WR.set(0)
+        self.pins.MREQ.set(0)
+
+    # --------------------------------------------------------------------------
+    # Неинвазивный доступ (для GUI, TUI, отладчика без стробов и конфликтов)
+    # --------------------------------------------------------------------------
+    def peek(self, addr: int) -> int:
+        """
+        Неинвазивное чтение одного байта памяти (для отладчика, UI, дизассемблера).
+        НЕ дергает сигнальные ножки шины (RD/WR/MREQ), не вызывает side-effects
+        и не порождает предупреждений о конфликтах шины при инспекции.
+        """
+        addr &= self.mask
+        for dev in self._devices_list:
+            if dev.start <= addr <= dev.end:
+                if hasattr(dev, "read_raw"):
+                    return dev.read_raw(addr - dev.start) & 0xFF
+                if hasattr(dev, "read_phys"):
+                    return dev.read_phys(addr) & 0xFF
+                if hasattr(dev, "read"):
+                    return dev.read(addr - dev.start) & 0xFF
+        for start, end, _, read_fn, _, _ in self.devices:
+            if start <= addr <= end:
+                return read_fn(addr - start) & 0xFF
+        if addr < len(self.ram):
+            return self.ram[addr]
+        return 0
+
+    def poke(self, addr: int, val: int):
+        """
+        Неинвазивная прямая запись байта (для отладчика/загрузчика памяти).
+        """
+        addr &= self.mask
+        val &= 0xFF
+        for dev in self._devices_list:
+            if dev.start <= addr <= dev.end:
+                if hasattr(dev, "write_raw"):
+                    dev.write_raw(addr - dev.start, val)
+                    return
+                if hasattr(dev, "write_phys"):
+                    dev.write_phys(addr, val)
+                    return
+                if hasattr(dev, "write"):
+                    dev.write(addr - dev.start, val)
+                    return
+        for start, end, _, _, write_fn, _ in self.devices:
+            if start <= addr <= end:
+                write_fn(addr - start, val)
+                return
+        if addr < len(self.ram):
+            self.ram[addr] = val
+
+    def peek16(self, addr: int, little_endian: bool = False) -> int:
+        b0 = self.peek(addr)
+        b1 = self.peek(addr + 1)
+        return (b1 << 8) | b0 if little_endian else (b0 << 8) | b1
+
+    def peek32(self, addr: int, little_endian: bool = False) -> int:
+        b0 = self.peek(addr)
+        b1 = self.peek(addr + 1)
+        b2 = self.peek(addr + 2)
+        b3 = self.peek(addr + 3)
+        if little_endian:
+            return (b3 << 24) | (b2 << 16) | (b1 << 8) | b0
+        return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
 
     def set_mode(self, mode: str):
         """Переключение режима работы шины ('16bit' / '24bit' / '32bit')."""
@@ -309,73 +659,66 @@ class MemoryBus:
     def _devices(self) -> List[Any]:
         return self._devices_list
 
-    def read8(self, addr: int) -> int:
-        addr &= self.mask
-        for dev in self._devices_list:
-            if dev.start <= addr <= dev.end:
-                return dev.read_phys(addr)
-        for start, end, _, read_fn, _, _ in self.devices:
-            if start <= addr <= end:
-                return read_fn(addr - start) & 0xFF
-        if addr < len(self.ram):
-            return self.ram[addr]
-        return 0
+    def read8(self, addr: int, physical: bool = True) -> int:
+        """
+        Чтение одного байта памяти.
+        В физическом режиме (physical=True) выполняет физический цикл со стробом RD=1.
+        """
+        if not physical:
+            return self.peek(addr)
+        return self.read_cycle(addr)
 
-    def write8(self, addr: int, val: int):
-        addr &= self.mask
-        val &= 0xFF
-        for dev in self._devices_list:
-            if dev.start <= addr <= dev.end:
-                dev.write_phys(addr, val)
-                return
-        for start, end, _, _, write_fn, _ in self.devices:
-            if start <= addr <= end:
-                write_fn(addr - start, val)
-                return
-        if addr < len(self.ram):
-            self.ram[addr] = val
+    def write8(self, addr: int, val: int, physical: bool = True):
+        """
+        Запись одного байта памяти.
+        В физическом режиме (physical=True) выполняет физический цикл со стробом WR=1.
+        """
+        if not physical:
+            self.poke(addr, val)
+            return
+        self.write_cycle(addr, val)
 
-    def read16(self, addr: int, little_endian: bool = False) -> int:
+    def read16(self, addr: int, little_endian: bool = False, physical: bool = True) -> int:
         """Чтение 16-битного слова."""
-        b0 = self.read8(addr)
-        b1 = self.read8(addr + 1)
+        b0 = self.read8(addr, physical=physical)
+        b1 = self.read8(addr + 1, physical=physical)
         if little_endian:
             return (b1 << 8) | b0
         return (b0 << 8) | b1
 
-    def write16(self, addr: int, val: int, little_endian: bool = False):
+    def write16(self, addr: int, val: int, little_endian: bool = False, physical: bool = True):
         """Запись 16-битного слова."""
         val &= 0xFFFF
         if little_endian:
-            self.write8(addr, val & 0xFF)
-            self.write8(addr + 1, (val >> 8) & 0xFF)
+            self.write8(addr, val & 0xFF, physical=physical)
+            self.write8(addr + 1, (val >> 8) & 0xFF, physical=physical)
         else:
-            self.write8(addr, (val >> 8) & 0xFF)
-            self.write8(addr + 1, val & 0xFF)
+            self.write8(addr, (val >> 8) & 0xFF, physical=physical)
+            self.write8(addr + 1, val & 0xFF, physical=physical)
 
-    def read32(self, addr: int, little_endian: bool = False) -> int:
+    def read32(self, addr: int, little_endian: bool = False, physical: bool = True) -> int:
         """Чтение 32-битного двойного слова."""
-        b0 = self.read8(addr)
-        b1 = self.read8(addr + 1)
-        b2 = self.read8(addr + 2)
-        b3 = self.read8(addr + 3)
+        b0 = self.read8(addr, physical=physical)
+        b1 = self.read8(addr + 1, physical=physical)
+        b2 = self.read8(addr + 2, physical=physical)
+        b3 = self.read8(addr + 3, physical=physical)
         if little_endian:
             return (b3 << 24) | (b2 << 16) | (b1 << 8) | b0
         return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
 
-    def write32(self, addr: int, val: int, little_endian: bool = False):
+    def write32(self, addr: int, val: int, little_endian: bool = False, physical: bool = True):
         """Запись 32-битного двойного слова."""
         val &= 0xFFFFFFFF
         if little_endian:
-            self.write8(addr, val & 0xFF)
-            self.write8(addr + 1, (val >> 8) & 0xFF)
-            self.write8(addr + 2, (val >> 16) & 0xFF)
-            self.write8(addr + 3, (val >> 24) & 0xFF)
+            self.write8(addr, val & 0xFF, physical=physical)
+            self.write8(addr + 1, (val >> 8) & 0xFF, physical=physical)
+            self.write8(addr + 2, (val >> 16) & 0xFF, physical=physical)
+            self.write8(addr + 3, (val >> 24) & 0xFF, physical=physical)
         else:
-            self.write8(addr, (val >> 24) & 0xFF)
-            self.write8(addr + 1, (val >> 16) & 0xFF)
-            self.write8(addr + 2, (val >> 8) & 0xFF)
-            self.write8(addr + 3, val & 0xFF)
+            self.write8(addr, (val >> 24) & 0xFF, physical=physical)
+            self.write8(addr + 1, (val >> 16) & 0xFF, physical=physical)
+            self.write8(addr + 2, (val >> 8) & 0xFF, physical=physical)
+            self.write8(addr + 3, val & 0xFF, physical=physical)
 
     # --------------------------------------------------------------------------
     # Подключение устройств (MMIO)
@@ -669,8 +1012,26 @@ class MemoryBus:
 
     def load(self, file_path: str, at: Optional[int] = None) -> int:
         """Автоматически определяет формат (.bin, .hex, .asm) и загружает файл."""
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"Файл '{file_path}' не найден.")
+        # Умный поиск файла по возможным стандартным каталогам проекта
+        real_path = None
+        candidates = [
+            file_path,
+            os.path.join(os.path.dirname(__file__), file_path),
+            os.path.join(os.path.dirname(__file__), "..", "programs_asm", file_path),
+            os.path.join(os.path.dirname(__file__), "..", file_path),
+            os.path.join(os.getcwd(), file_path),
+            os.path.join(os.getcwd(), "LIM2", "programs_asm", file_path),
+            os.path.join(os.getcwd(), "LIM2", "sim", file_path),
+            os.path.join(os.getcwd(), "programs_asm", file_path),
+        ]
+        for c in candidates:
+            if os.path.isfile(c):
+                real_path = os.path.abspath(c)
+                break
+
+        if not real_path:
+            raise FileNotFoundError(f"Файл '{file_path}' не найден (проверены пути в sim/, programs_asm/ и корне проекта).")
+        file_path = real_path
 
         ext = os.path.splitext(file_path)[1].lower()
         target = at if at is not None else 0x0000
@@ -703,7 +1064,7 @@ class MemoryBus:
         for offset in range(0, length, bytes_per_line):
             curr = (start + offset) & self.mask
             chunk_len = min(bytes_per_line, length - offset)
-            chunk = [self.read8(curr + i) for i in range(chunk_len)]
+            chunk = [self.peek(curr + i) for i in range(chunk_len)]
             hex_str = " ".join(f"{b:02X}" for b in chunk)
             ascii_str = "".join(chr(b) if 32 <= b <= 126 else "." for b in chunk)
             lines.append(f"0x{curr:04X}  {hex_str:<{bytes_per_line * 3}}  |{ascii_str}|")
@@ -776,3 +1137,17 @@ class MemoryBus:
             # Прямой бинарный файл памяти (.bin)
             self.load_bin(path, at=0x0000)
             return {}
+
+    def save_persistent_devices(self) -> List[str]:
+        """
+        Сохраняет образы всех энергонезависимых устройств (persist=True).
+        Возвращает список сохраненных файлов.
+        """
+        saved = []
+        for dev in self._devices_list:
+            if getattr(dev, "persist", False) and hasattr(dev, "save"):
+                out = dev.save()
+                if out:
+                    saved.append(out)
+        return saved
+

@@ -87,14 +87,46 @@ def box_bottom(width: int = BOX_WIDTH) -> str:
     return f"└{bar}┘"
 
 
+def truncate_ansi(text: str, max_vis_len: int) -> str:
+    """
+    Безопасно обрезает строку до max_vis_len видимых символов,
+    не разрывая ANSI-последовательности стилей и цветов.
+    """
+    clean = strip_ansi(text)
+    if len(clean) <= max_vis_len:
+        return text
+
+    target_vis = max(1, max_vis_len - 3)
+    out = []
+    vis_count = 0
+    i = 0
+    n = len(text)
+    while i < n:
+        if text[i] == "\033":
+            m = ANSI_RE.match(text, i)
+            if m:
+                out.append(m.group(0))
+                i = m.end()
+                continue
+        out.append(text[i])
+        vis_count += 1
+        i += 1
+        if vis_count >= target_vis:
+            break
+
+    out.append("...\033[0m")
+    return "".join(out)
+
+
 def box_row(content: str, width: int = BOX_WIDTH) -> str:
-    clean = strip_ansi(content)
     avail = width - 4
+    clean = strip_ansi(content)
     if len(clean) > avail:
-        content = content[:avail - 3] + "..."
+        content = truncate_ansi(content, avail)
         clean = strip_ansi(content)
     pad = " " * max(0, avail - len(clean))
     return f"│ {content}{pad} │"
+
 
 
 def format_bytes_smart(num_bytes: int) -> str:
@@ -122,7 +154,7 @@ def make_single_chip(spec: Any, val: int) -> List[str]:
         val_mask = val & spec.mask
         chip = [
             f"┌──[{title_fmt:^7}]────┐",
-            f"│  0x{val_mask:08X} │",
+            f"│  0x{val_mask:08X}   │",
             f"│ DEC:{val_mask:9d} │",
             f"│ D           Q │",
             f"│ 32-BIT ADDR   │",
@@ -134,7 +166,7 @@ def make_single_chip(spec: Any, val: int) -> List[str]:
         val_mask = val & spec.mask
         chip = [
             f"┌──[{title_fmt:^7}]────┐",
-            f"│  HEX: 0x{val_mask:06X}│",
+            f"│  HEX: 0x{val_mask:06X} │",
             f"│  DEC: {val_mask:7d} │",
             f"│ D           Q │",
             f"│ 24-BIT ADDR   │",
@@ -203,7 +235,10 @@ def make_flag_chip(spec: Any, val: int, width: int = 74) -> List[str]:
         for fname, fdesc, bit_pos in chunk:
             bval = 1 if (val & (1 << bit_pos)) else 0
             badge = f"\033[1;32m[{fname}:1]\033[0m" if bval else f"\033[90m[{fname}:0]\033[0m"
-            items.append(pad_ansi(f"{badge} {fdesc[:10]}", 17))
+            badge_vis = len(f"[{fname}:0]")
+            max_desc_len = max(1, 16 - badge_vis)
+            desc = fdesc[:max_desc_len]
+            items.append(pad_ansi(f"{badge} {desc}", 17))
         row_inner = "  " + "".join(items)
         flag_rows.append(wrap_line(row_inner))
 
@@ -212,14 +247,15 @@ def make_flag_chip(spec: Any, val: int, width: int = 74) -> List[str]:
     return [top, r1, r2] + flag_rows + [row_last, bot]
 
 
-def render_circuit_registers(cpu: Any, step_count: int = 0) -> str:
+def render_circuit_registers(cpu: Any, step_count: int = 0, include_compact: bool = False) -> str:
     """Форматирует панель регистров в стиле Circuit IC (микросхем)."""
     specs = getattr(cpu, "get_register_specs", lambda: list(cpu.regs._specs.values()))()
     pc_val = cpu.pc
 
-    core_specs = [s for s in specs if not getattr(s, "is_aux", False) and not getattr(s, "is_flag", False) and s.name != "pc"]
-    aux_specs = [s for s in specs if getattr(s, "is_aux", False) and not getattr(s, "is_flag", False)]
+    core_specs = [s for s in specs if not getattr(s, "is_aux", False) and not getattr(s, "is_flag", False) and not getattr(s, "is_compact", False) and s.name != "pc"]
+    aux_specs = [s for s in specs if getattr(s, "is_aux", False) and not getattr(s, "is_flag", False) and not getattr(s, "is_compact", False)]
     flag_specs = [s for s in specs if getattr(s, "is_flag", False)]
+    compact_specs = [s for s in specs if getattr(s, "is_compact", False)]
 
     lines = [box_top("LIM CPU Circuit Registers")]
 
@@ -253,7 +289,78 @@ def render_circuit_registers(cpu: Any, step_count: int = 0) -> str:
             for fl in flag_lines:
                 lines.append(box_row(" " + fl))
 
+    # 4. Опциональные табличные / векторные регистры (если запрошено в едином блоке)
+    if include_compact and compact_specs:
+        lines.append(box_divider("Табличные регистры / Компактные векторы"))
+        groups: Dict[str, List[Any]] = {}
+        for s in compact_specs:
+            blk = getattr(s, "block", "") or "REG"
+            groups.setdefault(blk, []).append(s)
+
+        for blk_name, blk_list in groups.items():
+            for idx in range(0, len(blk_list), 4):
+                chunk = blk_list[idx:idx + 4]
+                cols = []
+                for s in chunk:
+                    val = cpu.get_reg(s.name) & getattr(s, "mask", 0xFFFFFFFF)
+                    r_title = (s.title or s.name.upper())[:5]
+                    val_hex = f"0x{val:08X}" if s.bits > 16 else f"0x{val:04X}"
+                    val_colored = f"\033[1;36m{val_hex}\033[0m" if val != 0 else f"\033[90m{val_hex}\033[0m"
+                    cols.append(f"{r_title:>5}: {val_colored}")
+                row_content = "  " + "  ".join(cols)
+                lines.append(box_row(row_content))
+
     lines.append(box_bottom())
+    return "\n".join(lines)
+
+
+def render_compact_registers(cpu: Any, width: int = BOX_WIDTH) -> str:
+    """
+    Отрисовывает компактные/табличные регистры (векторы прерываний, зоны защиты памяти и т.д.)
+    в отдельном окне в виде лаконичных текстовых строк (по 4 колонки в строке),
+    не загромождая экран высокими блоками микросхем.
+    """
+    specs = getattr(cpu, "get_register_specs", lambda: list(cpu.regs._specs.values()))()
+    compact_specs = [s for s in specs if getattr(s, "is_compact", False)]
+    if not compact_specs:
+        return ""
+
+    groups: Dict[str, List[Any]] = {}
+    for s in compact_specs:
+        blk = getattr(s, "block", "") or "TABLE"
+        groups.setdefault(blk, []).append(s)
+
+    lines = [box_top("ТАБЛИЧНЫЕ РЕГИСТРЫ И ВЕКТОРЫ / TABLES & VECTORS", width=width)]
+
+    def _block_title(blk_id: str, blk_items: List[Any]) -> str:
+        b_up = blk_id.upper()
+        if b_up == "IVT":
+            first_t = blk_items[0].title or blk_items[0].name.upper()
+            last_t = blk_items[-1].title or blk_items[-1].name.upper()
+            return f"Таблица векторов прерываний (IVT: {first_t}..{last_t})"
+        elif b_up in ("PROT", "PRIV"):
+            first_t = blk_items[0].title or blk_items[0].name.upper()
+            last_t = blk_items[-1].title or blk_items[-1].name.upper()
+            return f"Зоны защиты памяти (PROT: {first_t}..{last_t})"
+        return f"Регистры блока {blk_id} ({len(blk_items)})"
+
+    for blk_name, blk_list in groups.items():
+        title = _block_title(blk_name, blk_list)
+        lines.append(box_divider(title, width=width))
+
+        for idx in range(0, len(blk_list), 4):
+            chunk = blk_list[idx:idx + 4]
+            cols = []
+            for s in chunk:
+                val = cpu.get_reg(s.name) & getattr(s, "mask", 0xFFFFFFFF)
+                r_title = (s.title or s.name.upper())[:5]
+                val_hex = f"0x{val:08X}" if s.bits > 16 else f"0x{val:04X}"
+                val_colored = f"\033[1;36m{val_hex}\033[0m" if val != 0 else f"\033[90m{val_hex}\033[0m"
+                cols.append(f"{r_title:>5}: {val_colored}")
+            row_content = "  " + "  ".join(cols)
+            lines.append(box_row(row_content, width=width))
+
+    lines.append(box_bottom(width=width))
     return "\n".join(lines)
 
 
@@ -284,7 +391,7 @@ def render_code_stream(cpu: Any, code_rows: int = 6) -> str:
     mask = getattr(bus, "mask", 0xFFFF)
     addr = curr_pc & mask
     for i in range(code_rows):
-        mnem, length, raw_bytes = disassemble_one(lambda a: bus.read8(a & mask), addr)
+        mnem, length, raw_bytes = disassemble_one(lambda a: (bus.peek(a & mask) if hasattr(bus, "peek") else bus.read8(a & mask)), addr)
         raw_hex = " ".join(f"{b:02X}" for b in raw_bytes[:4])
 
         is_current = (i == 0)
@@ -454,7 +561,7 @@ def render_devices_memory(bus: Any, cpu: Any, step_count: int = 0) -> str:
         # Дамп начального диапазона ОЗУ
         lines.append(box_row(" ► [RAM] (0x0000..0x003F) | PC:0x{:04X}".format(cpu.pc)))
         for off in range(0, 64, 16):
-            chunk = [bus.read8(off + i) for i in range(16)]
+            chunk = [(bus.peek(off + i) if hasattr(bus, "peek") else bus.read8(off + i)) for i in range(16)]
             h_l = " ".join(f"{b:02X}" for b in chunk[:8])
             h_r = " ".join(f"{b:02X}" for b in chunk[8:])
             a_s = "".join(chr(b) if 32 <= b <= 126 else "." for b in chunk)
@@ -463,7 +570,8 @@ def render_devices_memory(bus: Any, cpu: Any, step_count: int = 0) -> str:
         for dev_idx, dev in enumerate(devs[:3]):
             if dev_idx > 0:
                 lines.append(box_divider())
-            lines.append(box_row(f" ► [{dev.name}] (0x{dev.start:04X}..0x{dev.end:04X})"))
+            fmt = "06X" if dev.end > 0xFFFF else "04X"
+            lines.append(box_row(f" ► [{dev.name}] (0x{dev.start:{fmt}}..0x{dev.end:{fmt}})"))
             dump_str = dev.format_windowed_hexdump(current_step=step_count, pc_addr=cpu.pc)
             for dl in dump_str.splitlines():
                 lines.append(box_row(dl))
@@ -521,6 +629,10 @@ def canonical_block_name(name: str) -> Optional[str]:
     clean = name.strip().lower()
     if clean in ("cpu", "regs", "reg", "r", "ic", "chips", "chip"):
         return "cpu"
+    if clean in ("tables", "table", "compact", "ivt", "prot", "vec", "vectors", "t"):
+        return "tables"
+    if clean in ("pins", "pin", "p"):
+        return "pins"
     if clean in ("code", "disasm", "asm", "disas", "instructions", "c"):
         return "code"
     if clean in ("mem", "memory", "devices", "dev", "devs", "dump", "m"):
@@ -538,6 +650,8 @@ class UIConfig:
         self,
         layout_mode: str = "auto",  # "auto", "1col", "2col", "3col"
         show_cpu: bool = True,
+        show_tables: bool = True,
+        show_pins: bool = True,
         show_code: bool = True,
         show_mem: bool = True,
         show_screen: bool = True,
@@ -551,6 +665,8 @@ class UIConfig:
     ):
         self.layout_mode = layout_mode
         self.show_cpu = show_cpu
+        self.show_tables = show_tables
+        self.show_pins = show_pins
         self.show_code = show_code
         self.show_mem = show_mem
         self.show_screen = show_screen
@@ -564,6 +680,8 @@ class UIConfig:
         # Привязка блоков к колонкам по умолчанию (1..3)
         self.block_columns: Dict[str, int] = {
             "cpu": 1,
+            "pins": 1,
+            "tables": 1,
             "screen": 1,
             "code": 2,
             "mem": 3,
@@ -605,6 +723,40 @@ class UIConfig:
         return prev
 
 
+def render_pins_panel(cpu: Any) -> str:
+    """Отрисовывает панель состояния сигнальных ножек шины процессора."""
+    bus = getattr(cpu, "bus", None)
+    lines = [box_top("НОЖКИ ПРОЦЕССОРА / PINS")]
+    if bus is None or not hasattr(bus, "pins"):
+        lines.append(box_row(" Ножки процессора не подключены к шине"))
+        lines.append(box_bottom())
+        return "\n".join(lines)
+
+    pins_dict = getattr(bus.pins, "_pins", {})
+    key_order = ["RD", "WR", "MREQ", "IORQ", "CS", "IRQ", "RESET", "HALT", "RF"]
+    all_names = list(key_order)
+    for p_name in sorted(pins_dict.keys()):
+        if p_name not in all_names:
+            all_names.append(p_name)
+
+    items = []
+    for name in all_names:
+        pin = getattr(bus.pins, name)
+        val = int(pin)
+        if val == 1:
+            badge = f"\033[1;32m{name}:[1]\033[0m"
+        else:
+            badge = f"\033[90m{name}:[0]\033[0m"
+        items.append(badge)
+
+    for i in range(0, len(items), 6):
+        chunk = items[i:i + 6]
+        lines.append(box_row("  " + "    ".join(chunk)))
+
+    lines.append(box_bottom())
+    return "\n".join(lines)
+
+
 # ==============================================================================
 # Главная функция сборки интерфейса (автоматический адаптивный 1/2/3-колоночный режим)
 # ==============================================================================
@@ -623,6 +775,8 @@ def render_full_simulator_screen(
         cfg = UIConfig()
 
     cpu_widget = render_circuit_registers(cpu, step_count=step_count) if cfg.show_cpu else ""
+    tables_widget = render_compact_registers(cpu) if getattr(cfg, "show_tables", True) else ""
+    pins_widget = render_pins_panel(cpu) if getattr(cfg, "show_pins", True) else ""
     code_widget = render_code_stream(cpu, code_rows=cfg.code_rows) if cfg.show_code else ""
     mem_widget = render_devices_memory(cpu.bus, cpu, step_count=step_count) if cfg.show_mem else ""
     map_widget = render_full_memory_map(cpu.bus) if cfg.show_map else ""
@@ -665,6 +819,8 @@ def render_full_simulator_screen(
 
     widget_map = {
         "cpu": cpu_widget,
+        "pins": pins_widget,
+        "tables": tables_widget,
         "code": code_widget,
         "screen": screen_widget,
         "mem": mem_widget,
@@ -672,7 +828,7 @@ def render_full_simulator_screen(
     }
 
     # Порядок следования блоков по умолчанию внутри колонки
-    DEFAULT_BLOCK_ORDER = ["cpu", "code", "screen", "mem", "map"]
+    DEFAULT_BLOCK_ORDER = ["cpu", "pins", "tables", "code", "screen", "mem", "map"]
 
     # 1. Если колонка всего одна (узкий терминал или принудительно 1col)
     if num_cols == 1:
@@ -742,4 +898,268 @@ def render_full_simulator_screen(
     if len(active_cols) == 1:
         return active_cols[0]
     return join_columns(active_cols, gap=2)
+
+
+# ==============================================================================
+## Главная функция запуска симулятора (интерактивный или пакетный режим)
+# ==============================================================================
+def run_sim(
+    cpu: Any,
+    interactive: bool = False,
+    max_steps: Optional[int] = None,
+    quiet: bool = False,
+    gui: bool = False,
+    speed: float = 0.0,
+    cfg: Optional[UIConfig] = None
+):
+    """
+    Универсальный запуск симуляции процессора:
+    - Без флагов: выполняет шаги программы и выводит экран симулятора в реальном времени
+    - interactive=True (-i): пошаговая отладка в терминале с клавиатуры (Enter - шаг, c - запуск, q - выход)
+    - gui=True (-g): открывает графическое окно симулятора (Tkinter GUI) с кнопками, регистрами и дампом
+    - speed: задержка между тактами СТРОГО в миллисекундах (0 = макс. скорость, 0.5 = 0.5 мс, 50 = 50 мс)
+    - max_steps: ограничение количества шагов (None = бесконечно до HALT / Ctrl+C)
+    """
+    import time
+    # Задержка СТРОГО в миллисекундах
+    sim_delay = max(0.0, float(speed)) / 1000.0
+
+    if gui:
+        try:
+            from .gui import launch_simulator_gui
+        except (ImportError, ValueError):
+            from gui import launch_simulator_gui
+        initial_ms = int(speed) if speed > 0 else 50
+        launch_simulator_gui(cpu, max_steps=max_steps, initial_speed_ms=initial_ms)
+        return
+
+    if cfg is None:
+        cfg = UIConfig()
+
+    bus = getattr(cpu, "bus", None)
+
+    def _check_halt(c) -> bool:
+        h = getattr(c, "is_halted", False)
+        return h() if callable(h) else bool(h)
+
+    def _fmt_speed(delay_sec: float) -> str:
+        if delay_sec <= 0:
+            return "0 мс (МАКС)"
+        ms = delay_sec * 1000.0
+        return f"{ms:g} мс"
+
+    step_count = 0
+
+    if not interactive:
+        # Пакетное / непрерывное выполнение без интерактивного ввода
+        last_draw = time.time()
+        interrupted = False
+        if not quiet:
+            print("\033[2J\033[H", end="", flush=True)
+            print(render_full_simulator_screen(cpu, step_count=step_count, cfg=cfg), flush=True)
+
+        try:
+            while True:
+                if max_steps is not None and step_count >= max_steps:
+                    break
+                if _check_halt(cpu):
+                    break
+                cpu.step()
+                step_count += 1
+                if sim_delay > 0:
+                    time.sleep(sim_delay)
+
+                if not quiet:
+                    now = time.time()
+                    if now - last_draw >= 0.033:  # ~30 FPS обновление экрана
+                        print("\033[H", end="")
+                        print(render_full_simulator_screen(cpu, step_count=step_count, cfg=cfg), flush=True)
+                        last_draw = now
+        except KeyboardInterrupt:
+            interrupted = True
+
+        if not quiet:
+            print("\033[H", end="")
+            print(render_full_simulator_screen(cpu, step_count=step_count, cfg=cfg))
+            if interrupted:
+                print(f"\n[PAUSE] Симуляция остановлена (Ctrl+C) на шаге #{step_count} (PC=0x{cpu.pc:06X})")
+            elif _check_halt(cpu):
+                print(f"\n[HALT] Процессор остановлен на шаге #{step_count} (PC=0x{cpu.pc:06X})")
+            elif max_steps is not None and step_count >= max_steps:
+                print(f"\n[LIMIT] Достигнут лимит шагов #{step_count} (PC=0x{cpu.pc:06X})")
+            else:
+                print(f"\n[RUN] Завершено на шаге #{step_count} (PC=0x{cpu.pc:06X})")
+
+        if bus and hasattr(bus, "save_persistent_devices"):
+            saved = bus.save_persistent_devices()
+            if saved and not quiet:
+                for s in saved:
+                    print(f"[PERSIST] Образ памяти сохранен на диск: {s}")
+        return
+
+    # Интерактивный пошаговый режим
+    print("\033[2J\033[H", end="")
+    print(render_full_simulator_screen(cpu, step_count=step_count, cfg=cfg))
+    spd_info = _fmt_speed(sim_delay)
+    print(f"\nИнтерактивный режим: [Enter/s] - шаг, [c] - запуск, [delay N] - скорость ({spd_info}), [q] - выход")
+
+    while True:
+        try:
+            cmd = input(f"sim (PC=0x{cpu.pc:04X})> ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            print("\nВыход из симулятора.")
+            break
+
+        if cmd in ("q", "quit", "exit"):
+            break
+        elif cmd in ("", "s", "step"):
+            if _check_halt(cpu):
+                print("[CPU] Процессор остановлен (HALT).")
+            else:
+                cpu.step()
+                step_count += 1
+            print("\033[2J\033[H", end="")
+            print(render_full_simulator_screen(cpu, step_count=step_count, cfg=cfg))
+        elif cmd in ("c", "cont", "continue"):
+            interrupted = False
+            last_draw = time.time()
+            try:
+                # Прячем курсор во время непрерывного выполнения для отсутствия мерцания
+                print("\033[?25l", end="", flush=True)
+                while True:
+                    if max_steps is not None and step_count >= max_steps:
+                        break
+                    if _check_halt(cpu) or (cpu.pc in getattr(cpu, "breakpoints", set()) and step_count > 0):
+                        break
+                    cpu.step()
+                    step_count += 1
+                    if sim_delay > 0:
+                        time.sleep(sim_delay)
+
+                    now = time.time()
+                    if now - last_draw >= 0.033:  # ~30 FPS обновление экрана в реальном времени
+                        print("\033[H", end="")
+                        print(render_full_simulator_screen(cpu, step_count=step_count, cfg=cfg), flush=True)
+                        last_draw = now
+            except KeyboardInterrupt:
+                interrupted = True
+            finally:
+                # Всегда восстанавливаем курсор
+                print("\033[?25h", end="", flush=True)
+
+            print("\033[H", end="")
+            print(render_full_simulator_screen(cpu, step_count=step_count, cfg=cfg))
+            if interrupted:
+                print(f"[PAUSE] Пауза (Ctrl+C) на шаге #{step_count} (PC=0x{cpu.pc:06X})")
+            elif _check_halt(cpu):
+                print(f"[HALT] Процессор остановлен на шаге #{step_count} (PC=0x{cpu.pc:06X})")
+            elif max_steps is not None and step_count >= max_steps:
+                print(f"[LIMIT] Достигнут лимит шагов #{step_count} (PC=0x{cpu.pc:06X})")
+            else:
+                print(f"[RUN] Завершено на шаге #{step_count} (PC=0x{cpu.pc:06X})")
+        elif cmd in ("r", "run") or cmd.startswith("r ") or cmd.startswith("run "):
+            parts = cmd.split()
+            n = int(parts[1], 0) if len(parts) > 1 and (parts[1].isdigit() or parts[1].startswith("0x")) else 100
+            last_draw = time.time()
+            try:
+                print("\033[?25l", end="", flush=True)
+                for _ in range(n):
+                    if _check_halt(cpu) or (cpu.pc in getattr(cpu, "breakpoints", set()) and step_count > 0):
+                        break
+                    cpu.step()
+                    step_count += 1
+                    if sim_delay > 0:
+                        time.sleep(sim_delay)
+                    now = time.time()
+                    if now - last_draw >= 0.033:
+                        print("\033[H", end="")
+                        print(render_full_simulator_screen(cpu, step_count=step_count, cfg=cfg), flush=True)
+                        last_draw = now
+            except KeyboardInterrupt:
+                pass
+            finally:
+                print("\033[?25h", end="", flush=True)
+
+            print("\033[H", end="")
+            print(render_full_simulator_screen(cpu, step_count=step_count, cfg=cfg))
+        elif cmd.startswith("delay") or cmd.startswith("speed"):
+            parts = cmd.split()
+            if len(parts) > 1:
+                try:
+                    val = float(parts[1])
+                    if val < 0:
+                        print("Ошибка: задержка не может быть отрицательной.")
+                    else:
+                        # Задержка ВСЕГДА в миллисекундах (0 = без задержки, 0.5 = 0.5 мс, 50 = 50 мс)
+                        sim_delay = val / 1000.0
+                        if sim_delay == 0:
+                            print("[SPEED] Задержка: 0 мс (максимальная скорость, обновление экрана в реальном времени).")
+                        else:
+                            hz = int(1.0 / sim_delay) if sim_delay > 0 else 0
+                            print(f"[SPEED] Скорость симуляции: {val:g} мс (~{hz} тактов/сек)")
+                except ValueError:
+                    print("Ошибка: укажите число миллисекунд (например: delay 50 или speed 0.5 или delay 0).")
+            else:
+                curr_ms = sim_delay * 1000.0
+                if sim_delay == 0:
+                    print("Текущая скорость: 0 мс (максимальная, реальное время). Использование: delay <мс>")
+                else:
+                    hz = int(1.0 / sim_delay) if sim_delay > 0 else 0
+                    print(f"Текущая задержка: {curr_ms:g} мс (~{hz} тактов/сек). Использование: delay <мс>")
+        elif cmd in ("d", "dump") or cmd.startswith("d ") or cmd.startswith("dump "):
+            parts = cmd.split()
+            addr = int(parts[1], 0) if len(parts) > 1 else cpu.pc
+            length = int(parts[2], 0) if len(parts) > 2 else 64
+            if bus and hasattr(bus, "dump"):
+                print(bus.dump(addr, length))
+            else:
+                lines = []
+                for off in range(0, length, 16):
+                    cur_a = addr + off
+                    chunk = [(bus.peek(cur_a + i) if hasattr(bus, "peek") else bus.read8(cur_a + i)) for i in range(16)]
+                    h = " ".join(f"{b:02X}" for b in chunk)
+                    a = "".join(chr(b) if 32 <= b <= 126 else "." for b in chunk)
+                    lines.append(f"0x{cur_a:06X}: {h}  |{a}|")
+                print("\n".join(lines))
+        elif cmd in ("reset", "restart"):
+            if hasattr(cpu, "reset"):
+                cpu.reset()
+            step_count = 0
+            print("\033[2J\033[H", end="")
+            print(render_full_simulator_screen(cpu, step_count=step_count, cfg=cfg))
+            print("[RESET] Процессор сброшен к начальному состоянию.")
+        elif cmd in ("irq",) or cmd.startswith("irq ") or (cmd.startswith("i ") and not cmd.startswith("in")):
+            parts = cmd.split()
+            vec = int(parts[1], 0) if len(parts) > 1 else 0
+            if hasattr(cpu, "trigger_irq"):
+                cpu.trigger_irq(vec, force=True)
+                step_count += 1
+            elif bus and hasattr(bus, "pins"):
+                bus.pins.IRQ.pulse()
+            print("\033[2J\033[H", end="")
+            print(render_full_simulator_screen(cpu, step_count=step_count, cfg=cfg))
+            print(f"⚡ [IRQ] Вызвано прерывание IRQ{vec}! PC = 0x{cpu.pc:06X}, SREG = 0x{getattr(cpu, 'sreg', 0):08X}")
+        elif cmd in ("h", "help", "?"):
+            spd_cur = _fmt_speed(sim_delay)
+            print(f"""
+┌── [СПРАВКА ПО КОМАНДАМ ИНТЕРАКТИВНОГО РЕЖИМА] ────────────────────────────────┐
+│  [Enter], s, step        — Выполнить один такт / инструкцию                   │
+│  r [N], run [N]          — Выполнить N тактов (по умолчанию: 100)             │
+│  c, cont, continue       — Запустить в реальном времени (Ctrl+C для паузы)    │
+│  delay [ms], speed [ms]  — Скорость/задержка в миллисекундах (тек: {spd_cur:<10})│
+│  irq [VEC]               — ⚡ Нажать кнопку прерывания (вызвать IRQ0..IRQ15)   │
+│  d [ADDR] [LEN], dump    — Показать дамп памяти (например: d 0x100000 64)     │
+│  reset, restart          — Сбросить процессор к исходному состоянию           │
+│  h, help, ?              — Показать это окно справки                          │
+│  q, quit, exit           — Выйти из симулятора и сохранить изменения          │
+└───────────────────────────────────────────────────────────────────────────────┘""")
+        else:
+            print(f"Неизвестная команда '{cmd}'. Нажмите Enter для шага или 'h' для справки.")
+
+    if bus and hasattr(bus, "save_persistent_devices"):
+        saved = bus.save_persistent_devices()
+        if saved and not quiet:
+            for s in saved:
+                print(f"[PERSIST] Образ памяти сохранен на диск: {s}")
+
 

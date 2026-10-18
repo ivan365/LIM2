@@ -32,8 +32,8 @@
      - Косвенная ссылка через 24-битный указатель PTREG [$ptreg] (SRC=2 / DST=2):
          LMR.w $0, [$ptreg]
          LRM.w $0, [$ptreg]
-     - Составной 24-битный поинтер на основе пары регистров [$0:$1] (SRC=3 / DST=3):
-         LMR $0, [$0:$1]   (также допускается запятая после мнемоники: LMR, $0, [$0:$1])
+     - Составной 32-битный поинтер на основе пары регистров [$0:$1] (SRC=3 / DST=3):
+         LMR $0, [$0:$1]
          LRM $0, [$0:$1]
   5. Манипуляция специальными регистрами (MSP):
      - Модификация флагового регистра маской:
@@ -42,12 +42,15 @@
          MSP.xor $freg, $2
      - Прямая загрузка глухой настройки или поинтера (MSP.ld):
          MSP.ld $freg, 0x0000
-         MSP.ld $ptreg, 0xA000
-         MSP.ld [$ptreg], $0, $1   (или MSP.ld $ptreg, $0, $1)
+         MSP.ld $ptreg, 0x0001A000
+         MSP.ld $ptreg, [$0:$1]    (загрузка составного 32-битного поинтера в PTREG из пары [$0:$1])
+         MSP.ld $sreg, [$0:$1]     (загрузка составного указателя стека SREG из пары [$0:$1])
+         MSP.ld $ir0, [$0:$1]      (загрузка 32-битного вектора прерывания из пары [$0:$1])
+         MSP.ld $pv0, [$0:$1]      (загрузка границы зоны привилегий из пары [$0:$1])
          MSP.ld $ptreg, [0xA000]   (загрузка поинтера по непосредственной ссылке из памяти)
-          MSP.ld $ptreg, [$ptreg]   (нативное разыменование указателя: PTREG <- MEM[PTREG])
-          MSP.ld $sreg, 0x2000      (работа со стек-поинтером в том же формате, что и PTREG)
-          MSP.add $ptreg, 0x0010    (смещение указателя PTREG или SREG)
+         MSP.ld $ptreg, [$ptreg]   (нативное разыменование указателя: PTREG <- MEM[PTREG])
+         MSP.ld $sreg, 0x3F00      (работа со стек-поинтером в том же формате, что и PTREG)
+         MSP.add $ptreg, 0x0010    (смещение указателя PTREG или SREG)
 """
 
 import argparse
@@ -97,6 +100,16 @@ for _p in range(16):
     SPEC_REG_MAP[f"$PV{_p}"] = (3, 16 + _p)
     SPEC_REG_MAP[f"PV{_p}"] = (3, 16 + _p)
 
+# Алиасы границ постоянной памяти ROM (PV14 и PV15):
+SPEC_REG_MAP["$ROM_BASE"] = (3, 30)
+SPEC_REG_MAP["ROM_BASE"] = (3, 30)
+SPEC_REG_MAP["$ROM_LIMIT"] = (3, 31)
+SPEC_REG_MAP["ROM_LIMIT"] = (3, 31)
+SPEC_REG_MAP["$ROM_START"] = (3, 30)
+SPEC_REG_MAP["ROM_START"] = (3, 30)
+SPEC_REG_MAP["$ROM_END"] = (3, 31)
+SPEC_REG_MAP["ROM_END"] = (3, 31)
+
 OPCODES: Dict[str, int] = {
     "NOP": 0,
     "ADD": 1,
@@ -128,6 +141,9 @@ OPCODES: Dict[str, int] = {
     "MOD": 27,
     "INTR": 28,
     "SWI": 28,
+    "INT": 28,
+    "CALL": 29,
+    "RET": 30,
     "RSV29": 29,
     "RSV30": 30,
     "RSV31": 31,
@@ -383,14 +399,22 @@ class LimAssembler:
             rd = parse_gpr(operands[0], line_no, line_text)
             return bytes([((op << 3) | rd) & 0xFF])
 
-        # 3. Однобайтовое программное прерывание: INTR vec / SWI vec (28)
-        if base in ("INTR", "SWI"):
+        # 3. Двухбайтовое программное прерывание: INTR vec / SWI vec / INT vec (28)
+        if base in ("INTR", "SWI", "INT"):
             if len(operands) != 1:
-                raise AssemblerError(f"Инструкция '{base}' требует 1 аргумент — номер вектора 0..7", line_no, line_text)
+                raise AssemblerError(f"Инструкция '{base}' требует 1 аргумент — номер вектора 0..15", line_no, line_text)
             vec = self._eval_expr(operands[0], current_pc, pass_num, line_no, line_text)
-            if pass_num == 2 and not (0 <= vec <= 7):
-                raise AssemblerError(f"Номер вектора прерывания должен быть в диапазоне 0..7, получено {vec}", line_no, line_text)
-            return bytes([((op << 3) | (vec & 0x07)) & 0xFF])
+            if pass_num == 2 and not (0 <= vec <= 15):
+                raise AssemblerError(f"Номер вектора прерывания должен быть в диапазоне 0..15, получено {vec}", line_no, line_text)
+            b0 = (op << 3) & 0xFF
+            b1 = vec & 0x0F
+            return bytes([b0, b1])
+
+        # 3a. Возврат из подпрограммы (1 байт): RET (30)
+        if base == "RET":
+            if len(operands) != 0:
+                raise AssemblerError(f"Инструкция 'RET' не принимает аргументов", line_no, line_text)
+            return bytes([(op << 3) & 0xFF])
 
         # 4. Трехоперандные арифметические инструкции (2 байта): ADD (1), SUB (2), MUL (3), DIV (4), MOD (27)
         if base in ("ADD", "SUB", "MUL", "DIV", "MOD"):
@@ -454,8 +478,8 @@ class LimAssembler:
             b1 = (reg << 5) & 0xFF
             return bytes([b0, b1])
 
-        # 8. Переходы и ветвления (2..3 байта): JMP (9), JCR (10), JNZ (11), JZ (12)
-        if base in ("JMP", "JCR", "JNZ", "JZ"):
+        # 8. Переходы и вызовы подпрограмм (2..3 байта): JMP (9), JCR (10), JNZ (11), JZ (12), CALL (29)
+        if base in ("JMP", "JCR", "JNZ", "JZ", "CALL"):
             if len(operands) != 1:
                 raise AssemblerError(f"Инструкция перехода '{base}' требует 1 целевой операнд", line_no, line_text)
             target_tok = operands[0].strip()
@@ -624,13 +648,13 @@ class LimAssembler:
         Поддерживает все формы MSP:
           - MSP.ld $freg, 0x0000        | MSP.ld $freg, $0        | MSP.ld $freg, [$ptreg] | MSP.ld $freg, [0xA000]
           - MSP.and $freg, 0x0001       | MSP.or $freg, 0x0200    | MSP.xor $freg, $1      | MSP.xnor $freg, 0xFFFF
-          - MSP.ld $ptreg, $0, $1       | MSP.ld [$ptreg], $0, $1
+          - MSP.ld $ptreg, [$0:$1]      | MSP.ld $sreg, [$0:$1]   | MSP.ld $ir0, [$0:$1]
           - MSP.ld $ptreg, 0xA000       | MSP.ld.d $ptreg, 0x01A000
           - MSP.ld $ptreg, [$ptreg]     (нативное разыменование указателя PTREG <- MEM[PTREG])
           - MSP.ld $ptreg, [0xA000]     (загрузка PTREG по ссылке из памяти MEM[0xA000])
           - MSP.add $ptreg, $3          | MSP.add $ptreg, 0x0010  | MSP.sub $ptreg, 0x0002
-          - Те же операции для $sreg ($sp) и $vec0..$vec7
-          - Традиционный синтаксис без точки: MSP $freg, OR, $2 | MSP $ptreg, $0, $1
+          - Те же операции для $sreg ($sp) и векторов $ir0..$ir15, $pv0..$pv15
+          - Традиционный синтаксис без точки: MSP $freg, OR, $2 | MSP $ptreg, [$0:$1]
         """
         if not operands:
             raise AssemblerError("Инструкция MSP требует операнды", line_no, line_text)
@@ -706,13 +730,13 @@ class LimAssembler:
                             b1 = (((vec_idx & 0x1F) << 3) | (0b10 << 1)) & 0xFF
                             return bytes([b0, b1])
 
-                        # Источник 3а: косвенно через пару регистров [$rd:$rs] (3 байта)
+                        # Составной поинтер [$rd:$rs] (Источник 0: пара регистров GPR, 3 байта)
                         if ":" in inner:
                             pair = [p.strip() for p in inner.split(":")]
                             if len(pair) == 2 and is_gpr(pair[0]) and is_gpr(pair[1]):
                                 rd_hi = parse_gpr(pair[0], line_no, line_text)
                                 rs_lo = parse_gpr(pair[1], line_no, line_text)
-                                b1 = (((vec_idx & 0x1F) << 3) | (0b11 << 1) | 0) & 0xFF
+                                b1 = (((vec_idx & 0x1F) << 3) | (0b00 << 1)) & 0xFF
                                 b2 = ((rd_hi << 5) | (rs_lo << 2)) & 0xFF
                                 return bytes([b0, b1, b2])
 
@@ -804,7 +828,7 @@ class LimAssembler:
 
             # Случай 4: Непосредственное число (например MSP.ld $freg, 0x0000 или MSP.ld $ptreg, 0xA000) -> ext_mode = 1 (0b01)
             imm_val = self._eval_expr(src_tok, current_pc, pass_num, line_no, line_text)
-            use_24 = (size_sfx == "D") and (sreg_sel in (1, 2))
+            use_24 = ((size_sfx == "D") or (imm_val > 0xFFFF)) and (sreg_sel in (1, 2))
             hi_field = (vec_idx << 5) if sreg_sel == 3 else 0
             if use_24:
                 imm24 = imm_val & 0xFFFFFF
@@ -1137,23 +1161,24 @@ def disassemble_one(read8_fn, addr: int) -> Tuple[str, int, List[int]]:
         return "NOP", 1, [b0]
     if op == 31:
         return "HALT", 1, [b0]
-    if op == 29:
-        return "RSV29", 1, [b0]
     if op == 30:
-        return "RSV30", 1, [b0]
+        return "RET", 1, [b0]
     if op == 17:
         return f"NOT ${cfg}", 1, [b0]
     if op == 20:
         return f"INC ${cfg}", 1, [b0]
     if op == 21:
         return f"DEC ${cfg}", 1, [b0]
-    if op == 28:
-        return f"INTR {cfg}", 1, [b0]
 
     b1 = read8_fn(addr + 1) & 0xFF
     rd = (b1 >> 5) & 0x07
     rs1 = (b1 >> 2) & 0x07
     rs2 = b1 & 0x03
+
+    # Программное прерывание INT (28)
+    if op == 28:
+        vec = b1 & 0x0F
+        return f"INT {vec}", 2, [b0, b1]
 
     # 3-операндная арифметика (ADD, SUB, MUL, DIV, MOD)
     alu_names = {1: "ADD", 2: "SUB", 3: "MUL", 4: "DIV", 27: "MOD"}
@@ -1193,8 +1218,8 @@ def disassemble_one(read8_fn, addr: int) -> Tuple[str, int, List[int]]:
     if op in two_reg_names:
         return f"{two_reg_names[op]} ${rd}, ${rs1}", 2, [b0, b1]
 
-    # Ветвления: JMP (9), JCR (10), JNZ (11), JZ (12)
-    br_names = {9: "JMP", 10: "JCR", 11: "JNZ", 12: "JZ"}
+    # Ветвления и вызовы подпрограмм: JMP (9), JCR (10), JNZ (11), JZ (12), CALL (29)
+    br_names = {9: "JMP", 10: "JCR", 11: "JNZ", 12: "JZ", 29: "CALL"}
     if op in br_names:
         name = br_names[op]
         if cfg == 1:
@@ -1236,7 +1261,7 @@ def disassemble_one(read8_fn, addr: int) -> Tuple[str, int, List[int]]:
                     b2 = read8_fn(addr + 2) & 0xFF
                     rd = (b2 >> 5) & 0x07
                     rs = (b2 >> 2) & 0x07
-                    return f"MSP.ld {v_name}, ${rd}:${rs}", 3, [b0, b1, b2]
+                    return f"MSP.ld {v_name}, [${rd}:${rs}]", 3, [b0, b1, b2]
                 elif src == 0b10:
                     return f"MSP.ld {v_name}, [$ptreg]", 2, [b0, b1]
                 elif src == 0b01:
@@ -1267,7 +1292,7 @@ def disassemble_one(read8_fn, addr: int) -> Tuple[str, int, List[int]]:
         if act == 0:
             if ext_mode == 0:
                 if sreg_sel in (1, 2):
-                    return f"MSP.ld {sreg_name}, ${rd}, ${rs1}", 2, [b0, b1]
+                    return f"MSP.ld {sreg_name}, [${rd}:${rs1}]", 2, [b0, b1]
                 return f"MSP.ld {sreg_name}, ${rd}", 2, [b0, b1]
             if ext_mode == 2:
                 return f"MSP.ld {sreg_name}, [$ptreg]", 2, [b0, b1]

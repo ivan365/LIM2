@@ -101,8 +101,9 @@ class PixelMonitorDevice(BaseDevice):
             start=start,
             size=total_size,
             name=name,
-            readonly=False,
-            is_video=False  # это графический монитор, а не консольный текст
+            is_video=True,
+            width=width,
+            height=height
         )
 
         self.width = width
@@ -145,6 +146,7 @@ class PixelMonitorDevice(BaseDevice):
 
     def write(self, offset: int, value: int):
         val8 = value & 0xFF
+        self._vram_version = getattr(self, "_vram_version", 0) + 1
 
         # Запись в область пикселей видеопамяти (VRAM)
         if offset < self.vram_size:
@@ -188,6 +190,7 @@ class PixelMonitorDevice(BaseDevice):
             x = i % self.width
             y = i // self.width
             self._dirty_pixels[(x, y)] = col8
+        self._vram_version = getattr(self, "_vram_version", 0) + 1
 
     def draw_rect(self, x: int, y: int, w: int, h: int, color: int, fill: bool = True):
         """Рисует прямоугольник в VRAM."""
