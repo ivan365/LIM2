@@ -414,12 +414,13 @@ class LIM2CPU(BaseCPU):
                     d_hi = self.bus.read8(self.pc)
                     self.pc += 1
                     data = (d_hi << 8) | d_lo
-            elif src == 1:  # 1: Непосредственный 16-битный указатель на данные (Little-Endian)
-                p_lo = self.bus.read8(self.pc)
-                self.pc += 1
-                p_hi = self.bus.read8(self.pc)
-                self.pc += 1
-                ea = (p_hi << 8) | p_lo
+            elif src == 1:  # 1: Непосредственный 32-битный указатель на данные [addr32] (Little-Endian)
+                p0 = self.bus.read8(self.pc)
+                p1 = self.bus.read8(self.pc + 1)
+                p2 = self.bus.read8(self.pc + 2)
+                p3 = self.bus.read8(self.pc + 3)
+                self.pc += 4
+                ea = p0 | (p1 << 8) | (p2 << 16) | (p3 << 24)
                 if sz == 0:
                     data = self.bus.read8(ea)
                 else:
@@ -474,12 +475,13 @@ class LIM2CPU(BaseCPU):
                     self.pc += 1
                 else:
                     self.pc += 2
-            elif dst_mode == 1:  # 1: Непосредственный 16-битный указатель за инструкцией (Little-Endian)
-                p_lo = self.bus.read8(self.pc)
-                self.pc += 1
-                p_hi = self.bus.read8(self.pc)
-                self.pc += 1
-                ea = (p_hi << 8) | p_lo
+            elif dst_mode == 1:  # 1: Непосредственный 32-битный указатель за инструкцией [addr32] (Little-Endian)
+                p0 = self.bus.read8(self.pc)
+                p1 = self.bus.read8(self.pc + 1)
+                p2 = self.bus.read8(self.pc + 2)
+                p3 = self.bus.read8(self.pc + 3)
+                self.pc += 4
+                ea = p0 | (p1 << 8) | (p2 << 16) | (p3 << 24)
                 if self.can_write_address(ea):
                     if sz == 0:
                         self.bus.write8(ea, val & 0xFF)
@@ -805,11 +807,13 @@ class LIM2CPU(BaseCPU):
                         res = self.bus.read16(ea, little_endian=True)
                         self.ptreg = (self.ptreg + 2) & 0xFFFFFFFF
                     return res
-                elif ext_mode == 3:  # Разыменование [addr16]: MEM[addr16] (Little-Endian)
-                    p_lo = self.bus.read8(self.pc)
-                    p_hi = self.bus.read8(self.pc + 1)
-                    self.pc += 2
-                    ea = (p_hi << 8) | p_lo
+                elif ext_mode == 3:  # Разыменование [addr32]: MEM[addr32] (Little-Endian)
+                    p0 = self.bus.read8(self.pc)
+                    p1 = self.bus.read8(self.pc + 1)
+                    p2 = self.bus.read8(self.pc + 2)
+                    p3 = self.bus.read8(self.pc + 3)
+                    self.pc += 4
+                    ea = p0 | (p1 << 8) | (p2 << 16) | (p3 << 24)
                     if use_32:
                         return self.bus.read32(ea, little_endian=True)
                     return self.bus.read16(ea, little_endian=True)
@@ -829,11 +833,13 @@ class LIM2CPU(BaseCPU):
                     elif ext_mode == 2:  # [$ptreg]
                         new_freg = self.bus.read16(self.ptreg, little_endian=True)
                         self.ptreg = (self.ptreg + 2) & 0xFFFFFFFF
-                    elif ext_mode == 3:  # [addr16] (Little-Endian)
-                        p_lo = self.bus.read8(self.pc)
-                        p_hi = self.bus.read8(self.pc + 1)
-                        self.pc += 2
-                        ea = (p_hi << 8) | p_lo
+                    elif ext_mode == 3:  # [addr32] (Little-Endian)
+                        p0 = self.bus.read8(self.pc)
+                        p1 = self.bus.read8(self.pc + 1)
+                        p2 = self.bus.read8(self.pc + 2)
+                        p3 = self.bus.read8(self.pc + 3)
+                        self.pc += 4
+                        ea = p0 | (p1 << 8) | (p2 << 16) | (p3 << 24)
                         new_freg = self.bus.read16(ea, little_endian=True)
                     else:
                         new_freg = _fetch_msp_ext(False) & 0xFFFF
@@ -866,11 +872,13 @@ class LIM2CPU(BaseCPU):
                         val32 = self.bus.read32(ea, little_endian=True)
                         if sreg_sel != 1:  # если загружаем в SREG, PTREG инкрементируется на 4
                             self.ptreg = (self.ptreg + 4) & 0xFFFFFFFF
-                    elif ext_mode == 3:  # 11: [addr16] (разыменование адреса — 4 байта Little-Endian!)
-                        p_lo = self.bus.read8(self.pc)
-                        p_hi = self.bus.read8(self.pc + 1)
-                        self.pc += 2
-                        ea = (p_hi << 8) | p_lo
+                    elif ext_mode == 3:  # 11: [addr32] (разыменование адреса — 4 байта Little-Endian!)
+                        p0 = self.bus.read8(self.pc)
+                        p1 = self.bus.read8(self.pc + 1)
+                        p2 = self.bus.read8(self.pc + 2)
+                        p3 = self.bus.read8(self.pc + 3)
+                        self.pc += 4
+                        ea = p0 | (p1 << 8) | (p2 << 16) | (p3 << 24)
                         val32 = self.bus.read32(ea, little_endian=True)
                     else:
                         val32 = _fetch_msp_ext(True) & 0xFFFFFFFF

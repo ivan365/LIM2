@@ -769,13 +769,19 @@ class LimAssembler:
                 b1 = ((reg_main << 5) | (r_lo << 2)) & 0xFF
                 return prefix + bytes([b0, b1])
 
-            # 3) [addr] -> режим 1 (непосредственный 16-битный указатель на память, Little-Endian)
-            ptr = self._eval_expr(inner, current_pc, pass_num, line_no, line_text) & 0xFFFF
+            # 3) [addr] -> режим 1 (непосредственный 32-битный указатель на память, Little-Endian)
+            ptr = self._eval_expr(inner, current_pc, pass_num, line_no, line_text) & 0xFFFFFFFF
             mode = 1
             cfg = (mode << 1) | sz_bit
             b0 = ((op << 3) | cfg) & 0xFF
             b1 = (reg_main << 5) & 0xFF
-            return bytes([b0, b1, ptr & 0xFF, (ptr >> 8) & 0xFF])
+            return bytes([
+                b0, b1,
+                ptr & 0xFF,
+                (ptr >> 8) & 0xFF,
+                (ptr >> 16) & 0xFF,
+                (ptr >> 24) & 0xFF,
+            ])
 
         # Случай Б: Просто число/выражение без скобок -> непосредственное значение (SRC=0 / DST=0)
         val = self._eval_expr(arg, current_pc, pass_num, line_no, line_text)
@@ -978,12 +984,18 @@ class LimAssembler:
                         b1 = ((rs_hi << 5) | (rs_lo << 2) | 0b00) & 0xFF
                         return bytes([b0, b1])
 
-                # 3в) MSP.ld $ptreg, [0xA000] -> косвенная загрузка по адресу в памяти (ext_mode = 3 / 0b11, 4 байта Little-Endian)
-                addr16 = self._eval_expr(inner, current_pc, pass_num, line_no, line_text) & 0xFFFF
+                # 3в) MSP.ld $ptreg, [0xA000] -> косвенная загрузка по 32-битному адресу в памяти (ext_mode = 3 / 0b11, 6 байт Little-Endian)
+                addr32 = self._eval_expr(inner, current_pc, pass_num, line_no, line_text) & 0xFFFFFFFF
                 sz24_bit = 1 if size_sfx == "D" else 0
                 hi_field = (vec_idx << 5) if sreg_sel == 3 else 0
                 b1 = (hi_field | (sz24_bit << 2) | 0b11) & 0xFF
-                return bytes([b0, b1, addr16 & 0xFF, (addr16 >> 8) & 0xFF])
+                return bytes([
+                    b0, b1,
+                    addr32 & 0xFF,
+                    (addr32 >> 8) & 0xFF,
+                    (addr32 >> 16) & 0xFF,
+                    (addr32 >> 24) & 0xFF,
+                ])
 
             # Случай 4: Непосредственное число (например MSP.ld $freg, 0x0000 или MSP.ld $ptreg, 0xA000) -> ext_mode = 1 (0b01)
             imm_val = self._eval_expr(src_tok, current_pc, pass_num, line_no, line_text)
@@ -1371,10 +1383,12 @@ def disassemble_one(read8_fn, addr: int) -> Tuple[str, int, List[int]]:
             imm16 = (hi << 8) | lo
             return f"{name}{sfx} ${rd}, 0x{imm16:04X}", 4, [b0, b1, lo, hi]
         if mode == 1:
-            lo = read8_fn(addr + 2) & 0xFF
-            hi = read8_fn(addr + 3) & 0xFF
-            ptr16 = (hi << 8) | lo
-            return f"{name}{sfx} ${rd}, [0x{ptr16:04X}]", 4, [b0, b1, lo, hi]
+            p0 = read8_fn(addr + 2) & 0xFF
+            p1 = read8_fn(addr + 3) & 0xFF
+            p2 = read8_fn(addr + 4) & 0xFF
+            p3 = read8_fn(addr + 5) & 0xFF
+            ptr32 = p0 | (p1 << 8) | (p2 << 16) | (p3 << 24)
+            return f"{name}{sfx} ${rd}, [0x{ptr32:08X}]", 6, [b0, b1, p0, p1, p2, p3]
         if mode == 2:
             return f"{name}{sfx} ${rd}, [$ptreg]", 2, [b0, b1]
         return f"{name}{sfx} ${rd}, [${rd}:${rs1}]", 2, [b0, b1]
@@ -1478,9 +1492,12 @@ def disassemble_one(read8_fn, addr: int) -> Tuple[str, int, List[int]]:
             if ext_mode == 2:
                 return f"MSP.ld {sreg_name}, [$ptreg]", 2, [b0, b1]
             if ext_mode == 3:
-                lo = read8_fn(addr + 2) & 0xFF
-                hi = read8_fn(addr + 3) & 0xFF
-                return f"MSP.ld {sreg_name}, [0x{(hi << 8) | lo:04X}]", 4, [b0, b1, lo, hi]
+                p0 = read8_fn(addr + 2) & 0xFF
+                p1 = read8_fn(addr + 3) & 0xFF
+                p2 = read8_fn(addr + 4) & 0xFF
+                p3 = read8_fn(addr + 5) & 0xFF
+                ptr32 = p0 | (p1 << 8) | (p2 << 16) | (p3 << 24)
+                return f"MSP.ld {sreg_name}, [0x{ptr32:08X}]", 6, [b0, b1, p0, p1, p2, p3]
             if ext_mode == 1:
                 if sreg_sel in (1, 2):
                     # MSP.ld $ptreg / $sreg обязательно читает 4 байта - 32 бита (Little-Endian)
@@ -1501,11 +1518,17 @@ def disassemble_one(read8_fn, addr: int) -> Tuple[str, int, List[int]]:
                     return f"MSP.{l_op} $freg, ${rs_m}", 2, [b0, b1]
                 if ext_mode == 2:
                     return f"MSP.{l_op} $freg, [$ptreg]", 2, [b0, b1]
+                if ext_mode == 3:
+                    p0 = read8_fn(addr + 2) & 0xFF
+                    p1 = read8_fn(addr + 3) & 0xFF
+                    p2 = read8_fn(addr + 4) & 0xFF
+                    p3 = read8_fn(addr + 5) & 0xFF
+                    ptr32 = p0 | (p1 << 8) | (p2 << 16) | (p3 << 24)
+                    return f"MSP.{l_op} $freg, [0x{ptr32:08X}]", 6, [b0, b1, p0, p1, p2, p3]
                 lo = read8_fn(addr + 2) & 0xFF
                 hi = read8_fn(addr + 3) & 0xFF
                 val16 = (hi << 8) | lo
-                rhs = f"[0x{val16:04X}]" if ext_mode == 3 else f"0x{val16:04X}"
-                return f"MSP.{l_op} $freg, {rhs}", 4, [b0, b1, lo, hi]
+                return f"MSP.{l_op} $freg, 0x{val16:04X}", 4, [b0, b1, lo, hi]
             else:
                 a_op = "add" if ((b1 >> 7) & 0x01) == 0 else "sub"
                 if ext_mode == 0:
