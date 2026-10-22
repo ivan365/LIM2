@@ -12,11 +12,11 @@
      - Регистры общего назначения (16 бит): $0 .. $7 (также поддерживаются R0..R7, $r0..$r7)
      - Специальные регистры: $ptreg (24 бита), $freg (16 бит), $sreg / $sp (24 бита),
        а также векторы прерываний $vec0 .. $vec7
-  2. Суффиксы размера операндов (.b / .w / .d):
-     - .b — byte (8 бит, 1 байт)
-     - .w — word (16 бит, 2 байта, по умолчанию)
-     - .d — doubleword (24/32 бита)
-     Примеры: LMR.b $0, 0x42 | LMR.w $0, [0x1000] | MSP.ld.d $ptreg, 0x01A000
+  2. Суффиксы размера операндов (.b / .w):
+     - .b — byte (8 бит, 1 байт, аппаратный SZ=0)
+     - .w — word (16 бит, 2 байта, аппаратный SZ=1, по умолчанию)
+     (Инструкции памяти LMR и LRM поддерживают строго .b и .w; для 24/32 бит используются директивы данных и MSP.ld)
+     Примеры: LMR.b $0, 0x42 | LMR.w $0, [0x1000] | LRM.b $0, [$ptreg]
   3. Арифметика и унарные операции (работа только с регистрами):
      - ADD, SUB, MUL, DIV, MOD:  ADD $0, $1, $2   (или ADD R0, R1, R1)
      - INC, DEC, NOT:            INC $0           (1-байтовые инструкции!)
@@ -100,7 +100,17 @@ for _p in range(16):
     SPEC_REG_MAP[f"$PV{_p}"] = (3, 16 + _p)
     SPEC_REG_MAP[f"PV{_p}"] = (3, 16 + _p)
 
-# Алиасы границ постоянной памяти ROM (PV14 и PV15):
+# Алиасы границ оперативной памяти RAM ($pv14 и $pv15, к которой разрешен доступ с любыми правами):
+SPEC_REG_MAP["$RAM_BASE"] = (3, 30)
+SPEC_REG_MAP["RAM_BASE"] = (3, 30)
+SPEC_REG_MAP["$RAM_LIMIT"] = (3, 31)
+SPEC_REG_MAP["RAM_LIMIT"] = (3, 31)
+SPEC_REG_MAP["$RAM_START"] = (3, 30)
+SPEC_REG_MAP["RAM_START"] = (3, 30)
+SPEC_REG_MAP["$RAM_END"] = (3, 31)
+SPEC_REG_MAP["RAM_END"] = (3, 31)
+
+# Для совместимости: алиасы ROM:
 SPEC_REG_MAP["$ROM_BASE"] = (3, 30)
 SPEC_REG_MAP["ROM_BASE"] = (3, 30)
 SPEC_REG_MAP["$ROM_LIMIT"] = (3, 31)
@@ -161,6 +171,41 @@ MSP_LOGIC_OPS: Dict[str, int] = {
 MSP_ARITH_OPS: Dict[str, int] = {
     "ADD": 0,
     "SUB": 1,
+}
+
+# Таблица условий для условного перехода по результату сравнения JCR (Opcode 10):
+# Поле CFG [2:0]:
+#   Бит [2]: INV (0 = совпадение с кодом сравнения, 1 = несовпадение)
+#   Биты [1:0]: ожидаемый код сравнения (01 = <, 10 = ==, 11 = >)
+JCR_COND_MAP: Dict[str, int] = {
+    # Прямые условия (INV = 0):
+    "<": 0b001,   # 1: Меньше (Less, COND=01)
+    "LT": 0b001,
+    "==": 0b010,  # 2: Равно (Equal, COND=10)
+    "=": 0b010,
+    "EQ": 0b010,
+    ">": 0b011,   # 3: Больше (Greater, COND=11)
+    "GT": 0b011,
+    # Инвертированные условия (INV = 1):
+    ">=": 0b101,  # 5: Больше или равно (Greater or Equal, INV=1, COND=01)
+    "=>": 0b101,
+    "GE": 0b101,
+    "!=": 0b110,  # 6: Не равно (Not Equal, INV=1, COND=10)
+    "<>": 0b110,
+    "/=": 0b110,
+    "NE": 0b110,
+    "<=": 0b111,  # 7: Меньше или равно (Less or Equal, INV=1, COND=11)
+    "=<": 0b111,
+    "LE": 0b111,
+}
+
+JCR_COND_NAME: Dict[int, str] = {
+    0b001: "<",
+    0b010: "==",
+    0b011: ">",
+    0b101: ">=",
+    0b110: "!=",
+    0b111: "<=",
 }
 
 
@@ -345,7 +390,7 @@ class LimAssembler:
         Разбирает мнемонику с точечными суффиксами:
           - ADD.w -> ('ADD', None, 'W')
           - LMR.b -> ('LMR', None, 'B')
-          - LRM.d -> ('LRM', None, 'D')
+          - LRM.w -> ('LRM', None, 'W')
           - MSP.ld -> ('MSP', 'LD', None)
           - MSP.and -> ('MSP', 'AND', None)
           - MSP.ld.d -> ('MSP', 'LD', 'D')
@@ -365,6 +410,8 @@ class LimAssembler:
                 size_sfx = "D"
             elif base == "MSP" and p in ("LD", "LOAD", "AND", "OR", "XOR", "XNOR", "ADD", "SUB"):
                 sub_op = "LD" if p == "LOAD" else p
+            elif base == "JCR" and p in JCR_COND_MAP:
+                sub_op = p
             else:
                 raise AssemblerError(f"Неизвестный суффикс '.{p}' в инструкции '{raw_mnemonic}'", line_no, line_text)
 
@@ -478,15 +525,19 @@ class LimAssembler:
             b1 = (reg << 5) & 0xFF
             return bytes([b0, b1])
 
-        # 8. Переходы и вызовы подпрограмм (2..3 байта): JMP (9), JCR (10), JNZ (11), JZ (12), CALL (29)
-        if base in ("JMP", "JCR", "JNZ", "JZ", "CALL"):
+        # 8. Условный переход по результату сравнения: JCR (10)
+        if base == "JCR":
+            return self._encode_jcr(sub_op, operands, current_pc, pass_num, line_no, line_text)
+
+        # 9. Переходы и вызовы подпрограмм (2..5 байт): JMP (9), JNZ (11), JZ (12), CALL (29)
+        if base in ("JMP", "JNZ", "JZ", "CALL"):
             if len(operands) != 1:
                 raise AssemblerError(f"Инструкция перехода '{base}' требует 1 целевой операнд", line_no, line_text)
             target_tok = operands[0].strip()
             is_bracketed = target_tok.startswith("[") and target_tok.endswith("]")
             unbracketed = target_tok[1:-1].strip() if is_bracketed else target_tok
 
-            # MOD=2: переход по 24-битному указателю PTREG (JMP [$ptreg] или JMP $ptreg)
+            # MOD=2: переход по 32-битному указателю PTREG (JMP [$ptreg] или JMP $ptreg)
             if unbracketed.upper() in ("$PTREG", "PTREG"):
                 b0 = ((op << 3) | 0b010) & 0xFF
                 return bytes([b0, 0x00])
@@ -498,16 +549,16 @@ class LimAssembler:
                 b1 = (rs << 5) & 0xFF
                 return bytes([b0, b1])
 
-            # MOD=3: косвенный переход по адресу в памяти (JMP [mark] / JMP [0x1000])
+            # MOD=3: косвенный переход по адресу в памяти (JMP [mark] / JMP [0x1000]) (5 байт: 32-битный указатель Little-Endian)
             if is_bracketed:
-                addr = self._eval_expr(unbracketed, current_pc, pass_num, line_no, line_text) & 0xFFFF
+                addr = self._eval_expr(unbracketed, current_pc, pass_num, line_no, line_text) & 0xFFFFFFFF
                 b0 = ((op << 3) | 0b011) & 0xFF
-                return bytes([b0, (addr >> 8) & 0xFF, addr & 0xFF])
+                return bytes([b0, addr & 0xFF, (addr >> 8) & 0xFF, (addr >> 16) & 0xFF, (addr >> 24) & 0xFF])
 
-            # MOD=0: непосредственный 16-битный адрес перехода (3 байта) (JMP mark / JMP 0x1000)
-            addr = self._eval_expr(unbracketed, current_pc, pass_num, line_no, line_text) & 0xFFFF
+            # MOD=0: непосредственный 32-битный адрес перехода (5 байт) (JMP mark / JMP 0x100000)
+            addr = self._eval_expr(unbracketed, current_pc, pass_num, line_no, line_text) & 0xFFFFFFFF
             b0 = ((op << 3) | 0b000) & 0xFF
-            return bytes([b0, (addr >> 8) & 0xFF, addr & 0xFF])
+            return bytes([b0, addr & 0xFF, (addr >> 8) & 0xFF, (addr >> 16) & 0xFF, (addr >> 24) & 0xFF])
 
         # 9. Загрузка и выгрузка памяти: LMR (5) и LRM (6)
         if base in ("LMR", "LRM"):
@@ -518,6 +569,119 @@ class LimAssembler:
             return self._encode_msp(sub_op, size_sfx, operands, current_pc, pass_num, line_no, line_text)
 
         raise AssemblerError(f"Инструкция '{base}' не реализована", line_no, line_text)
+
+    # --------------------------------------------------------------------------
+    # Кодирование JCR (Opcode 10)
+    # --------------------------------------------------------------------------
+
+    def _encode_jcr(
+        self,
+        sub_op: Optional[str],
+        operands: List[str],
+        current_pc: int,
+        pass_num: int,
+        line_no: int,
+        line_text: str,
+    ) -> bytes:
+        """
+        Кодирует инструкцию условного перехода по результату сравнения JCR (Opcode 10):
+        1) Упрощенный составной вариант (fused / macro, 7 байт):
+           - JCR $1 > $2, addr (или JCR $1, >, $2, addr)
+           Заменяет пару инструкций CMP $1, $2 + JCR >, addr.
+        2) Прямой / ручной вариант (5 байт):
+           - JCR <cond>, addr (например: JCR <, target | JCR ==, target | JCR !=, target | JCR.GT target)
+           Байт 0: [7-3] опкод 10 (0b01010), [2] INV, [1-0] COND
+           Байты 1-4: target32 (Little-Endian)
+        """
+        # Вариант 1: Условие в мнемонике (JCR.GT addr, JCR.< addr, etc.) (5 байт)
+        if sub_op is not None:
+            cond_key = sub_op.upper()
+            if cond_key not in JCR_COND_MAP:
+                raise AssemblerError(f"Неизвестное условие '{sub_op}' для JCR", line_no, line_text)
+            if len(operands) != 1:
+                raise AssemblerError(f"Инструкция JCR.{sub_op} требует 1 аргумент (целевой адрес перехода)", line_no, line_text)
+            cfg = JCR_COND_MAP[cond_key]
+            target = self._eval_expr(operands[0], current_pc, pass_num, line_no, line_text) & 0xFFFFFFFF
+            b0 = ((10 << 3) | cfg) & 0xFF
+            return bytes([b0, target & 0xFF, (target >> 8) & 0xFF, (target >> 16) & 0xFF, (target >> 24) & 0xFF])
+
+        # Проверяем fused форму: JCR $1 > $2, addr (или $1, >, $2, addr) (7 байт: CMP 2 байта + JCR 5 байт)
+        fused = self._match_fused_jcr(operands)
+        if fused is not None:
+            r1_tok, cond_tok, r2_tok, target_tok = fused
+            r1 = parse_gpr(r1_tok, line_no, line_text)
+            r2 = parse_gpr(r2_tok, line_no, line_text)
+            cfg = JCR_COND_MAP[cond_tok]
+            # 1. CMP $r1, $r2 (2 байта: [7-3] опкод 8, [2-0] 0; [7-5] r1, [4-2] r2)
+            cmp_b0 = (8 << 3) & 0xFF
+            cmp_b1 = ((r1 << 5) | (r2 << 2)) & 0xFF
+            # 2. JCR cond, target (5 байт, адрес смещен на 2 байта относительно начала CMP)
+            target = self._eval_expr(target_tok, current_pc + 2, pass_num, line_no, line_text) & 0xFFFFFFFF
+            jcr_b0 = ((10 << 3) | cfg) & 0xFF
+            return bytes([cmp_b0, cmp_b1, jcr_b0, target & 0xFF, (target >> 8) & 0xFF, (target >> 16) & 0xFF, (target >> 24) & 0xFF])
+
+        # Вариант 2: Ручной синтаксис JCR <cond>, addr (2 операнда) (5 байт)
+        if len(operands) == 2:
+            op0 = operands[0].strip().upper()
+            if op0 in JCR_COND_MAP:
+                cfg = JCR_COND_MAP[op0]
+            else:
+                try:
+                    cfg = int(op0, 0) & 0x07
+                except ValueError:
+                    raise AssemblerError(
+                        f"Неизвестное условие '{operands[0]}' для JCR. Допустимые условия: <, <=, ==, !=, >=, > (или LT, LE, EQ, NE, GE, GT)",
+                        line_no,
+                        line_text,
+                    )
+            target = self._eval_expr(operands[1], current_pc, pass_num, line_no, line_text) & 0xFFFFFFFF
+            b0 = ((10 << 3) | cfg) & 0xFF
+            return bytes([b0, target & 0xFF, (target >> 8) & 0xFF, (target >> 16) & 0xFF, (target >> 24) & 0xFF])
+
+        # Вариант 3: 1 операнд без спецификатора (например, JCR target — безусловный или cfg=0) (5 байт)
+        if len(operands) == 1:
+            cfg = 0
+            target = self._eval_expr(operands[0], current_pc, pass_num, line_no, line_text) & 0xFFFFFFFF
+            b0 = ((10 << 3) | cfg) & 0xFF
+            return bytes([b0, target & 0xFF, (target >> 8) & 0xFF, (target >> 16) & 0xFF, (target >> 24) & 0xFF])
+
+        raise AssemblerError(f"Недопустимый формат инструкции JCR: {operands}", line_no, line_text)
+
+    def _match_fused_jcr(self, operands: List[str]) -> Optional[Tuple[str, str, str, str]]:
+        """
+        Проверяет, соответствует ли список операндов fused-форме JCR:
+        Возвращает (r1_tok, cond_tok, r2_tok, target_tok) или None.
+        Поддерживает:
+          - JCR $1 > $2, addr             (2 операнда: "$1 > $2" и "addr")
+          - JCR $1, >, $2, addr          (4 операнда)
+          - JCR $1, $2, >, addr          (4 операнда)
+          - JCR $1, > $2, addr           (3 операнда)
+          - JCR $1 >, $2, addr           (3 операнда)
+        """
+        if len(operands) == 2:
+            m = re.match(
+                r"^(\$?[A-Za-z0-9]+)\s*(<=|>=|==|!=|=|<|>|LT|LE|GT|GE|EQ|NE)\s*(\$?[A-Za-z0-9]+)$",
+                operands[0].strip(),
+                re.IGNORECASE,
+            )
+            if m and is_gpr(m.group(1)) and is_gpr(m.group(3)) and m.group(2).upper() in JCR_COND_MAP:
+                return m.group(1), m.group(2).upper(), m.group(3), operands[1].strip()
+
+        elif len(operands) == 4:
+            if is_gpr(operands[0]) and operands[1].strip().upper() in JCR_COND_MAP and is_gpr(operands[2]):
+                return operands[0], operands[1].strip().upper(), operands[2], operands[3].strip()
+            if is_gpr(operands[0]) and is_gpr(operands[1]) and operands[2].strip().upper() in JCR_COND_MAP:
+                return operands[0], operands[2].strip().upper(), operands[1], operands[3].strip()
+
+        elif len(operands) == 3:
+            m = re.match(r"^(<=|>=|==|!=|=|<|>|LT|LE|GT|GE|EQ|NE)\s*(\$?[A-Za-z0-9]+)$", operands[1].strip(), re.IGNORECASE)
+            if m and is_gpr(operands[0]) and m.group(1).upper() in JCR_COND_MAP and is_gpr(m.group(2)):
+                return operands[0], m.group(1).upper(), m.group(2), operands[2].strip()
+            m = re.match(r"^(\$?[A-Za-z0-9]+)\s*(<=|>=|==|!=|=|<|>|LT|LE|GT|GE|EQ|NE)$", operands[0].strip(), re.IGNORECASE)
+            if m and is_gpr(m.group(1)) and m.group(2).upper() in JCR_COND_MAP and is_gpr(operands[1]):
+                return m.group(1), m.group(2).upper(), operands[1], operands[2].strip()
+
+        return None
 
     # --------------------------------------------------------------------------
     # Кодирование LMR и LRM
@@ -536,31 +700,26 @@ class LimAssembler:
     ) -> bytes:
         """
         Кодирует инструкции LMR (opcode 5) и LRM (opcode 6):
-          - LMR[.b/.w/.d] $rd, value        -> SRC=0 (непосредственное число)
-          - LMR[.b/.w/.d] $rd, [addr]       -> SRC=1 (ссылка на память по адресу addr)
-          - LMR[.b/.w/.d] $rd, [$ptreg]     -> SRC=2 (ссылка на память по регистру PTREG)
-          - LMR[.b/.w/.d] $rd, [$hi:$lo]    -> SRC=3 (составной 24-битный адрес из пары регистров)
+          - LMR[.b/.w] $rd, value        -> SRC=0 (непосредственное число)
+          - LMR[.b/.w] $rd, [addr]       -> SRC=1 (ссылка на память по адресу addr)
+          - LMR[.b/.w] $rd, [$ptreg]     -> SRC=2 (ссылка на память по регистру PTREG)
+          - LMR[.b/.w] $rd, [$hi:$lo]    -> SRC=3 (составной 24-битный адрес из пары регистров)
           (аналогично для LRM)
+        Поддерживаются строго суффиксы .b (байт, 8 бит) и .w (слово, 16 бит).
         """
+        if size_sfx not in (None, "B", "W"):
+            raise AssemblerError(
+                f"Инструкция '{base}' поддерживает только суффиксы размера .b (байт, 8 бит) и .w (слово, 16 бит), получено '.{size_sfx.lower()}'",
+                line_no,
+                line_text,
+            )
+
         if len(operands) < 2:
             raise AssemblerError(
                 f"Инструкция '{base}' требует целевой регистр и операнд источника/назначения",
                 line_no,
                 line_text,
             )
-
-        # Поддержка LMR.d $0, $1, 0x12345678 (двойное слово в пару регистров)
-        if size_sfx == "D" and len(operands) == 3 and is_gpr(operands[0]) and is_gpr(operands[1]) and not operands[2].startswith("["):
-            r_hi = parse_gpr(operands[0], line_no, line_text)
-            r_lo = parse_gpr(operands[1], line_no, line_text)
-            val32 = self._eval_expr(operands[2], current_pc, pass_num, line_no, line_text) & 0xFFFFFFFF
-            hi16 = (val32 >> 16) & 0xFFFF
-            lo16 = val32 & 0xFFFF
-            # Две инструкции LMR.w
-            b0_w = ((op << 3) | (0 << 1) | 1) & 0xFF
-            inst1 = bytes([b0_w, (r_hi << 5) & 0xFF, (hi16 >> 8) & 0xFF, hi16 & 0xFF])
-            inst2 = bytes([b0_w, (r_lo << 5) & 0xFF, (lo16 >> 8) & 0xFF, lo16 & 0xFF])
-            return inst1 + inst2
 
         sz_bit = 0 if size_sfx == "B" else 1  # .b -> 0 (8-bit), .w / default -> 1 (16-bit)
         reg_main = parse_gpr(operands[0], line_no, line_text)
@@ -610,13 +769,13 @@ class LimAssembler:
                 b1 = ((reg_main << 5) | (r_lo << 2)) & 0xFF
                 return prefix + bytes([b0, b1])
 
-            # 3) [addr] -> режим 1 (непосредственный 16-битный указатель на память)
+            # 3) [addr] -> режим 1 (непосредственный 16-битный указатель на память, Little-Endian)
             ptr = self._eval_expr(inner, current_pc, pass_num, line_no, line_text) & 0xFFFF
             mode = 1
             cfg = (mode << 1) | sz_bit
             b0 = ((op << 3) | cfg) & 0xFF
             b1 = (reg_main << 5) & 0xFF
-            return bytes([b0, b1, (ptr >> 8) & 0xFF, ptr & 0xFF])
+            return bytes([b0, b1, ptr & 0xFF, (ptr >> 8) & 0xFF])
 
         # Случай Б: Просто число/выражение без скобок -> непосредственное значение (SRC=0 / DST=0)
         val = self._eval_expr(arg, current_pc, pass_num, line_no, line_text)
@@ -628,7 +787,7 @@ class LimAssembler:
             return bytes([b0, b1, val & 0xFF])
         else:
             val16 = val & 0xFFFF
-            return bytes([b0, b1, (val16 >> 8) & 0xFF, val16 & 0xFF])
+            return bytes([b0, b1, val16 & 0xFF, (val16 >> 8) & 0xFF])
 
     # --------------------------------------------------------------------------
     # Кодирование MSP (Манипуляция специальными регистрами FREG, PTREG, SREG)
@@ -740,26 +899,26 @@ class LimAssembler:
                                 b2 = ((rd_hi << 5) | (rs_lo << 2)) & 0xFF
                                 return bytes([b0, b1, b2])
 
-                        # Источник 3б: по прямому адресу памяти [addr32] (6 байт)
+                        # Источник 3б: по прямому адресу памяти [addr32] (6 байт Little-Endian)
                         addr32 = self._eval_expr(inner, current_pc, pass_num, line_no, line_text) & 0xFFFFFFFF
                         b1 = (((vec_idx & 0x1F) << 3) | (0b11 << 1) | 1) & 0xFF
                         return bytes([
                             b0, b1,
-                            (addr32 >> 24) & 0xFF,
-                            (addr32 >> 16) & 0xFF,
+                            addr32 & 0xFF,
                             (addr32 >> 8) & 0xFF,
-                            addr32 & 0xFF
+                            (addr32 >> 16) & 0xFF,
+                            (addr32 >> 24) & 0xFF
                         ])
 
-                    # Источник 1: непосредственная загрузка imm32 (6 байт)
+                    # Источник 1: непосредственная загрузка imm32 (6 байт Little-Endian)
                     imm32 = self._eval_expr(src_tok, current_pc, pass_num, line_no, line_text) & 0xFFFFFFFF
                     b1 = (((vec_idx & 0x1F) << 3) | (0b01 << 1)) & 0xFF
                     return bytes([
                         b0, b1,
-                        (imm32 >> 24) & 0xFF,
-                        (imm32 >> 16) & 0xFF,
+                        imm32 & 0xFF,
                         (imm32 >> 8) & 0xFF,
-                        imm32 & 0xFF
+                        (imm32 >> 16) & 0xFF,
+                        (imm32 >> 24) & 0xFF
                     ])
 
                 raise AssemblerError(f"Неверное число операндов для MSP.ld: {rest}", line_no, line_text)
@@ -819,25 +978,30 @@ class LimAssembler:
                         b1 = ((rs_hi << 5) | (rs_lo << 2) | 0b00) & 0xFF
                         return bytes([b0, b1])
 
-                # 3в) MSP.ld $ptreg, [0xA000] -> косвенная загрузка по адресу в памяти (ext_mode = 3 / 0b11, 4 байта)
+                # 3в) MSP.ld $ptreg, [0xA000] -> косвенная загрузка по адресу в памяти (ext_mode = 3 / 0b11, 4 байта Little-Endian)
                 addr16 = self._eval_expr(inner, current_pc, pass_num, line_no, line_text) & 0xFFFF
                 sz24_bit = 1 if size_sfx == "D" else 0
                 hi_field = (vec_idx << 5) if sreg_sel == 3 else 0
                 b1 = (hi_field | (sz24_bit << 2) | 0b11) & 0xFF
-                return bytes([b0, b1, (addr16 >> 8) & 0xFF, addr16 & 0xFF])
+                return bytes([b0, b1, addr16 & 0xFF, (addr16 >> 8) & 0xFF])
 
             # Случай 4: Непосредственное число (например MSP.ld $freg, 0x0000 или MSP.ld $ptreg, 0xA000) -> ext_mode = 1 (0b01)
             imm_val = self._eval_expr(src_tok, current_pc, pass_num, line_no, line_text)
-            use_24 = ((size_sfx == "D") or (imm_val > 0xFFFF)) and (sreg_sel in (1, 2))
             hi_field = (vec_idx << 5) if sreg_sel == 3 else 0
-            if use_24:
-                imm24 = imm_val & 0xFFFFFF
-                b1 = (hi_field | (1 << 2) | 0b01) & 0xFF
-                return bytes([b0, b1, (imm24 >> 16) & 0xFF, (imm24 >> 8) & 0xFF, imm24 & 0xFF])
-            else:
+            if sreg_sel == 0:  # FREG (16 бит Little-Endian)
                 imm16 = imm_val & 0xFFFF
                 b1 = (hi_field | 0b01) & 0xFF
-                return bytes([b0, b1, (imm16 >> 8) & 0xFF, imm16 & 0xFF])
+                return bytes([b0, b1, imm16 & 0xFF, (imm16 >> 8) & 0xFF])
+            else:  # PTREG (1) и SREG (2): ОБЯЗАТЕЛЬНО 4 байта - 32 бита Little-Endian!
+                imm32 = imm_val & 0xFFFFFFFF
+                b1 = (hi_field | (1 << 2) | 0b01) & 0xFF
+                return bytes([
+                    b0, b1,
+                    imm32 & 0xFF,
+                    (imm32 >> 8) & 0xFF,
+                    (imm32 >> 16) & 0xFF,
+                    (imm32 >> 24) & 0xFF
+                ])
 
         # --- РЕЖИМ 2: МОДИФИКАЦИЯ (MSP.and, MSP.or, MSP.xor, MSP.xnor, MSP.add, MSP.sub, act = 1) ---
         act = 1
@@ -873,11 +1037,11 @@ class LimAssembler:
                     return bytes([b0, b1])
                 addr16 = self._eval_expr(inner, current_pc, pass_num, line_no, line_text) & 0xFFFF
                 b1 = ((logic_code << 6) | 0b11) & 0xFF
-                return bytes([b0, b1, (addr16 >> 8) & 0xFF, addr16 & 0xFF])
+                return bytes([b0, b1, addr16 & 0xFF, (addr16 >> 8) & 0xFF])
             else:
                 imm16 = self._eval_expr(src_tok, current_pc, pass_num, line_no, line_text) & 0xFFFF
                 b1 = ((logic_code << 6) | 0b01) & 0xFF
-                return bytes([b0, b1, (imm16 >> 8) & 0xFF, imm16 & 0xFF])
+                return bytes([b0, b1, imm16 & 0xFF, (imm16 >> 8) & 0xFF])
 
         elif sreg_sel in (1, 2):
             # PTREG и SREG поддерживают ADD и SUB
@@ -899,11 +1063,11 @@ class LimAssembler:
                     return bytes([b0, b1])
                 addr16 = self._eval_expr(inner, current_pc, pass_num, line_no, line_text) & 0xFFFF
                 b1 = ((arith_code << 7) | 0b11) & 0xFF
-                return bytes([b0, b1, (addr16 >> 8) & 0xFF, addr16 & 0xFF])
+                return bytes([b0, b1, addr16 & 0xFF, (addr16 >> 8) & 0xFF])
             else:
                 imm16 = self._eval_expr(src_tok, current_pc, pass_num, line_no, line_text) & 0xFFFF
                 b1 = ((arith_code << 7) | 0b01) & 0xFF
-                return bytes([b0, b1, (imm16 >> 8) & 0xFF, imm16 & 0xFF])
+                return bytes([b0, b1, imm16 & 0xFF, (imm16 >> 8) & 0xFF])
 
         raise AssemblerError(f"Модификация MSP.{sub_op.lower()} не поддерживается для данного регистра", line_no, line_text)
 
@@ -986,7 +1150,28 @@ class LimAssembler:
                 if not clean:
                     continue
 
-                # 1. Извлекаем все метки в начале строки (например: loop: ADD $0, $1, $2)
+                # 1. Проверяем присваивание констант / меток через = или EQU:
+                #    name = expr | name equ expr | name: equ expr
+                m_assign = re.match(r"^(\$?[A-Za-z_][A-Za-z0-9_]*)\s*(?<![=!<>])=(?![=!<>])\s*(.+)$", clean)
+                m_equ = re.match(r"^(\$?[A-Za-z_][A-Za-z0-9_]*):?\s+(?:equ|\.equ)\s+(.+)$", clean, re.IGNORECASE)
+                matched = m_assign or m_equ
+                if matched and matched.group(1).upper() not in OPCODES:
+                    lhs = matched.group(1).strip()
+                    rhs = matched.group(2).strip()
+                    if is_spec_reg(lhs):
+                        inst_bytes = self._encode_instruction(
+                            "MSP.ld", [lhs, rhs], pc, pass_num, line_no, raw_line
+                        )
+                        output_segments.append((pc, inst_bytes, clean))
+                        pc += len(inst_bytes)
+                        continue
+                    else:
+                        val = self._eval_expr(rhs, pc, pass_num, line_no, raw_line)
+                        self.constants[lhs.upper()] = val
+                        self.labels[lhs.upper()] = val
+                        continue
+
+                # 2. Извлекаем все метки в начале строки (например: loop: ADD $0, $1, $2)
                 while True:
                     m_label = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\s*:(.*)$", clean)
                     if not m_label:
@@ -1002,23 +1187,6 @@ class LimAssembler:
 
                 if not clean:
                     continue
-
-                # 2. Проверяем краткую запись присваивания спецрегистра (например: ptreg = 0xA000 или $ptreg = 0xA000)
-                m_assign = re.match(r"^(\$?[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$", clean)
-                if m_assign:
-                    lhs = m_assign.group(1).strip()
-                    rhs = m_assign.group(2).strip()
-                    if is_spec_reg(lhs):
-                        inst_bytes = self._encode_instruction(
-                            "MSP.ld", [lhs, rhs], pc, pass_num, line_no, raw_line
-                        )
-                        output_segments.append((pc, inst_bytes, clean))
-                        pc += len(inst_bytes)
-                        continue
-                    else:
-                        val = self._eval_expr(rhs, pc, pass_num, line_no, raw_line)
-                        self.constants[lhs.upper()] = val
-                        continue
 
                 # 3. Разделяем мнемонику/директиву и операнды
                 parts = clean.split(None, 1)
@@ -1198,15 +1366,15 @@ def disassemble_one(read8_fn, addr: int) -> Tuple[str, int, List[int]]:
             if sz == 0:
                 imm8 = read8_fn(addr + 2) & 0xFF
                 return f"{name}{sfx} ${rd}, 0x{imm8:02X}", 3, [b0, b1, imm8]
-            hi = read8_fn(addr + 2) & 0xFF
-            lo = read8_fn(addr + 3) & 0xFF
+            lo = read8_fn(addr + 2) & 0xFF
+            hi = read8_fn(addr + 3) & 0xFF
             imm16 = (hi << 8) | lo
-            return f"{name}{sfx} ${rd}, 0x{imm16:04X}", 4, [b0, b1, hi, lo]
+            return f"{name}{sfx} ${rd}, 0x{imm16:04X}", 4, [b0, b1, lo, hi]
         if mode == 1:
-            hi = read8_fn(addr + 2) & 0xFF
-            lo = read8_fn(addr + 3) & 0xFF
+            lo = read8_fn(addr + 2) & 0xFF
+            hi = read8_fn(addr + 3) & 0xFF
             ptr16 = (hi << 8) | lo
-            return f"{name}{sfx} ${rd}, [0x{ptr16:04X}]", 4, [b0, b1, hi, lo]
+            return f"{name}{sfx} ${rd}, [0x{ptr16:04X}]", 4, [b0, b1, lo, hi]
         if mode == 2:
             return f"{name}{sfx} ${rd}, [$ptreg]", 2, [b0, b1]
         return f"{name}{sfx} ${rd}, [${rd}:${rs1}]", 2, [b0, b1]
@@ -1218,19 +1386,32 @@ def disassemble_one(read8_fn, addr: int) -> Tuple[str, int, List[int]]:
     if op in two_reg_names:
         return f"{two_reg_names[op]} ${rd}, ${rs1}", 2, [b0, b1]
 
-    # Ветвления и вызовы подпрограмм: JMP (9), JCR (10), JNZ (11), JZ (12), CALL (29)
-    br_names = {9: "JMP", 10: "JCR", 11: "JNZ", 12: "JZ", 29: "CALL"}
+    # JCR (10): Jump Compare Result (5 байт: [7-3] 10, [2] INV, [1-0] COND, target32 Little-Endian)
+    if op == 10:
+        b1 = read8_fn(addr + 1) & 0xFF
+        b2 = read8_fn(addr + 2) & 0xFF
+        b3 = read8_fn(addr + 3) & 0xFF
+        b4 = read8_fn(addr + 4) & 0xFF
+        target = b1 | (b2 << 8) | (b3 << 16) | (b4 << 24)
+        cond_str = JCR_COND_NAME.get(cfg, f"?{cfg}")
+        return f"JCR {cond_str}, 0x{target:08X}", 5, [b0, b1, b2, b3, b4]
+
+    # Ветвления и вызовы подпрограмм: JMP (9), JNZ (11), JZ (12), CALL (29) (2..5 байт)
+    br_names = {9: "JMP", 11: "JNZ", 12: "JZ", 29: "CALL"}
     if op in br_names:
         name = br_names[op]
         if cfg == 1:
             return f"{name} ${rd}", 2, [b0, b1]
         if cfg == 2:
             return f"{name} [$ptreg]", 2, [b0, b1]
+        b1 = read8_fn(addr + 1) & 0xFF
         b2 = read8_fn(addr + 2) & 0xFF
-        target = (b1 << 8) | b2
+        b3 = read8_fn(addr + 3) & 0xFF
+        b4 = read8_fn(addr + 4) & 0xFF
+        target = b1 | (b2 << 8) | (b3 << 16) | (b4 << 24)
         if cfg == 3:
-            return f"{name} [0x{target:04X}]", 3, [b0, b1, b2]
-        return f"{name} 0x{target:04X}", 3, [b0, b1, b2]
+            return f"{name} [0x{target:08X}]", 5, [b0, b1, b2, b3, b4]
+        return f"{name} 0x{target:08X}", 5, [b0, b1, b2, b3, b4]
 
     # Стек: PUSH (22), POP (23)
     if op == 22:
@@ -1269,7 +1450,7 @@ def disassemble_one(read8_fn, addr: int) -> Tuple[str, int, List[int]]:
                     b3 = read8_fn(addr + 3) & 0xFF
                     b4 = read8_fn(addr + 4) & 0xFF
                     b5 = read8_fn(addr + 5) & 0xFF
-                    v32 = (b2 << 24) | (b3 << 16) | (b4 << 8) | b5
+                    v32 = (b5 << 24) | (b4 << 16) | (b3 << 8) | b2
                     return f"MSP.ld {v_name}, 0x{v32:08X}", 6, [b0, b1, b2, b3, b4, b5]
                 elif src == 0b11:
                     if ptr_sub == 0:
@@ -1282,7 +1463,7 @@ def disassemble_one(read8_fn, addr: int) -> Tuple[str, int, List[int]]:
                         b3 = read8_fn(addr + 3) & 0xFF
                         b4 = read8_fn(addr + 4) & 0xFF
                         b5 = read8_fn(addr + 5) & 0xFF
-                        v32 = (b2 << 24) | (b3 << 16) | (b4 << 8) | b5
+                        v32 = (b5 << 24) | (b4 << 16) | (b3 << 8) | b2
                         return f"MSP.ld {v_name}, [0x{v32:08X}]", 6, [b0, b1, b2, b3, b4, b5]
             return f"MSP.??? {v_name}", 2, [b0, b1]
 
@@ -1297,19 +1478,21 @@ def disassemble_one(read8_fn, addr: int) -> Tuple[str, int, List[int]]:
             if ext_mode == 2:
                 return f"MSP.ld {sreg_name}, [$ptreg]", 2, [b0, b1]
             if ext_mode == 3:
-                hi = read8_fn(addr + 2) & 0xFF
-                lo = read8_fn(addr + 3) & 0xFF
-                return f"MSP.ld {sreg_name}, [0x{(hi << 8) | lo:04X}]", 4, [b0, b1, hi, lo]
+                lo = read8_fn(addr + 2) & 0xFF
+                hi = read8_fn(addr + 3) & 0xFF
+                return f"MSP.ld {sreg_name}, [0x{(hi << 8) | lo:04X}]", 4, [b0, b1, lo, hi]
             if ext_mode == 1:
-                if sz24:
+                if sreg_sel in (1, 2):
+                    # MSP.ld $ptreg / $sreg обязательно читает 4 байта - 32 бита (Little-Endian)
                     b2 = read8_fn(addr + 2) & 0xFF
                     b3 = read8_fn(addr + 3) & 0xFF
                     b4 = read8_fn(addr + 4) & 0xFF
-                    val24 = (b2 << 16) | (b3 << 8) | b4
-                    return f"MSP.ld.d {sreg_name}, 0x{val24:06X}", 5, [b0, b1, b2, b3, b4]
-                hi = read8_fn(addr + 2) & 0xFF
-                lo = read8_fn(addr + 3) & 0xFF
-                return f"MSP.ld {sreg_name}, 0x{(hi << 8) | lo:04X}", 4, [b0, b1, hi, lo]
+                    b5 = read8_fn(addr + 5) & 0xFF
+                    val32 = (b5 << 24) | (b4 << 16) | (b3 << 8) | b2
+                    return f"MSP.ld {sreg_name}, 0x{val32:08X}", 6, [b0, b1, b2, b3, b4, b5]
+                lo = read8_fn(addr + 2) & 0xFF
+                hi = read8_fn(addr + 3) & 0xFF
+                return f"MSP.ld {sreg_name}, 0x{(hi << 8) | lo:04X}", 4, [b0, b1, lo, hi]
         else:
             if sreg_sel == 0:
                 l_op = {0: "and", 1: "or", 2: "xor", 3: "xnor"}[(b1 >> 6) & 0x03]
@@ -1318,11 +1501,11 @@ def disassemble_one(read8_fn, addr: int) -> Tuple[str, int, List[int]]:
                     return f"MSP.{l_op} $freg, ${rs_m}", 2, [b0, b1]
                 if ext_mode == 2:
                     return f"MSP.{l_op} $freg, [$ptreg]", 2, [b0, b1]
-                hi = read8_fn(addr + 2) & 0xFF
-                lo = read8_fn(addr + 3) & 0xFF
+                lo = read8_fn(addr + 2) & 0xFF
+                hi = read8_fn(addr + 3) & 0xFF
                 val16 = (hi << 8) | lo
                 rhs = f"[0x{val16:04X}]" if ext_mode == 3 else f"0x{val16:04X}"
-                return f"MSP.{l_op} $freg, {rhs}", 4, [b0, b1, hi, lo]
+                return f"MSP.{l_op} $freg, {rhs}", 4, [b0, b1, lo, hi]
             else:
                 a_op = "add" if ((b1 >> 7) & 0x01) == 0 else "sub"
                 if ext_mode == 0:
@@ -1330,11 +1513,11 @@ def disassemble_one(read8_fn, addr: int) -> Tuple[str, int, List[int]]:
                     return f"MSP.{a_op} {sreg_name}, ${rs_a}", 2, [b0, b1]
                 if ext_mode == 2:
                     return f"MSP.{a_op} {sreg_name}, [$ptreg]", 2, [b0, b1]
-                hi = read8_fn(addr + 2) & 0xFF
-                lo = read8_fn(addr + 3) & 0xFF
+                lo = read8_fn(addr + 2) & 0xFF
+                hi = read8_fn(addr + 3) & 0xFF
                 val16 = (hi << 8) | lo
                 rhs = f"[0x{val16:04X}]" if ext_mode == 3 else f"0x{val16:04X}"
-                return f"MSP.{a_op} {sreg_name}, {rhs}", 4, [b0, b1, hi, lo]
+                return f"MSP.{a_op} {sreg_name}, {rhs}", 4, [b0, b1, lo, hi]
 
     return f"DB 0x{b0:02X}, 0x{b1:02X}", 2, [b0, b1]
 

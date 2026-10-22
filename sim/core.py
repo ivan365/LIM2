@@ -558,16 +558,16 @@ class BaseCPU:
         """Физическая запись байта через шину с выставлением адреса, данных и строба WR."""
         self.bus.write8(addr, val, physical=True)
 
-    def mem_read16(self, addr: int, little_endian: bool = False) -> int:
+    def mem_read16(self, addr: int, little_endian: bool = True) -> int:
         return self.bus.read16(addr, little_endian=little_endian, physical=True)
 
-    def mem_write16(self, addr: int, val: int, little_endian: bool = False):
+    def mem_write16(self, addr: int, val: int, little_endian: bool = True):
         self.bus.write16(addr, val, little_endian=little_endian, physical=True)
 
-    def mem_read32(self, addr: int, little_endian: bool = False) -> int:
+    def mem_read32(self, addr: int, little_endian: bool = True) -> int:
         return self.bus.read32(addr, little_endian=little_endian, physical=True)
 
-    def mem_write32(self, addr: int, val: int, little_endian: bool = False):
+    def mem_write32(self, addr: int, val: int, little_endian: bool = True):
         self.bus.write32(addr, val, little_endian=little_endian, physical=True)
 
     # --------------------------------------------------------------------------
@@ -591,7 +591,7 @@ class BaseCPU:
         self.pc = (self.pc + 1) & self.regs._specs["pc"].mask
         return val
 
-    def fetch16(self, little_endian: bool = False) -> int:
+    def fetch16(self, little_endian: bool = True) -> int:
         """
         Считывает 16-битное число из памяти по текущему PC
         и увеличивает PC на 2.

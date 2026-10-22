@@ -505,10 +505,10 @@ Súčasťou SDK je oficiálny dvojprechodový kompilátor assemblera **`limasm.p
   * `$sreg` (alebo `$sp`) — 32-bitový systémový ukazovateľ vrcholu zásobníka (`SREG`);
   * `$ir0`..`$ir15` — 16 vektorových 32-bitových registrov adries prerušení;
   * `$pv0`..`$pv15` — 16 vektorových 32-bitových registrov hraníc Zón Privilégií (8 rozsahov `[$pv0:$pv1]`..`[$pv14:$pv15]`).
-* **Prípony veľkosti operandov:**
-  * `.b` (*byte*, 8 bitov) — napr. `LMR.b $0, 0x42`
-  * `.w` (*word*, 16 bitov, predvolené) — napr. `LMR.w $0, 0x1234` alebo `LMR $0, 0x1234`
-  * `.d` (*doubleword*, 32 bitov) — napr. `LMR.d $0, [0x1000]`
+* **Prípony veľkosti operandov:** inštrukcie pamäte `LMR` a `LRM` striktne podporujú dve hardvérové veľkosti (bit `SZ`):
+  * `.b` (*byte*, 8 bitov / 1 bajt, `SZ=0`) — napr. `LMR.b $0, 0x42`, `LRM.b $0, [0x1000]`
+  * `.w` (*word*, 16 bitov / 2 bajty, `SZ=1`, predvolené) — napr. `LMR.w $0, 0x1234` alebo `LMR $0, 0x1234`
+  *(Inštrukcie `LMR` a `LRM` podporujú výhradne `.b` a `.w`; pre 32-bitové hodnoty sa používajú direktívy `dd` a `MSP.ld`).*
 
 ### 2. Registrové operácie ALU a unárne inštrukcie
 3-operandové inštrukcie ALU (`ADD`, `SUB`, `MUL`, `DIV`, `MOD`) a 1-bajtové unárne inštrukcie (`INC`, `DEC`, `NOT`) pracujú výhradne so všeobecnými registrami:

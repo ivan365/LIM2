@@ -80,8 +80,8 @@ class LIM2CPU(BaseCPU):
             ("CF", "Carry", 1),
             ("OF", "Overflow", 2),
             ("EM", "ErrMath", 3),
-            ("CMP0", "CmpBit0", 4),
-            ("CMP1", "CmpBit1", 5),
+            ("CMP0", "CmpBit0", 6),
+            ("CMP1", "CmpBit1", 7),
             ("PIE", "ProgInt", 8),
             ("MIE", "MasterInt", 9),
             ("DWR", "NoWait", 10),
@@ -91,7 +91,7 @@ class LIM2CPU(BaseCPU):
             ("SMOD", "ShiftMod", 14),
             ("INTR", "InIntr", 15),
         ]
-        self.reg("freg", bits=16, default=0x0800, title="FREG", is_flag=True, flag_layout=flag_layout, block="STATUS")
+        self.reg("freg", bits=16, default=0x1800, title="FREG", is_flag=True, flag_layout=flag_layout, block="STATUS")
 
         # Расширенный 32-битный регистр указателя (до 4 ГБ)
         self.reg("ptreg", bits=32, default=0, title="PTREG", role="Pointer 32b", block="ADDR")
@@ -104,9 +104,10 @@ class LIM2CPU(BaseCPU):
         for i in range(14):
             self.compact_reg(f"pv{i}", bits=32, default=0, title=f"PV{i}", role="Privilege Zone 32b", block="PROT")
 
-        # Границы постоянной памяти ROM (2 регистра / 1 пара: PV14..PV15, 32 бита)
-        self.compact_reg("pv14", bits=32, default=0, title="PV14", role="ROM Base 32b", block="PROT")
-        self.compact_reg("pv15", bits=32, default=0, title="PV15", role="ROM Limit 32b", block="PROT")
+        # Границы оперативной памяти RAM (2 регистра / 1 пара: PV14..PV15, 32 бита).
+        # Доступ к RAM разрешен с любыми правами, ко всем остальным адресам — только с правами.
+        self.compact_reg("pv14", bits=32, default=0, title="PV14", role="RAM Base 32b", block="PROT")
+        self.compact_reg("pv15", bits=32, default=0, title="PV15", role="RAM Limit 32b", block="PROT")
 
         # Физические ножки процессора (PINS):
         self.pin("RD", mode="OUT", title="Read Strobe")
@@ -128,7 +129,7 @@ class LIM2CPU(BaseCPU):
         self.pc = 0x00000000
         self.acca = 0
         self.accb = 0
-        self.freg = 0x0800  # PRV = 1 (процессор автоматически запускается в режиме супервизора)
+        self.freg = 0x1800  # PRV = 1 (супервизор), AIP = 1 (автоинкремент PTREG включен по умолчанию)
         self.ptreg = 0
         self.sreg = 0
         for i in range(32):
@@ -150,17 +151,35 @@ class LIM2CPU(BaseCPU):
                     return True
         return False
 
-    def is_rom_address(self, addr: int) -> bool:
+    def is_ram_address(self, addr: int) -> bool:
         """
-        Проверяет, попадает ли адрес в диапазон постоянной памяти ROM ($pv14..$pv15 / векторы 30..31).
-        Если границы заданы (не равны 0), запись по этим адресам блокируется.
+        Проверяет, попадает ли адрес в диапазон оперативной памяти RAM ($pv14..$pv15 / векторы 30..31).
+        К диапазону RAM разрешен доступ с любыми правами (включая пользовательский режим PRV=0).
         """
-        rom_base = self.vectors[30]
-        rom_limit = self.vectors[31]
-        if rom_base != 0 or rom_limit != 0:
-            if rom_base <= addr <= rom_limit:
-                return True
+        ram_base = self.vectors[30]
+        ram_limit = self.vectors[31]
+        if ram_base != 0 or ram_limit != 0:
+            return ram_base <= addr <= ram_limit
         return False
+
+    def can_write_address(self, addr: int) -> bool:
+        """
+        Проверяет права доступа на запись по адресу addr:
+        - Последние две ячейки векторов ($pv14..$pv15 / векторы 30..31) задают диапазон оперативной памяти (ОЗУ / RAM).
+        - К оперативной памяти (RAM) можно обращаться с ЛЮБЫМИ правами (включая пользовательский режим PRV=0).
+        - Ко всем остальным адресам (вне RAM) запись разрешена ТОЛЬКО с правами супервизора (PRV=1)
+          либо при исполнении внутри одной из зон привилегий ($pv0..$pv13)!
+        """
+        cur_prv = (self.freg >> 11) & 1
+        # С правами (PRV == 1 или исполнение внутри зоны привилегий $pv0..$pv13) запись разрешена везде:
+        if cur_prv == 1 or self.in_privilege_zone():
+            return True
+        # Без прав (пользовательский режим PRV == 0 вне зон привилегий) — запись разрешена ТОЛЬКО в RAM:
+        return self.is_ram_address(addr)
+
+    def is_rom_address(self, addr: int) -> bool:
+        """Совместимость: адрес защищен от записи пользователем, если он находится вне диапазона RAM."""
+        return not self.can_write_address(addr)
 
     def trigger_irq(self, vector_num: int = 0, force: bool = False) -> bool:
         """
@@ -258,27 +277,38 @@ class LIM2CPU(BaseCPU):
             # Переход по вектору прерывания (режим супервизора программа включает сама при необходимости)
             self.pc = self.vectors[vec] & 0xFFFFFFFF
 
-        # 29: CALL target (2..3 байта: вызов подпрограммы, сохранение 32-битного PC и 16-битного FREG в стек SREG)
+        # 29: CALL target (2..5 байт: вызов подпрограммы, сохранение 32-битного PC и 16-битного FREG в стек SREG)
         elif opcode == 0b11101:
-            b1 = self.bus.read8(self.pc)
-            self.pc += 1
-            self.databus = (self.databus << 8) | b1
-            rd = self.parse("[7-5]")
             if cfg == 1:
+                b1 = self.bus.read8(self.pc)
+                self.pc += 1
+                self.databus = (self.databus << 8) | b1
+                rd = self.parse("[7-5]")
                 target = self.get_reg(rd)
             elif cfg == 2:
+                b1 = self.bus.read8(self.pc)
+                self.pc += 1
+                self.databus = (self.databus << 8) | b1
                 target = self.ptreg & 0xFFFFFFFF
             elif cfg == 3:
-                tgt_hi = b1
-                tgt_lo = self.bus.read8(self.pc)
-                self.pc += 1
-                ptr16 = (tgt_hi << 8) | tgt_lo
-                target = self.bus.read16(ptr16, little_endian=True)
+                # MOD=3: косвенный переход по 32-битному адресу в памяти [addr32] (Little-Endian)
+                t0 = self.bus.read8(self.pc)
+                t1 = self.bus.read8(self.pc + 1)
+                t2 = self.bus.read8(self.pc + 2)
+                t3 = self.bus.read8(self.pc + 3)
+                self.pc += 4
+                ptr32 = t0 | (t1 << 8) | (t2 << 16) | (t3 << 24)
+                self.databus = (self.databus << 32) | ptr32
+                target = self.bus.read32(ptr32, little_endian=True)
             else:
-                tgt_hi = b1
-                tgt_lo = self.bus.read8(self.pc)
-                self.pc += 1
-                target = (tgt_hi << 8) | tgt_lo
+                # MOD=0: непосредственный 32-битный адрес target32 (Little-Endian)
+                t0 = self.bus.read8(self.pc)
+                t1 = self.bus.read8(self.pc + 1)
+                t2 = self.bus.read8(self.pc + 2)
+                t3 = self.bus.read8(self.pc + 3)
+                self.pc += 4
+                target = t0 | (t1 << 8) | (t2 << 16) | (t3 << 24)
+                self.databus = (self.databus << 32) | target
 
             # Сохранение 32-битного адреса возврата и 16-битного FREG в стек SREG
             ret_addr = self.pc & 0xFFFFFFFF
@@ -379,15 +409,15 @@ class LIM2CPU(BaseCPU):
                     data = self.bus.read8(self.pc)
                     self.pc += 1
                 else:
-                    d_hi = self.bus.read8(self.pc)
-                    self.pc += 1
                     d_lo = self.bus.read8(self.pc)
                     self.pc += 1
+                    d_hi = self.bus.read8(self.pc)
+                    self.pc += 1
                     data = (d_hi << 8) | d_lo
-            elif src == 1:  # 1: Непосредственный 16-битный указатель на данные
-                p_hi = self.bus.read8(self.pc)
-                self.pc += 1
+            elif src == 1:  # 1: Непосредственный 16-битный указатель на данные (Little-Endian)
                 p_lo = self.bus.read8(self.pc)
+                self.pc += 1
+                p_hi = self.bus.read8(self.pc)
                 self.pc += 1
                 ea = (p_hi << 8) | p_lo
                 if sz == 0:
@@ -435,29 +465,29 @@ class LIM2CPU(BaseCPU):
 
             # Выборка назначения по режиму DST (уничтожение данных — ответственность программиста):
             if dst_mode == 0:  # 0: Непосредственно в память за кодом инструкции
-                if not self.is_rom_address(self.pc):
+                if self.can_write_address(self.pc):
                     if sz == 0:
                         self.bus.write8(self.pc, val & 0xFF)
                     else:
-                        self.bus.write16(self.pc, val & 0xFFFF)
+                        self.bus.write16(self.pc, val & 0xFFFF, little_endian=True)
                 if sz == 0:
                     self.pc += 1
                 else:
                     self.pc += 2
-            elif dst_mode == 1:  # 1: Непосредственный 16-битный указатель за инструкцией
-                p_hi = self.bus.read8(self.pc)
-                self.pc += 1
+            elif dst_mode == 1:  # 1: Непосредственный 16-битный указатель за инструкцией (Little-Endian)
                 p_lo = self.bus.read8(self.pc)
                 self.pc += 1
+                p_hi = self.bus.read8(self.pc)
+                self.pc += 1
                 ea = (p_hi << 8) | p_lo
-                if not self.is_rom_address(ea):
+                if self.can_write_address(ea):
                     if sz == 0:
                         self.bus.write8(ea, val & 0xFF)
                     else:
                         self.bus.write16(ea, val & 0xFFFF, little_endian=True)
             elif dst_mode == 2:  # 2: Косвенно через системный 32-битный регистр PTREG
                 ea = self.ptreg & 0xFFFFFFFF
-                if not self.is_rom_address(ea):
+                if self.can_write_address(ea):
                     if sz == 0:
                         self.bus.write8(ea, val & 0xFF)
                     else:
@@ -470,7 +500,7 @@ class LIM2CPU(BaseCPU):
                 rs_lo = self.parse("[4-2]")
                 addr32 = ((val & 0xFFFF) << 16) | (self.get_reg(rs_lo) & 0xFFFF)
                 ea = addr32 & 0xFFFFFFFF
-                if not self.is_rom_address(ea):
+                if self.can_write_address(ea):
                     if sz == 0:
                         self.bus.write8(ea, val & 0xFF)
                     else:
@@ -503,42 +533,75 @@ class LIM2CPU(BaseCPU):
                 cmp_code = 0b11
             else:
                 cmp_code = 0b00
-            self.freg |= (cmp_code << 4)
+            # Очищаем биты [7:6] и [5:4] во FREG
+            self.freg &= ~((0b11 << 6) | (0b11 << 4))
+            # Записываем cmp_code в биты [7:6] (официальный стандарт) и [5:4] (совместимость)
+            self.freg |= (cmp_code << 6) | (cmp_code << 4)
             self._update_flags(diff)
 
-        # 9..12: Переходы JMP (9), JCR (10), JNZ (11), JZ (12)
-        elif opcode in (0b01001, 0b01010, 0b01011, 0b01100):
-            b1 = self.bus.read8(self.pc)
-            self.pc += 1
-            self.databus = (self.databus << 8) | b1
-            rd = self.parse("[7-5]")
+        # 10: JCR (Jump Compare Result, 5 байт: [7-3] опкод 10, [2] INV, [1-0] COND, затем target32 Little-Endian)
+        # Проверяет результат предыдущего сравнения CMP в битах [7:6] FREG:
+        #   COND: 01=<, 10==, 11=>
+        #   INV:  0=прямой переход (cond), 1=инвертированный переход (!cond)
+        #   Комбинации: 001=<, 101=>=, 010===, 110=!=, 011=>, 111=<=
+        elif opcode == 0b01010:
+            b0 = self.bus.read8(self.pc)
+            b1 = self.bus.read8(self.pc + 1)
+            b2 = self.bus.read8(self.pc + 2)
+            b3 = self.bus.read8(self.pc + 3)
+            self.pc += 4
+            target = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+            self.databus = (self.databus << 32) | target
+
+            inv = (cfg >> 2) & 1
+            cond_expected = cfg & 0b11
+            actual_cmp = (self.freg >> 6) & 0b11
+
+            take_jump = (actual_cmp == cond_expected) if inv == 0 else (actual_cmp != cond_expected)
+            if take_jump:
+                self.pc = target & 0xFFFFFFFF
+
+        # 9, 11, 12: Переходы JMP (9), JNZ (11), JZ (12) (2..5 байт)
+        elif opcode in (0b01001, 0b01011, 0b01100):
             if cfg == 1:
+                b1 = self.bus.read8(self.pc)
+                self.pc += 1
+                self.databus = (self.databus << 8) | b1
+                rd = self.parse("[7-5]")
                 target = self.get_reg(rd)
             elif cfg == 2:
+                b1 = self.bus.read8(self.pc)
+                self.pc += 1
+                self.databus = (self.databus << 8) | b1
                 target = self.ptreg & 0xFFFFFFFF
             elif cfg == 3:
-                tgt_hi = b1
-                tgt_lo = self.bus.read8(self.pc)
-                self.pc += 1
-                ptr16 = (tgt_hi << 8) | tgt_lo
-                target = self.bus.read16(ptr16, little_endian=True)
+                # MOD=3: косвенный переход по 32-битному адресу в памяти [addr32] (Little-Endian)
+                t0 = self.bus.read8(self.pc)
+                t1 = self.bus.read8(self.pc + 1)
+                t2 = self.bus.read8(self.pc + 2)
+                t3 = self.bus.read8(self.pc + 3)
+                self.pc += 4
+                ptr32 = t0 | (t1 << 8) | (t2 << 16) | (t3 << 24)
+                self.databus = (self.databus << 32) | ptr32
+                target = self.bus.read32(ptr32, little_endian=True)
             else:
-                tgt_hi = b1
-                tgt_lo = self.bus.read8(self.pc)
-                self.pc += 1
-                target = (tgt_hi << 8) | tgt_lo
+                # MOD=0: непосредственный 32-битный адрес target32 (Little-Endian)
+                t0 = self.bus.read8(self.pc)
+                t1 = self.bus.read8(self.pc + 1)
+                t2 = self.bus.read8(self.pc + 2)
+                t3 = self.bus.read8(self.pc + 3)
+                self.pc += 4
+                target = t0 | (t1 << 8) | (t2 << 16) | (t3 << 24)
+                self.databus = (self.databus << 32) | target
 
             if opcode == 0b01001:    # JMP
-                self.pc = target
-            elif opcode == 0b01010:  # JCR (CF == 1)
-                if (self.freg & 0x02) != 0:
-                    self.pc = target
+                self.pc = target & 0xFFFFFFFF
             elif opcode == 0b01011:  # JNZ (ZF == 0)
                 if (self.freg & 0x01) == 0:
-                    self.pc = target
+                    self.pc = target & 0xFFFFFFFF
             elif opcode == 0b01100:  # JZ (ZF == 1)
                 if (self.freg & 0x01) != 0:
-                    self.pc = target
+                    self.pc = target & 0xFFFFFFFF
 
         # 13: AND Rd, Rs (2 байта: Rd = Rd & Rs)
         elif opcode == 0b01101:
@@ -721,48 +784,57 @@ class LIM2CPU(BaseCPU):
 
             def _fetch_msp_ext(force_32: bool = False) -> int:
                 use_32 = force_32 or bool(sz24)
-                if ext_mode == 1:  # Непосредственное значение за инструкцией
+                if ext_mode == 1:  # Непосредственное значение за инструкцией (Little-Endian)
                     if use_32 and (self.databus & 0x04):
-                        b2 = self.bus.read8(self.pc)
+                        b0_imm = self.bus.read8(self.pc)
                         b1_imm = self.bus.read8(self.pc + 1)
-                        b0_imm = self.bus.read8(self.pc + 2)
-                        self.pc += 3
-                        return (b2 << 16) | (b1_imm << 8) | b0_imm
-                    b_hi = self.bus.read8(self.pc)
-                    b_lo = self.bus.read8(self.pc + 1)
+                        b2 = self.bus.read8(self.pc + 2)
+                        b3 = self.bus.read8(self.pc + 3)
+                        self.pc += 4
+                        return (b3 << 24) | (b2 << 16) | (b1_imm << 8) | b0_imm
+                    b_lo = self.bus.read8(self.pc)
+                    b_hi = self.bus.read8(self.pc + 1)
                     self.pc += 2
                     return (b_hi << 8) | b_lo
                 elif ext_mode == 2:  # Разыменование [$ptreg]: MEM[PTREG]
                     ea = self.ptreg & 0xFFFFFFFF
                     if use_32:
-                        return (
-                            self.bus.read8(ea)
-                            | (self.bus.read8((ea + 1) & 0xFFFFFFFF) << 8)
-                            | (self.bus.read8((ea + 2) & 0xFFFFFFFF) << 16)
-                            | (self.bus.read8((ea + 3) & 0xFFFFFFFF) << 24)
-                        )
-                    return self.bus.read16(ea, little_endian=True)
-                elif ext_mode == 3:  # Разыменование [addr16]: MEM[addr16]
-                    p_hi = self.bus.read8(self.pc)
-                    p_lo = self.bus.read8(self.pc + 1)
+                        res = self.bus.read32(ea, little_endian=True)
+                        self.ptreg = (self.ptreg + 4) & 0xFFFFFFFF
+                    else:
+                        res = self.bus.read16(ea, little_endian=True)
+                        self.ptreg = (self.ptreg + 2) & 0xFFFFFFFF
+                    return res
+                elif ext_mode == 3:  # Разыменование [addr16]: MEM[addr16] (Little-Endian)
+                    p_lo = self.bus.read8(self.pc)
+                    p_hi = self.bus.read8(self.pc + 1)
                     self.pc += 2
                     ea = (p_hi << 8) | p_lo
                     if use_32:
-                        return (
-                            self.bus.read8(ea)
-                            | (self.bus.read8((ea + 1) & 0xFFFFFFFF) << 8)
-                            | (self.bus.read8((ea + 2) & 0xFFFFFFFF) << 16)
-                            | (self.bus.read8((ea + 3) & 0xFFFFFFFF) << 24)
-                        )
+                        return self.bus.read32(ea, little_endian=True)
                     return self.bus.read16(ea, little_endian=True)
                 return 0
 
             if act == 0:
                 # --- LOAD MODE (Прямая запись / MSP.ld) ---
-                if sreg_sel == 0:  # FREG
+                if sreg_sel == 0:  # FREG (16 бит)
                     if ext_mode == 0:
                         rs = (self.databus >> 5) & 0x07
                         new_freg = self.get_reg(rs) & 0xFFFF
+                    elif ext_mode == 1:  # Непосредственное 16-битное значение (Little-Endian)
+                        b0 = self.bus.read8(self.pc)
+                        b1_imm = self.bus.read8(self.pc + 1)
+                        self.pc += 2
+                        new_freg = (b1_imm << 8) | b0
+                    elif ext_mode == 2:  # [$ptreg]
+                        new_freg = self.bus.read16(self.ptreg, little_endian=True)
+                        self.ptreg = (self.ptreg + 2) & 0xFFFFFFFF
+                    elif ext_mode == 3:  # [addr16] (Little-Endian)
+                        p_lo = self.bus.read8(self.pc)
+                        p_hi = self.bus.read8(self.pc + 1)
+                        self.pc += 2
+                        ea = (p_hi << 8) | p_lo
+                        new_freg = self.bus.read16(ea, little_endian=True)
                     else:
                         new_freg = _fetch_msp_ext(False) & 0xFFFF
                     # Контроль прав режима супервизора (PRV = бит 11):
@@ -775,25 +847,38 @@ class LIM2CPU(BaseCPU):
                             new_freg &= ~(1 << 11)  # Запрет несанкционированного повышения
                     self.freg = new_freg
 
-                elif sreg_sel == 1:  # PTREG (32 бита)
+                elif sreg_sel in (1, 2):  # PTREG (1) / SREG (2): ОБЯЗАТЕЛЬНО 4 байта (32 бита Little-Endian)
                     if ext_mode == 0:
                         rs_hi = (self.databus >> 5) & 0x07
                         rs_lo = (self.databus >> 2) & 0x07
                         val_hi = self.get_reg(rs_hi)
                         val_lo = self.get_reg(rs_lo)
-                        self.ptreg = ((val_hi << 16) | val_lo) & 0xFFFFFFFF
+                        val32 = ((val_hi << 16) | val_lo) & 0xFFFFFFFF
+                    elif ext_mode == 1:  # 01: imm32 (4 байта Little-Endian!)
+                        b0 = self.bus.read8(self.pc)
+                        b1 = self.bus.read8(self.pc + 1)
+                        b2 = self.bus.read8(self.pc + 2)
+                        b3 = self.bus.read8(self.pc + 3)
+                        self.pc += 4
+                        val32 = (b3 << 24) | (b2 << 16) | (b1 << 8) | b0
+                    elif ext_mode == 2:  # 10: [$ptreg] (разыменование PTREG — 4 байта Little-Endian!)
+                        ea = self.ptreg & 0xFFFFFFFF
+                        val32 = self.bus.read32(ea, little_endian=True)
+                        if sreg_sel != 1:  # если загружаем в SREG, PTREG инкрементируется на 4
+                            self.ptreg = (self.ptreg + 4) & 0xFFFFFFFF
+                    elif ext_mode == 3:  # 11: [addr16] (разыменование адреса — 4 байта Little-Endian!)
+                        p_lo = self.bus.read8(self.pc)
+                        p_hi = self.bus.read8(self.pc + 1)
+                        self.pc += 2
+                        ea = (p_hi << 8) | p_lo
+                        val32 = self.bus.read32(ea, little_endian=True)
                     else:
-                        self.ptreg = _fetch_msp_ext(False) & 0xFFFFFFFF
+                        val32 = _fetch_msp_ext(True) & 0xFFFFFFFF
 
-                elif sreg_sel == 2:  # SREG (32 бита, формат как PTREG)
-                    if ext_mode == 0:
-                        rs_hi = (self.databus >> 5) & 0x07
-                        rs_lo = (self.databus >> 2) & 0x07
-                        val_hi = self.get_reg(rs_hi)
-                        val_lo = self.get_reg(rs_lo)
-                        self.sreg = ((val_hi << 16) | val_lo) & 0xFFFFFFFF
+                    if sreg_sel == 1:
+                        self.ptreg = val32 & 0xFFFFFFFF
                     else:
-                        self.sreg = _fetch_msp_ext(False) & 0xFFFFFFFF
+                        self.sreg = val32 & 0xFFFFFFFF
 
                 elif sreg_sel == 3:  # VECTORS (32 регистра: $ir0..$ir15, $pv0..$pv15)
                     b1_val = self.databus & 0xFF
@@ -807,16 +892,17 @@ class LIM2CPU(BaseCPU):
                         rd_hi = (b2 >> 5) & 0x07
                         rs_lo = (b2 >> 2) & 0x07
                         val = ((self.get_reg(rd_hi) & 0xFFFF) << 16) | (self.get_reg(rs_lo) & 0xFFFF)
-                    elif src_mode == 1:  # 01: imm32 (4 байта)
-                        b3 = self.bus.read8(self.pc)
-                        b2 = self.bus.read8(self.pc + 1)
-                        b1_imm = self.bus.read8(self.pc + 2)
-                        b0_imm = self.bus.read8(self.pc + 3)
+                    elif src_mode == 1:  # 01: imm32 (4 байта Little-Endian!)
+                        b0_imm = self.bus.read8(self.pc)
+                        b1_imm = self.bus.read8(self.pc + 1)
+                        b2 = self.bus.read8(self.pc + 2)
+                        b3 = self.bus.read8(self.pc + 3)
                         self.pc += 4
                         val = (b3 << 24) | (b2 << 16) | (b1_imm << 8) | b0_imm
-                    elif src_mode == 2:  # 10: [$ptreg] (разыменование PTREG)
+                    elif src_mode == 2:  # 10: [$ptreg] (разыменование PTREG — 4 байта Little-Endian!)
                         ea = self.ptreg & 0xFFFFFFFF
-                        val = self.bus.read32(ea, little_endian=False)
+                        val = self.bus.read32(ea, little_endian=True)
+                        self.ptreg = (self.ptreg + 4) & 0xFFFFFFFF
                     else:  # 11: [$rd:$rs] (bit0==0) или [addr32] (bit0==1)
                         if bit0 == 0:
                             b2 = self.bus.read8(self.pc)
@@ -824,15 +910,15 @@ class LIM2CPU(BaseCPU):
                             rd_hi = (b2 >> 5) & 0x07
                             rs_lo = (b2 >> 2) & 0x07
                             ea = (((self.get_reg(rd_hi) & 0xFFFF) << 16) | (self.get_reg(rs_lo) & 0xFFFF)) & 0xFFFFFFFF
-                            val = self.bus.read32(ea, little_endian=False)
+                            val = self.bus.read32(ea, little_endian=True)
                         else:
-                            a3 = self.bus.read8(self.pc)
-                            a2 = self.bus.read8(self.pc + 1)
-                            a1 = self.bus.read8(self.pc + 2)
-                            a0 = self.bus.read8(self.pc + 3)
+                            a0 = self.bus.read8(self.pc)
+                            a1 = self.bus.read8(self.pc + 1)
+                            a2 = self.bus.read8(self.pc + 2)
+                            a3 = self.bus.read8(self.pc + 3)
                             self.pc += 4
-                            ea = ((a3 << 24) | (a2 << 16) | (a1 << 8) | a0) & 0xFFFFFFFF
-                            val = self.bus.read32(ea, little_endian=False)
+                            ea = (a0 | (a1 << 8) | (a2 << 16) | (a3 << 24)) & 0xFFFFFFFF
+                            val = self.bus.read32(ea, little_endian=True)
 
                     # Защита зон привилегий ($pv0..$pv15, idx >= 16):
                     # Модификация $pv разрешена только в режиме супервизора (PRV == 1)

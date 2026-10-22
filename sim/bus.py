@@ -620,12 +620,12 @@ class MemoryBus:
         if addr < len(self.ram):
             self.ram[addr] = val
 
-    def peek16(self, addr: int, little_endian: bool = False) -> int:
+    def peek16(self, addr: int, little_endian: bool = True) -> int:
         b0 = self.peek(addr)
         b1 = self.peek(addr + 1)
         return (b1 << 8) | b0 if little_endian else (b0 << 8) | b1
 
-    def peek32(self, addr: int, little_endian: bool = False) -> int:
+    def peek32(self, addr: int, little_endian: bool = True) -> int:
         b0 = self.peek(addr)
         b1 = self.peek(addr + 1)
         b2 = self.peek(addr + 2)
@@ -678,7 +678,7 @@ class MemoryBus:
             return
         self.write_cycle(addr, val)
 
-    def read16(self, addr: int, little_endian: bool = False, physical: bool = True) -> int:
+    def read16(self, addr: int, little_endian: bool = True, physical: bool = True) -> int:
         """Чтение 16-битного слова."""
         b0 = self.read8(addr, physical=physical)
         b1 = self.read8(addr + 1, physical=physical)
@@ -686,7 +686,7 @@ class MemoryBus:
             return (b1 << 8) | b0
         return (b0 << 8) | b1
 
-    def write16(self, addr: int, val: int, little_endian: bool = False, physical: bool = True):
+    def write16(self, addr: int, val: int, little_endian: bool = True, physical: bool = True):
         """Запись 16-битного слова."""
         val &= 0xFFFF
         if little_endian:
@@ -696,7 +696,7 @@ class MemoryBus:
             self.write8(addr, (val >> 8) & 0xFF, physical=physical)
             self.write8(addr + 1, val & 0xFF, physical=physical)
 
-    def read32(self, addr: int, little_endian: bool = False, physical: bool = True) -> int:
+    def read32(self, addr: int, little_endian: bool = True, physical: bool = True) -> int:
         """Чтение 32-битного двойного слова."""
         b0 = self.read8(addr, physical=physical)
         b1 = self.read8(addr + 1, physical=physical)
@@ -706,7 +706,7 @@ class MemoryBus:
             return (b3 << 24) | (b2 << 16) | (b1 << 8) | b0
         return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
 
-    def write32(self, addr: int, val: int, little_endian: bool = False, physical: bool = True):
+    def write32(self, addr: int, val: int, little_endian: bool = True, physical: bool = True):
         """Запись 32-битного двойного слова."""
         val &= 0xFFFFFFFF
         if little_endian:

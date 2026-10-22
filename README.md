@@ -182,11 +182,16 @@ The LIM M2 processor implements a clean, orthogonal instruction encoding scheme 
    ```
 
 9. **Class IX: Branch & Jump Instructions (2–6 Bytes)**
-   * `JMP`, `JCR`, `JNZ`, `JZ`:
+   * `JMP`, `JNZ`, `JZ`:
      * `MOD = 0` (000): 16-bit immediate address (3 bytes total).
      * `MOD = 1` (001): Indirect register branch via `Rs` (2 bytes total).
      * `MOD = 2` (010): 32-bit branch via pointer register `PTREG` (2 bytes total).
      * `MOD = 3` (011): 32-bit indirect branch via memory pointer `[addr32]` or register pair `[$rd:$rs]`.
+   * `JCR` (Jump Compare Result, 3 bytes):
+     * Tests previous `CMP` result from bits `[7:6]` of `FREG` (`01`: `<`, `10`: `==`, `11`: `>`).
+     * Field `CFG [2:0]`: bit 2 = inversion `INV` (`0` = direct match, `1` = invert), bits `1–0` = condition code `COND` (`01`: `<`, `10`: `==`, `11`: `>`).
+     * Relational conditions: `<` (`001`), `==` (`010`), `>` (`011`), `>=` (`101`), `!=` (`110`), `<=` (`111`).
+     * Supported in assembler as manual (`CMP $0, $1; JCR <, addr`) and fused macro (`JCR $1 > $2, addr` = `CMP` + `JCR`, 5 bytes).
 
 10. **Class X: Memory Load & Store (2–4 Bytes)**
     * `LMR Rd, <SRC_MODE>` and `LRM Rs, <DST_MODE>`:
@@ -209,7 +214,7 @@ The LIM M2 processor implements a clean, orthogonal instruction encoding scheme 
 | **00111** | `0x07` | **`LRR`** | Transfer | Fast register-to-register copy via bypass (`MUX 1` $\to$ `MUX 2`) |
 | **01000** | `0x08` | **`CMP`** | Compare | Arithmetic compare; updates `FREG.CMP` (`01`: `<`, `10`: `=`, `11`: `>`), `ZF`, `CF`, `OF` non-destructively |
 | **01001** | `0x09` | **`JMP`** | Branch | Unconditional branch (16-bit local or full 32-bit via `PTREG`) |
-| **01010** | `0x0A` | **`JCR`** | Branch | Conditional branch on Carry Flag (`CF == 1`) |
+| **01010** | `0x0A` | **`JCR`** | Branch | Conditional branch on compare result CMP (`<`, `<=`, `==`, `!=`, `>=`, `>`) |
 | **01011** | `0x0B` | **`JNZ`** | Branch | Conditional branch on Non-Zero (`ZF == 0`) |
 | **01100** | `0x0C` | **`JZ`** | Branch | Conditional branch on Zero (`ZF == 1`) |
 | **01101** | `0x0D` | **`AND`** | Logic | Bitwise logical AND |
@@ -505,10 +510,10 @@ The SDK includes the official two-pass assembler compiler **`limasm.py`**, which
   * `$sreg` (or `$sp`) — 32-bit stack pointer register (`SREG`);
   * `$ir0`..`$ir15` — 16 vector 32-bit registers for interrupt handlers;
   * `$pv0`..`$pv15` — 16 vector 32-bit registers defining 8 Privilege Zones (`[$pv0:$pv1]` .. `[$pv14:$pv15]`).
-* **Operand Size Suffixes:**
-  * `.b` (*byte*, 8-bit) — e.g., `LMR.b $0, 0x42`
-  * `.w` (*word*, 16-bit, default) — e.g., `LMR.w $0, 0x1234` or simply `LMR $0, 0x1234`
-  * `.d` (*doubleword*, 32-bit) — e.g., `LMR.d $0, [0x1000]`
+* **Operand Size Suffixes:** memory instructions `LMR` and `LRM` strictly support two hardware sizes (`SZ` bit):
+  * `.b` (*byte*, 8-bit, `SZ=0`) — e.g., `LMR.b $0, 0x42`, `LRM.b $0, [0x1000]`
+  * `.w` (*word*, 16-bit, `SZ=1`, default) — e.g., `LMR.w $0, 0x1234` or simply `LMR $0, 0x1234`
+  *(Instructions `LMR` and `LRM` strictly support only `.b` and `.w`; for 32-bit values use `dd` directives or `MSP.ld`).*
 
 ### 2. Register-Only ALU & Unary Instructions
 3-operand ALU instructions (`ADD`, `SUB`, `MUL`, `DIV`, `MOD`) and 1-byte unary operations (`INC`, `DEC`, `NOT`) operate strictly on general-purpose registers:
