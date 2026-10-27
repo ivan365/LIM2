@@ -29,12 +29,17 @@ if str(CURRENT_DIR) not in sys.path:
     sys.path.insert(0, str(CURRENT_DIR))
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
-if str(COMPILER_DIR) not in sys.path:
-    sys.path.insert(0, str(COMPILER_DIR))
 
 try:
-    import limasm
-    disassemble_one = limasm.disassemble_one
+    import importlib.util
+    _compiler_path = COMPILER_DIR / "limasm.py"
+    if _compiler_path.exists():
+        _spec = importlib.util.spec_from_file_location("lim2_compiler_limasm", _compiler_path)
+        _mod = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(_mod)
+        disassemble_one = _mod.disassemble_one
+    else:
+        from LIM2.compiler.limasm import disassemble_one
 except Exception:
     def disassemble_one(read_fn, addr):
         b0 = read_fn(addr)

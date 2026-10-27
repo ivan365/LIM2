@@ -1,7 +1,7 @@
 # Architektúra procesora LIM M2
 
 <p align="center">
-  <img src="Docs/diagram.png" alt="Schéma dátovej cesty LIM M2" width="850">
+  <img src="LIM2%20Docs/images/lim2.png" alt="Schéma dátovej cesty LIM M2" width="850">
 </p>
 
 <p align="center">
@@ -46,14 +46,11 @@
 
 ## 📑 Oficiálna technická dokumentácia
 
-Úplné PDF špecifikácie pripravené na tlač sa nachádzajú v priečinku [`Docs/`](Docs/):
+Úplná PDF špecifikácia pripravené na tlač sa nachádza v priečinku [`LIM2 Docs/`](LIM2%20Docs/):
 
 | Jazyk | Zdrojový kód LaTeX | Skompilovaná PDF špecifikácia |
 | :--- | :--- | :--- |
-| **Slovenčina** | [`Docs/LIM_M2_Datasheet_SK.tex`](Docs/LIM_M2_Datasheet_SK.tex) | [**Stiahnuť PDF (SK)**](Docs/LIM_M2_Datasheet_SK.pdf) |
-| **English** | [`Docs/LIM_M2_Datasheet_EN.tex`](Docs/LIM_M2_Datasheet_EN.tex) | [**Stiahnuť PDF (EN)**](Docs/LIM_M2_Datasheet_EN.pdf) |
-| **Українська** | [`Docs/LIM_M2_Datasheet_UA.tex`](Docs/LIM_M2_Datasheet_UA.tex) | [**Stiahnuť PDF (UA)**](Docs/LIM_M2_Datasheet_UA.pdf) |
-| **Русский** | [`Docs/LIM_M2_Datasheet_RU.tex`](Docs/LIM_M2_Datasheet_RU.tex) | [**Stiahnuť PDF (RU)**](Docs/LIM_M2_Datasheet_RU.pdf) |
+| **English** | [`LIM2 Docs/lim2_en.tex`](LIM2%20Docs/lim2_en.tex) | [**Stiahnuť PDF (EN)**](LIM2%20Docs/lim2_en.pdf) |
 
 ---
 
@@ -87,8 +84,8 @@
 * **`PIE` (8):** Povolenie programových prerušení.
 * **`MIE` (9):** Povolenie maskovateľných prerušení.
 * **`DWR` (10):** Vynútený prenos bez čakania na zbernicu.
-* **`PRV` (11):** Režim privilégií procesora (`0`: User Mode — bežný režim; `1`: Supervisor Mode — režim správcu/jadra).
-* **`AIP` (12):** Autoincrement ukazovateľa `PTREG` pri prístupe k pamäti.
+* **`PRV` (11):** Režim privilégií procesora (`0`: User Mode — bežný režim; `1`: Supervisor Mode — režim správcu/jadra). Zapnutý predvolene pri resete jadra (`PRV = 1`).
+* **`AIP` (12):** Hardvérový autoincrement ukazovateľa `PTREG` pri prístupe k pamäti. Zapnutý predvolene (`AIP = 1`, pri resete `FREG = 0x1800`). Inkrementuje `PTREG` o **+1** (bajt pri `.b`), **+2** (slovo pri `.w`) a **+4** (32-bitový vektor/ukazovateľ pri `MSP.ld`).
 * **`DBIT` (13):** Záchytný register pre bit vysunutý pri posune.
 * **`SMOD` (14):** Režim posunu (`0`: nulovanie; `1`: cyklický priechod cez `DBIT`).
 * **`INTR` (15):** Príznak vykonávania prerušenia (`1`: procesor obsluhuje prerušenie; ďalšie prerušenia zablokované).
@@ -180,17 +177,20 @@ Procesor LIM M2 implementuje čistú, ortogonálnu schému kódovania inštrukci
    Oktet 1 (PTREG/SREG Ar): [ OP [7] (0=ADD, 1=SUB) | Rs [6:4] | Source [3:2] | RSV [1:0] ]
    ```
 
-9. **Trieda IX: Inštrukcie vetvenia a skokov (2--6 bajtov)**
-   * `JMP`, `JCR`, `JNZ`, `JZ`:
-     * `MOD = 0` (000): 16-bitová priama adresa (spolu 3 bajty).
+9. **Trieda IX: Inštrukcie vetvenia a skokov (2--5 bajtov / fused 7 bajtov)**
+   * `JMP`, `JNZ`, `JZ`, `CALL`:
+     * `MOD = 0` (000): Priama 32-bitová adresa (spolu 5 bajtov: 1 bajt opkód + 4 bajty adresy Little-Endian).
      * `MOD = 1` (001): Nepriamy registrový skok cez `Rs` (spolu 2 bajty).
      * `MOD = 2` (010): 32-bitový skok cez systémový ukazovateľ `PTREG` (spolu 2 bajty).
-     * `MOD = 3` (011): 32-bitový nepriamy skok podľa ukazovateľa v pamäti `[addr32]` alebo páru `[$rd:$rs]`.
+     * `MOD = 3` (011): 32-bitový nepriamy skok podľa ukazovateľa v pamäti `[addr32]` (spolu 5 bajtov: 1 bajt opkód + 4 bajty adresy Little-Endian, číta 32-bitovú adresu) alebo páru `[$rd:$rs]` (2 bajty).
+   * `JCR` (Jump Compare Result, 5 bajtov):
+     * Samostatný `JCR` (5 bajtov): testuje výsledok porovnania `CMP` v bitoch `[7:6]` registra `FREG`. Oktet 0 obsahuje opkód 10 a `CFG [2:0]`, za ním nasledujú 4 bajty cieľovej 32-bitovej adresy `target32` (Little-Endian).
+     * Fused makro: `JCR $1 > $2, addr` (`CMP` + `JCR`, spolu 7 bajtov).
 
-10. **Trieda X: Inštrukcie výmeny s pamäťou LMR a LRM (2--4 bajty)**
+10. **Trieda X: Inštrukcie výmeny s pamäťou LMR a LRM (2--6 bajtov)**
     * `LMR Rd, <SRC_MODE>` a `LRM Rs, <DST_MODE>`:
       * Bit 2 oktetu 0: `SZ` ($0 = 8$ bitov / bajt, $1 = 16$ bitov / slovo).
-      * Bits 1–0 oktetu 0: `Mode` (0 = Inline dáta za kódom, 1 = Imm ukazovateľ, 2 = 32-bitový `PTREG` s autoincrementom, 3 = Dvojica registrov 32-bitovej adresy).
+      * Bits 1–0 oktetu 0: `Mode` (0 = Inline dáta za kódom [3–4 bajty], 1 = Priamy 32-bitový ukazovateľ `[addr32]` [6 bajtov: 2 bajty hlavička + 4 bajty adresy Little-Endian], 2 = 32-bitový `PTREG` s autoincrementom [2 bajty], 3 = Dvojica registrov 32-bitovej adresy [2 bajty]).
 
 ---
 
@@ -207,10 +207,10 @@ Procesor LIM M2 implementuje čistú, ortogonálnu schému kódovania inštrukci
 | **00110** | `0x06` | **`LRM`** | Pamäť | Zápis bajtu/slova do pamäte (cieľ: 0=Inline, 1=Ptr, 2=PTREG, 3=Dvojica registrov 32-bit; veľkosť: 8/16 bit) |
 | **00111** | `0x07` | **`LRR`** | Presun | Rýchle kopírovanie medzi registrami cez obchádzku `MUX 1` $\to$ `MUX 2` |
 | **01000** | `0x08` | **`CMP`** | Porovnanie | Hardvérové porovnanie; aktualizuje `FREG.CMP` (`01`: `<`, `10`: `=`, `11`: `>`), `ZF`, `CF`, `OF` bez zmeny dát |
-| **01001** | `0x09` | **`JMP`** | Skok | Nepodmienený skok (16-bitový lokálny alebo 32-bitový cez `PTREG`) |
-| **01010** | `0x0A` | **`JCR`** | Skok | Podmienený skok pri príznaku prenosu (`CF == 1`) |
-| **01011** | `0x0B` | **`JNZ`** | Skok | Podmienený skok pri nenulovom stave (`ZF == 0`) |
-| **01100** | `0x0C` | **`JZ`** | Skok | Podmienený skok pri nulovom stave (`ZF == 1`) |
+| **01001** | `0x09` | **`JMP`** | Skok | Bezpodmienečný 32-bitový skok (MOD=0 priamy 5 bajtov; MOD=1 registrový 2 bajty; MOD=2 cez PTREG 2 bajty; MOD=3 nepriamy [addr32] 5 bajtov) |
+| **01010** | `0x0A` | **`JCR`** | Skok | 32-bitový podmienený skok podľa výsledku porovnania CMP (`<`, `<=`, `==`, `!=`, `>=`, `>`, 5 bajtov, fused makro: 7 bajtov) |
+| **01011** | `0x0B` | **`JNZ`** | Skok | 32-bitový podmienený skok pri nenulovom stave (`ZF == 0`, 5 bajtov / 2 bajty) |
+| **01100** | `0x0C` | **`JZ`** | Skok | 32-bitový podmienený skok pri nulovom stave (`ZF == 1`, 5 bajtov / 2 bajty) |
 | **01101** | `0x0D` | **`AND`** | Logika | Bitový logický súčin (AND) |
 | **01110** | `0x0E` | **`OR`** | Logika | Bitový logický súčet (OR) |
 | **01111** | `0x0F` | **`NAND`** | Logika | Bitová negácia logického súčinu (NAND) |
@@ -226,10 +226,10 @@ Procesor LIM M2 implementuje čistú, ortogonálnu schému kódovania inštrukci
 | **11001** | `0x19` | **`BSR`** | Posuny | Barelový posun doprava (nulovanie alebo cyklická rotácia cez `DBIT` pri `SMOD=1`) |
 | **11010** | `0x1A` | **`MSP`** | Systém | Manipulácia so špeciálnymi registrami (`FREG`, `PTREG`, `SREG`, `VEC`) |
 | **11011** | `0x1B` | **`MOD`** | Aritmetika | Výpočet zvyšku po delení (modulo): `Rd = Rs1 % Rs2` |
-| **11100** | `0x1C` | **`INTR`** | Systém | Softvérové prerušenie (1 bajt): najnižšie 3 bity `[2:0]` vyberajú vektor `0..7` zo zásobníka vektorov procesora |
-| **11101** | `0x1D` | **`RSV29`** | Rezerva | Slot koprocesora s pohyblivou rádovou čiarkou (FPU) |
-| **11110** | `0x1E` | **`RSV30`** | Rezerva | Slot pre kryptografický akcelerátor |
-| **11111** | `0x1F` | **`RSV31`** | Rezerva | Slot pre budúce rozšírenia architektúry |
+| **11100** | `0x1C` | **`INTR`** | Systém | Softvérové prerušenie (2 bajty): najnižšie 4 bity 2. bajtu `[3:0]` vyberajú vektor `0..15` (`$ir0..$ir15`) |
+| **11101** | `0x1D` | **`CALL`** | Skok | Volanie podprogramu s uložením 32-bitového PC a 16-bitového FREG do zásobníka (`SREG -= 4, MEM32[SREG] = PC; SREG -= 2, MEM16[SREG] = FREG`) |
+| **11110** | `0x1E` | **`RET`** | Skok | Návrat z podprogramu s obnovením 16-bitového FREG a 32-bitového PC zo zásobníka (`FREG = MEM16[SREG], SREG += 2; PC = MEM32[SREG], SREG += 4`) |
+| **11111** | `0x1F` | **`HALT`** | Riadenie | Hardvérové zastavenie jadra procesora (`HLT`) |
 
 ---
 

@@ -1,7 +1,7 @@
 # LIM M2 Processor Architecture
 
 <p align="center">
-  <img src="Docs/diagram.png" alt="LIM M2 Datapath Schematic" width="850">
+  <img src="LIM2%20Docs/images/lim2.png" alt="LIM M2 Datapath Schematic" width="850">
 </p>
 
 <p align="center">
@@ -45,16 +45,13 @@
 
 ---
 
-## 📑 Official Datasheets
+## 📑 Official Technical Datasheet
 
-Pre-compiled, ready-to-print comprehensive technical reference datasheets are located in [`Docs/`](Docs/):
+Pre-compiled, ready-to-print comprehensive technical reference datasheet is located in [`LIM2 Docs/`](LIM2%20Docs/):
 
 | Language | LaTeX Source | Compiled PDF Specification |
 | :--- | :--- | :--- |
-| **English** | [`Docs/LIM_M2_Datasheet_EN.tex`](Docs/LIM_M2_Datasheet_EN.tex) | [**Download PDF (EN)**](Docs/LIM_M2_Datasheet_EN.pdf) |
-| **Українська** | [`Docs/LIM_M2_Datasheet_UA.tex`](Docs/LIM_M2_Datasheet_UA.tex) | [**Download PDF (UA)**](Docs/LIM_M2_Datasheet_UA.pdf) |
-| **Русский** | [`Docs/LIM_M2_Datasheet_RU.tex`](Docs/LIM_M2_Datasheet_RU.tex) | [**Download PDF (RU)**](Docs/LIM_M2_Datasheet_RU.pdf) |
-| **Slovenčina** | [`Docs/LIM_M2_Datasheet_SK.tex`](Docs/LIM_M2_Datasheet_SK.tex) | [**Download PDF (SK)**](Docs/LIM_M2_Datasheet_SK.pdf) |
+| **English** | [`LIM2 Docs/lim2_en.tex`](LIM2%20Docs/lim2_en.tex) | [**Download PDF (EN)**](LIM2%20Docs/lim2_en.pdf) |
 
 ---
 
@@ -88,8 +85,8 @@ Pre-compiled, ready-to-print comprehensive technical reference datasheets are lo
 * **`PIE` (8):** Program Interrupt Enable.
 * **`MIE` (9):** Master Interrupt Enable.
 * **`DWR` (10):** Disable Wait for Ready (forced non-blocking bus transfer).
-* **`PRV` (11):** Privilege Mode (`0`: User Mode, `1`: Supervisor Mode). Hardware-protected by 8 privilege zones.
-* **`AIP` (12):** Auto-Increment Pointer on memory operations.
+* **`PRV` (11):** Privilege Mode (`0`: User Mode, `1`: Supervisor Mode). Enabled by default on reset (`PRV = 1`). Hardware-protected by 8 privilege zones in User Mode.
+* **`AIP` (12):** Hardware Auto-Increment Pointer on memory operations. Enabled by default (`AIP = 1`, reset `FREG = 0x1800`). Increments `PTREG` by **+1** (byte for `.b`), **+2** (word for `.w`), and **+4** (32-bit vector/pointer via `MSP.ld`).
 * **`DBIT` (13):** Displaced Bit buffer (retains bit ejected during shift).
 * **`SMOD` (14):** Shift Mode selector (`0`: zero-fill, `1`: cyclic rotate through `DBIT`).
 * **`INTR` (15):** In-Interrupt execution flag (`1`: CPU is servicing an interrupt; subsequent interrupts locked out).
@@ -181,22 +178,22 @@ The LIM M2 processor implements a clean, orthogonal instruction encoding scheme 
    Octet 1 (PTREG/SREG Ar):[ OP [7] (0=ADD, 1=SUB) | Rs [6:4] | Source [3:2] | RSV [1:0] ]
    ```
 
-9. **Class IX: Branch & Jump Instructions (2–6 Bytes)**
-   * `JMP`, `JNZ`, `JZ`:
-     * `MOD = 0` (000): 16-bit immediate address (3 bytes total).
+9. **Class IX: Branch & Jump Instructions (2–5 Bytes / Fused 7 Bytes)**
+   * `JMP`, `JNZ`, `JZ`, `CALL`:
+     * `MOD = 0` (000): Direct 32-bit immediate target (5 bytes total: 1 byte opcode + 4 bytes Little-Endian).
      * `MOD = 1` (001): Indirect register branch via `Rs` (2 bytes total).
      * `MOD = 2` (010): 32-bit branch via pointer register `PTREG` (2 bytes total).
-     * `MOD = 3` (011): 32-bit indirect branch via memory pointer `[addr32]` or register pair `[$rd:$rs]`.
-   * `JCR` (Jump Compare Result, 3 bytes):
-     * Tests previous `CMP` result from bits `[7:6]` of `FREG` (`01`: `<`, `10`: `==`, `11`: `>`).
+     * `MOD = 3` (011): 32-bit indirect branch via memory pointer `[addr32]` (5 bytes total: 1 byte opcode + 4 bytes Little-Endian, reads 32-bit target) or register pair `[$rd:$rs]` (2 bytes).
+   * `JCR` (Jump Compare Result, 5 bytes):
+     * Single `JCR` (5 bytes): tests previous `CMP` result from bits `[7:6]` of `FREG` (`01`: `<`, `10`: `==`, `11`: `>`). Octet 0 encodes opcode 10 and `CFG [2:0]`, followed by 4 bytes of target 32-bit address `target32` in Little-Endian format.
      * Field `CFG [2:0]`: bit 2 = inversion `INV` (`0` = direct match, `1` = invert), bits `1–0` = condition code `COND` (`01`: `<`, `10`: `==`, `11`: `>`).
      * Relational conditions: `<` (`001`), `==` (`010`), `>` (`011`), `>=` (`101`), `!=` (`110`), `<=` (`111`).
-     * Supported in assembler as manual (`CMP $0, $1; JCR <, addr`) and fused macro (`JCR $1 > $2, addr` = `CMP` + `JCR`, 5 bytes).
+     * Supported in assembler as manual (`CMP $0, $1; JCR <, addr` — 2 + 5 = 7 bytes) and fused macro (`JCR $1 > $2, addr` = `CMP` + `JCR`, 7 bytes total).
 
-10. **Class X: Memory Load & Store (2–4 Bytes)**
+10. **Class X: Memory Load & Store (2–6 Bytes)**
     * `LMR Rd, <SRC_MODE>` and `LRM Rs, <DST_MODE>`:
       * Bit 2 of Octet 0: `SZ` ($0 = 8$-bit byte, $1 = 16$-bit word).
-      * Bits 1–0 of Octet 0: `Mode` (0 = Inline data, 1 = Imm pointer, 2 = 32-bit `PTREG` with auto-increment, 3 = Register pair 32-bit address).
+      * Bits 1–0 of Octet 0: `Mode` (0 = Inline data [3–4 bytes], 1 = Direct 32-bit pointer `[addr32]` [6 bytes: 2 bytes header + 4 bytes Little-Endian address], 2 = 32-bit `PTREG` with auto-increment [2 bytes], 3 = Register pair 32-bit address [2 bytes]).
 
 ---
 
@@ -213,10 +210,10 @@ The LIM M2 processor implements a clean, orthogonal instruction encoding scheme 
 | **00110** | `0x06` | **`LRM`** | Memory | Store byte/word into memory (dst: 0=Inline, 1=Ptr, 2=PTREG, 3=Register pair 32-bit; size: 8/16-bit) |
 | **00111** | `0x07` | **`LRR`** | Transfer | Fast register-to-register copy via bypass (`MUX 1` $\to$ `MUX 2`) |
 | **01000** | `0x08` | **`CMP`** | Compare | Arithmetic compare; updates `FREG.CMP` (`01`: `<`, `10`: `=`, `11`: `>`), `ZF`, `CF`, `OF` non-destructively |
-| **01001** | `0x09` | **`JMP`** | Branch | Unconditional branch (16-bit local or full 32-bit via `PTREG`) |
-| **01010** | `0x0A` | **`JCR`** | Branch | Conditional branch on compare result CMP (`<`, `<=`, `==`, `!=`, `>=`, `>`) |
-| **01011** | `0x0B` | **`JNZ`** | Branch | Conditional branch on Non-Zero (`ZF == 0`) |
-| **01100** | `0x0C` | **`JZ`** | Branch | Conditional branch on Zero (`ZF == 1`) |
+| **01001** | `0x09` | **`JMP`** | Branch | Unconditional 32-bit branch (MOD=0 direct 32-bit 5 bytes; MOD=1 register 2 bytes; MOD=2 PTREG 2 bytes; MOD=3 indirect [addr32] 5 bytes) |
+| **01010** | `0x0A` | **`JCR`** | Branch | 32-bit conditional branch on compare result CMP (`<`, `<=`, `==`, `!=`, `>=`, `>`, 5 bytes; fused macro: 7 bytes) |
+| **01011** | `0x0B` | **`JNZ`** | Branch | 32-bit conditional branch on Non-Zero (`ZF == 0`, 5 bytes / 2 bytes) |
+| **01100** | `0x0C` | **`JZ`** | Branch | 32-bit conditional branch on Zero (`ZF == 1`, 5 bytes / 2 bytes) |
 | **01101** | `0x0D` | **`AND`** | Logic | Bitwise logical AND |
 | **01110** | `0x0E` | **`OR`** | Logic | Bitwise logical OR |
 | **01111** | `0x0F` | **`NAND`** | Logic | Bitwise logical NAND |
@@ -233,8 +230,8 @@ The LIM M2 processor implements a clean, orthogonal instruction encoding scheme 
 | **11010** | `0x1A` | **`MSP`** | System | Manage Special Registers (`FREG`, `PTREG`, `SREG`, `VEC`) |
 | **11011** | `0x1B` | **`MOD`** | Arithmetic | Integer remainder (modulo): `Rd = Rs1 % Rs2` |
 | **11100** | `0x1C` | **`INTR` / `INT`** | System | Software interrupt (2 bytes): lowest 4 bits of 2nd byte `[3:0]` select vector `0..15` (`$ir0..$ir15`) |
-| **11101** | `0x1D` | **`CALL`** | Jump | Subroutine call with 32-bit return address push (`SREG -= 4`, `MEM32[SREG] = PC`) |
-| **11110** | `0x1E` | **`RET`** | Jump | Subroutine return with 32-bit PC pop (`PC = MEM32[SREG]`, `SREG += 4`) |
+| **11101** | `0x1D` | **`CALL`** | Jump | Subroutine call saving 32-bit PC and 16-bit FREG onto stack (`SREG -= 4, MEM32[SREG] = PC; SREG -= 2, MEM16[SREG] = FREG`) |
+| **11110** | `0x1E` | **`RET`** | Jump | Subroutine return restoring 16-bit FREG and 32-bit PC from stack (`FREG = MEM16[SREG], SREG += 2; PC = MEM32[SREG], SREG += 4`) |
 | **11111** | `0x1F` | **`HALT`** | Control | Hardware core execution halt (`HLT`) |
 
 ---
@@ -480,10 +477,12 @@ In assembly and the compiler toolchain, general-purpose registers are designated
 ### 5. Control Flow & Subroutines
 | Mnemonic | Programmer Signature | Code Example | Description |
 |---|---|---|---|
-| **`JMP`** | `JMP target(IMM\|REG) : PC = target` | `JMP R0 ; Unconditional jump` | Unconditional jump to literal or register address. |
-| **`JZ`** | `JZ target(IMM\|REG) : if FREG.ZF == 1 then PC = target` | `JZ loop_end ; Jump if ZF == 1` | Conditional branch if Zero Flag is asserted. |
-| **`CALL`** | `CALL target(IMM\|REG) : SREG -= 4, MEM32[SREG] = PC, PC = target` | `CALL func ; Call subroutine` | Push return address onto 32-bit stack and branch to target. |
-| **`RET`** | `RET : PC = MEM32[SREG], SREG += 4` | `RET ; Return from subroutine` | Pop return address from 32-bit stack into PC. |
+| **`JMP`** | `JMP target(IMM32\|REG\|PTR) : PC = target` | `JMP 0x100000 ; Direct 32-bit jump` | Unconditional jump (MOD=0 direct 32-bit 5 bytes; MOD=1 register 2 bytes; MOD=2 PTREG 2 bytes; MOD=3 indirect [addr32] 5 bytes). |
+| **`JZ`** | `JZ target(IMM32\|REG) : if FREG.ZF == 1 then PC = target` | `JZ loop_end ; Jump if ZF == 1` | Conditional branch if Zero Flag is asserted (5 bytes for direct 32-bit target). |
+| **`JNZ`** | `JNZ target(IMM32\|REG) : if FREG.ZF == 0 then PC = target` | `JNZ loop_start ; Jump if ZF == 0` | Conditional branch if Zero Flag is clear (5 bytes for direct 32-bit target). |
+| **`JCR`** | `JCR cond, target(IMM32) : if CMP_COND then PC = target` | `JCR >, is_greater ; Jump if $1 > $2` | Conditional branch on hardware compare result (`<`, `<=`, `==`, `!=`, `>=`, `>`). Single 5 bytes; fused macro `JCR $1 > $2, lbl` — 7 bytes. |
+| **`CALL`** | `CALL target(IMM32\|REG) : SREG -= 4, MEM32[SREG] = PC, SREG -= 2, MEM16[SREG] = FREG, PC = target` | `CALL func ; Call subroutine` | Push 32-bit return address and 16-bit FREG onto stack (6 bytes total stack frame) and branch to procedure. |
+| **`RET`** | `RET : FREG = MEM16[SREG], SREG += 2, PC = MEM32[SREG], SREG += 4` | `RET ; Return from subroutine` | Pop saved 16-bit FREG and 32-bit PC from stack. |
 
 ### 6. Control, Interrupts & System Registers
 | Mnemonic | Programmer Signature | Code Example | Description |
@@ -571,7 +570,11 @@ The LIM M2 protection architecture implements a secure boot and hardware Call Ga
    * The hardware does not perform hidden state drops — **the operating system / software is strictly responsible for clearing `PRV = 0`** before returning execution to unprivileged user code.
 
 5. **Hardware Interrupts (IRQ):**
-   * When an interrupt occurs, the core pushes current `PC` and `FREG` onto `SREG`, automatically asserts `PRV = 1`, clears `MIE = 0`, and branches to the vector in `$ir`. Return via `RETI` pops `FREG`, restoring the original user mode (`PRV = 0`).
+   * When an interrupt occurs, the core pushes current `PC` (32-bit) and `FREG` (16-bit) onto `SREG`, automatically asserts `PRV = 1`, clears `MIE = 0`, and branches to the vector in `$ir`. Return via `RET` pops `FREG` and `PC`, restoring the original user mode (`PRV = 0`).
+
+6. **Memory Access Control and Scratchpad RAM:**
+   * In Supervisor Mode (`PRV = 1`), unrestricted read/write access is permitted across the entire 4 GB address space.
+   * In unprivileged User Mode (`PRV = 0`), memory access is restricted to permitted zones, except for the last two cells of the address space (RAM Scratchpad), which may be accessed under **any privilege level** (User or Supervisor Mode). All other memory addresses require supervisor privileges.
 
 ---
 
@@ -847,15 +850,11 @@ LIM2/
 ├── README.ua.md             # Українська документація
 ├── README.ru.md             # Русскоязычная документация
 ├── README.sk.md             # Slovenská dokumentácia
-├── Docs/                    # Formal technical specifications & figures
-│   ├── LIM_M2_Datasheet_EN.tex  # LaTeX source (English)
-│   ├── LIM_M2_Datasheet_UA.tex  # LaTeX source (Ukrainian)
-│   ├── LIM_M2_Datasheet_RU.tex  # LaTeX source (Russian)
-│   ├── LIM_M2_Datasheet_SK.tex  # LaTeX source (Slovak)
-│   ├── LIM_M2_Datasheet_*.pdf   # Compiled PDFs
-│   ├── test.tex                 # Standalone TikZ architectural datapath
-│   ├── diagram.png / .svg       # Vector & Ultra-HD schematic assets
-│   └── compile_datasheets.sh    # Build automation script
+├── LIM2 Docs/               # Technical specifications & architecture diagrams
+│   ├── images/
+│   │   └── lim2.png         # Architectural datapath schematic
+│   ├── lim2_en.tex          # LaTeX datasheet source (English)
+│   └── lim2_en.pdf          # Compiled PDF datasheet
 ├── compiler/                # Dedicated Assembler Compiler SDK
 │   ├── README.md            # Compiler documentation & CLI usage
 │   ├── compiler.py          # CLI runner & compiler entrypoint

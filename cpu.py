@@ -48,14 +48,12 @@ class VectorList:
 
 class LIM2CPU(BaseCPU):
     """
-    Процессор архитектуры LIM M2.
-    Полный контроль в чистом Python:
+    Процессор архитектуры LIM M2 (по спецификации LIM2 Datasheet).
       - 16-битные регистры R0..R7, аккумуляторы ACCA/ACCB
-      - 32-битный указатель PTREG и стековый регистр SREG (линейная адресация до 4 ГБ)
-      - Пошаговая выборка двух байтов (fetch8) и склейка в 16-битную инструкцию в databus
-      - Битовый парсинг: parse("[15-11] [10-8] [7-5] [4-2] [1-0]")
-      - Ручная реализация логики инструкций в on_step()
-      - Поддержка режима супервизора (PRV=1) и зон привилегий ($pv0..$pv15)
+      - 32-битный указатель PTREG и стековый регистр SREG (SP) (линейная адресация до 4 ГБ)
+      - Регистр состояния FREG (16 бит)
+      - Массив из 32 системных 32-битных векторов (IR0..IR15, PV0..PV13, PV14..PV15 границы RAM)
+      - 32 базовых опкода (0..31)
     """
 
     def __init__(self, name: str = "LIM M2", bus: Optional[MemoryBus] = None):
@@ -71,18 +69,22 @@ class LIM2CPU(BaseCPU):
         self.reg("acca", bits=16, default=0, title="ACCA", is_acc=True, is_aux=True, block="ALU")
         self.reg("accb", bits=16, default=0, title="ACCB", is_acc=True, is_aux=True, block="ALU")
 
-        # Системный указатель стека SREG (32 бита, формат как PTREG)
+        # Системный указатель стека SREG / SP (32 бита)
         self.reg("sreg", bits=32, default=0, aliases=["sp"], title="SREG", role="Stack 32b", block="SYS")
 
-        # Регистр состояния и флагов FREG (16 бит) с полным битовым лейаутом
+        # Регистр состояния и флагов FREG (16 бит) по Разделу 4 Даташита LIM2:
+        # [0]=ZF, [1]=CF, [2]=OF, [3]=EM, [4]=CMP0, [5]=CMP1, [6]=CLK0, [7]=CLK1,
+        # [8]=SSRC, [9]=MIE, [10]=DWR, [11]=PRV, [12]=AIP, [13]=DBIT, [14]=SMOD, [15]=INTR
         flag_layout = [
             ("ZF", "Zero", 0),
             ("CF", "Carry", 1),
             ("OF", "Overflow", 2),
             ("EM", "ErrMath", 3),
-            ("CMP0", "CmpBit0", 6),
-            ("CMP1", "CmpBit1", 7),
-            ("PIE", "ProgInt", 8),
+            ("CMP0", "CmpBit0", 4),
+            ("CMP1", "CmpBit1", 5),
+            ("CLK0", "ClkBit0", 6),
+            ("CLK1", "ClkBit1", 7),
+            ("SSRC", "ShiftSrc", 8),
             ("MIE", "MasterInt", 9),
             ("DWR", "NoWait", 10),
             ("PRV", "Superv", 11),
@@ -104,8 +106,7 @@ class LIM2CPU(BaseCPU):
         for i in range(14):
             self.compact_reg(f"pv{i}", bits=32, default=0, title=f"PV{i}", role="Privilege Zone 32b", block="PROT")
 
-        # Границы оперативной памяти RAM (2 регистра / 1 пара: PV14..PV15, 32 бита).
-        # Доступ к RAM разрешен с любыми правами, ко всем остальным адресам — только с правами.
+        # Границы оперативной памяти RAM (2 регистра / 1 пара: PV14..PV15, 32 бита)
         self.compact_reg("pv14", bits=32, default=0, title="PV14", role="RAM Base 32b", block="PROT")
         self.compact_reg("pv15", bits=32, default=0, title="PV15", role="RAM Limit 32b", block="PROT")
 
@@ -120,7 +121,6 @@ class LIM2CPU(BaseCPU):
         self.pin("RESET", mode="IN", title="Reset Input")
         self.pin("RF", mode="IN", title="Ready Flag")
 
-        # Внутренний стек/таблица векторов прерываний и привилегий (32 вектора: 0..15 = IR0..IR15, 16..29 = PV0..PV13, 30..31 = ROM_BASE..ROM_LIMIT)
         self.vectors = VectorList(self.regs)
         self.ivt = self.vectors
 
@@ -129,14 +129,14 @@ class LIM2CPU(BaseCPU):
         self.pc = 0x00000000
         self.acca = 0
         self.accb = 0
-        self.freg = 0x1800  # PRV = 1 (супервизор), AIP = 1 (автоинкремент PTREG включен по умолчанию)
+        # При старте/сбросе ядро находится в режиме супервизора PRV=1 (бит 11) и автоинкремент AIP=1 (бит 12):
+        self.freg = 0x1800
         self.ptreg = 0
         self.sreg = 0
         for i in range(32):
             self.vectors[i] = 0
         for i in range(8):
             self.set_reg(i, 0)
-        # Синхронизируем режим шины
         if hasattr(self.bus, "set_mode"):
             self.bus.set_mode("32bit")
 
@@ -158,23 +158,20 @@ class LIM2CPU(BaseCPU):
         """
         ram_base = self.vectors[30]
         ram_limit = self.vectors[31]
-        if ram_base != 0 or ram_limit != 0:
-            return ram_base <= addr <= ram_limit
-        return False
+        if ram_base == 0 and ram_limit == 0:
+            return True
+        return ram_base <= addr <= ram_limit
 
     def can_write_address(self, addr: int) -> bool:
         """
         Проверяет права доступа на запись по адресу addr:
-        - Последние две ячейки векторов ($pv14..$pv15 / векторы 30..31) задают диапазон оперативной памяти (ОЗУ / RAM).
-        - К оперативной памяти (RAM) можно обращаться с ЛЮБЫМИ правами (включая пользовательский режим PRV=0).
+        - К оперативной памяти (RAM) можно обращаться с ЛЮБЫМИ правами (включая PRV=0).
         - Ко всем остальным адресам (вне RAM) запись разрешена ТОЛЬКО с правами супервизора (PRV=1)
-          либо при исполнении внутри одной из зон привилегий ($pv0..$pv13)!
+          либо при исполнении внутри одной из зон привилегий ($pv0..$pv13).
         """
         cur_prv = (self.freg >> 11) & 1
-        # С правами (PRV == 1 или исполнение внутри зоны привилегий $pv0..$pv13) запись разрешена везде:
         if cur_prv == 1 or self.in_privilege_zone():
             return True
-        # Без прав (пользовательский режим PRV == 0 вне зон привилегий) — запись разрешена ТОЛЬКО в RAM:
         return self.is_ram_address(addr)
 
     def is_rom_address(self, addr: int) -> bool:
@@ -184,35 +181,54 @@ class LIM2CPU(BaseCPU):
     def trigger_irq(self, vector_num: int = 0, force: bool = False) -> bool:
         """
         Аппаратный вызов прерывания по вектору IRQ (0..15).
-        Работает аналогично CALL:
-          - Сохраняет 32-битный PC (4 байта) и 16-битный FREG (2 байта) в стек SREG.
-          - Переходит на адрес вектора vector_num.
-          - Сбрасывает ножку IRQ = 0.
-        Не навязывает смену режима супервизора (PRV) — программа/ОС сама управляет PRV.
+        Сохраняет 32-битный PC в стек SP, устанавливает INTR=1 во FREG.
         """
         if not force and not (self.freg & (1 << 9)):
             return False
 
-        # Сохранение 32-битного PC и 16-битного FREG в стек SREG
+        # Сохранение 32-битного PC в стек SREG (SP)
         self.sreg = (self.sreg - 4) & 0xFFFFFFFF
-        self.bus.write32(self.sreg, self.pc & 0xFFFFFFFF)
-        self.sreg = (self.sreg - 2) & 0xFFFFFFFF
-        self.bus.write16(self.sreg, self.freg & 0xFFFF)
+        self.bus.write32(self.sreg, self.pc & 0xFFFFFFFF, little_endian=True)
 
         vec_idx = min(15, max(0, vector_num))
         self.pc = self.vectors[vec_idx] & 0xFFFFFFFF
+        self.freg |= (1 << 15)  # INTR = 1
         if hasattr(self, "pins"):
             self.pins.IRQ.set(0)
             self.pins.IA.set(1)  # Аппаратное подтверждение: IA = 1 (Interrupt Acknowledge)
         return True
 
+    def _fetch_jump_target(self, src_mode: int) -> int:
+        """
+        Универсальный декодер целевого 32-битного адреса для инструкций ветвления (JMP, JO, JNO, JZ, JNZ, CALL):
+          0 (00): Прямой 32-битный адрес imm32 (5 байтов)
+          1 (01): Косвенный адрес из памяти [ADDR] (5 байтов)
+          2 (10): Адрес из указателя [PTREG] (1 байт)
+          3 (11): Адрес из пары РОН [Rh:Rl] (2 байта)
+        """
+        if src_mode == 0:
+            target = self.bus.read32(self.pc, little_endian=True)
+            self.pc += 4
+            return target & 0xFFFFFFFF
+        elif src_mode == 1:
+            ptr32 = self.bus.read32(self.pc, little_endian=True)
+            self.pc += 4
+            target = self.bus.read32(ptr32, little_endian=True)
+            return target & 0xFFFFFFFF
+        elif src_mode == 2:
+            return self.ptreg & 0xFFFFFFFF
+        elif src_mode == 3:
+            b1 = self.bus.read8(self.pc)
+            self.pc += 1
+            r_hi = (b1 >> 5) & 0x07
+            r_lo = (b1 >> 2) & 0x07
+            return (((self.get_reg(r_hi) & 0xFFFF) << 16) | (self.get_reg(r_lo) & 0xFFFF)) & 0xFFFFFFFF
+        return 0
+
     def on_step(self):
         """
-        3. Выборка, сборка опкода и исполнение инструкции.
-        Все операции с программным счетчиком (PC) выполняются ВРУЧНУЮ:
-          - Читаем байт из шины: b0 = self.bus.read8(self.pc)
-          - Вручную сдвигаем счетчик: self.pc += 1
-          - Склеиваем байты в машинное слово в self.databus
+        Выборка, сборка опкода и исполнение инструкции.
+        Все операции с PC выполняются вручную и пошагово.
         """
         # Сброс строба подтверждения прерывания IA при начале исполнения команд обработчика:
         if hasattr(self, "pins") and self.pins.IA.get() == 1:
@@ -223,114 +239,516 @@ class LIM2CPU(BaseCPU):
             if self.trigger_irq(0, force=False):
                 return
 
-        # 1. Пошаговая физическая выборка первого 8-битного байта (октет 0: опкод + конфиг):
+        # 1. Выборка октета 0:
         self.addressbus = self.pc
         b0 = self.bus.read8(self.pc)
         self.pc += 1
         self.databus = b0
 
-        # [7-3] — Opcode (5 бит), [2-0] — Config / Mode (3 бита в первом байте)
-        opcode, cfg = self.parse("[7-3] [2-0]")
+        # [7:3] — Opcode (5 бит), [2:0] — Config / Args (3 бита в первом байте)
+        opcode = (b0 >> 3) & 0x1F
+        cfg = b0 & 0x07
 
-        # 0: NOP (1 байт) — пустая операция, второй байт не запрашивается
+        # ----------------------------------------------------------------------
+        # 0: NOP (1 байт)
+        # ----------------------------------------------------------------------
         if opcode == 0b00000:
             pass
 
-        # 17: NOT Rd (1 байт: Побитовая инверсия, [7-3] опкод, [2-0] Rd)
-        elif opcode == 0b10001:
-            rd = cfg
-            val = self.get_reg(rd)
-            res = (~val) & 0xFFFF
+        # ----------------------------------------------------------------------
+        # 1: ADD Rd, Rs0, Rs1 (2 байта: Rd = Rs0 + Rs1)
+        # ----------------------------------------------------------------------
+        elif opcode == 0b00001:
+            rd = cfg & 0x07
+            b1 = self.bus.read8(self.pc); self.pc += 1
+            rs0 = (b1 >> 5) & 0x07
+            rs1 = (b1 >> 2) & 0x07
+            val0 = self.get_reg(rs0)
+            val1 = self.get_reg(rs1)
+            self.acca, self.accb = val0, val1
+            res = val0 + val1
+            self.set_reg(rd, res & 0xFFFF)
+            self._update_flags(res)
+
+        # ----------------------------------------------------------------------
+        # 2: SUB Rd, Rs0, Rs1 (2 байта: Rd = Rs0 - Rs1)
+        # ----------------------------------------------------------------------
+        elif opcode == 0b00010:
+            rd = cfg & 0x07
+            b1 = self.bus.read8(self.pc); self.pc += 1
+            rs0 = (b1 >> 5) & 0x07
+            rs1 = (b1 >> 2) & 0x07
+            val0 = self.get_reg(rs0)
+            val1 = self.get_reg(rs1)
+            self.acca, self.accb = val0, val1
+            res = val0 - val1
+            self.set_reg(rd, res & 0xFFFF)
+            self._update_flags(res)
+
+        # ----------------------------------------------------------------------
+        # 3: MUL Rd, Rs0, Rs1 (2 байта: Rd = (Rs0 * Rs1) & 0xFFFF)
+        # ----------------------------------------------------------------------
+        elif opcode == 0b00011:
+            rd = cfg & 0x07
+            b1 = self.bus.read8(self.pc); self.pc += 1
+            rs0 = (b1 >> 5) & 0x07
+            rs1 = (b1 >> 2) & 0x07
+            val0 = self.get_reg(rs0)
+            val1 = self.get_reg(rs1)
+            self.acca, self.accb = val0, val1
+            res = val0 * val1
+            self.set_reg(rd, res & 0xFFFF)
+            self._update_flags(res)
+
+        # ----------------------------------------------------------------------
+        # 4: DIV Rd, Rs0, Rs1 (2 байта: Rd = Rs0 // Rs1)
+        # ----------------------------------------------------------------------
+        elif opcode == 0b00100:
+            rd = cfg & 0x07
+            b1 = self.bus.read8(self.pc); self.pc += 1
+            rs0 = (b1 >> 5) & 0x07
+            rs1 = (b1 >> 2) & 0x07
+            val0 = self.get_reg(rs0)
+            val1 = self.get_reg(rs1)
+            self.acca, self.accb = val0, val1
+            if val1 == 0:
+                self.freg |= (1 << 3) | 1  # EM=1, ZF=1
+                res = 0
+            else:
+                res = val0 // val1
+                self._update_flags(res)
+            self.set_reg(rd, res & 0xFFFF)
+
+        # ----------------------------------------------------------------------
+        # 5: LMR (Загрузка в регистр из памяти/непосредственных данных: 2..6 байт)
+        #   [2] = DS (0: 8-бит .b, 1: 16-бит .w)
+        #   [1:0] = Source (0: imm, 1: [ADDR], 2: [PTREG], 3: [Rh:Rl])
+        # ----------------------------------------------------------------------
+        elif opcode == 0b00101:
+            ds = (cfg >> 2) & 1
+            src_mode = cfg & 0b11
+            if src_mode == 0:  # Непосредственные данные
+                b1 = self.bus.read8(self.pc); self.pc += 1
+                rd = (b1 >> 5) & 0x07
+                if ds == 0:
+                    data = self.bus.read8(self.pc); self.pc += 1
+                else:
+                    data = self.bus.read16(self.pc, little_endian=True); self.pc += 2
+                self.set_reg(rd, data & (0xFF if ds == 0 else 0xFFFF))
+            elif src_mode == 1:  # [ADDR] (6 байт: опкод + rd + 4 байта addr32)
+                b1 = self.bus.read8(self.pc); self.pc += 1
+                rd = (b1 >> 5) & 0x07
+                ea = self.bus.read32(self.pc, little_endian=True); self.pc += 4
+                if ds == 0:
+                    data = self.bus.read8(ea)
+                else:
+                    data = self.bus.read16(ea, little_endian=True)
+                self.set_reg(rd, data & (0xFF if ds == 0 else 0xFFFF))
+            elif src_mode == 2:  # [PTREG] (2 байта: опкод + rd)
+                b1 = self.bus.read8(self.pc); self.pc += 1
+                rd = (b1 >> 5) & 0x07
+                ea = self.ptreg & 0xFFFFFFFF
+                if ds == 0:
+                    data = self.bus.read8(ea)
+                    self.ptreg = (self.ptreg + 1) & 0xFFFFFFFF
+                else:
+                    data = self.bus.read16(ea, little_endian=True)
+                    self.ptreg = (self.ptreg + 2) & 0xFFFFFFFF
+                self.set_reg(rd, data & (0xFF if ds == 0 else 0xFFFF))
+            elif src_mode == 3:  # [Rh:Rl] (2 байта: опкод + Rh:Rl)
+                b1 = self.bus.read8(self.pc); self.pc += 1
+                rd_hi = (b1 >> 5) & 0x07
+                rs_lo = (b1 >> 2) & 0x07
+                ea = (((self.get_reg(rd_hi) & 0xFFFF) << 16) | (self.get_reg(rs_lo) & 0xFFFF)) & 0xFFFFFFFF
+                if ds == 0:
+                    data = self.bus.read8(ea)
+                else:
+                    data = self.bus.read16(ea, little_endian=True)
+                self.set_reg(rd_hi, data & (0xFF if ds == 0 else 0xFFFF))
+
+        # ----------------------------------------------------------------------
+        # 6: LRM (Запись из регистра/константы в память: 2..6 байт)
+        #   [2] = DS (0: 8-бит .b, 1: 16-бит .w)
+        #   [1:0] = Source (0: imm в [PTREG], 1: Reg в [ADDR], 2: Reg в [PTREG])
+        # ----------------------------------------------------------------------
+        elif opcode == 0b00110:
+            ds = (cfg >> 2) & 1
+            dst_mode = cfg & 0b11
+            if dst_mode == 0:  # Непосредственные данные в [PTREG]
+                b1 = self.bus.read8(self.pc); self.pc += 1
+                if ds == 0:
+                    val = self.bus.read8(self.pc); self.pc += 1
+                    if self.can_write_address(self.ptreg):
+                        self.bus.write8(self.ptreg, val & 0xFF)
+                    self.ptreg = (self.ptreg + 1) & 0xFFFFFFFF
+                else:
+                    val = self.bus.read16(self.pc, little_endian=True); self.pc += 2
+                    if self.can_write_address(self.ptreg):
+                        self.bus.write16(self.ptreg, val & 0xFFFF, little_endian=True)
+                    self.ptreg = (self.ptreg + 2) & 0xFFFFFFFF
+            elif dst_mode == 1:  # Запись регистра в [ADDR] (6 байт)
+                b1 = self.bus.read8(self.pc); self.pc += 1
+                rs = (b1 >> 5) & 0x07
+                val = self.get_reg(rs)
+                ea = self.bus.read32(self.pc, little_endian=True); self.pc += 4
+                if self.can_write_address(ea):
+                    if ds == 0:
+                        self.bus.write8(ea, val & 0xFF)
+                    else:
+                        self.bus.write16(ea, val & 0xFFFF, little_endian=True)
+            elif dst_mode == 2:  # Запись регистра в [PTREG] (2 байта)
+                b1 = self.bus.read8(self.pc); self.pc += 1
+                rs = (b1 >> 5) & 0x07
+                val = self.get_reg(rs)
+                if self.can_write_address(self.ptreg):
+                    if ds == 0:
+                        self.bus.write8(self.ptreg, val & 0xFF)
+                    else:
+                        self.bus.write16(self.ptreg, val & 0xFFFF, little_endian=True)
+                if ds == 0:
+                    self.ptreg = (self.ptreg + 1) & 0xFFFFFFFF
+                else:
+                    self.ptreg = (self.ptreg + 2) & 0xFFFFFFFF
+
+        # ----------------------------------------------------------------------
+        # 7: LRR Rd, Rs (2 байта: прямое копирование между РОН)
+        # ----------------------------------------------------------------------
+        elif opcode == 0b00111:
+            rd = cfg & 0x07
+            b1 = self.bus.read8(self.pc); self.pc += 1
+            rs = (b1 >> 5) & 0x07
+            self.set_reg(rd, self.get_reg(rs))
+
+        # ----------------------------------------------------------------------
+        # 8: CMP Rs0, Rs1 (2 байта: сравнение операндов)
+        # ----------------------------------------------------------------------
+        elif opcode == 0b01000:
+            rs0 = cfg & 0x07
+            b1 = self.bus.read8(self.pc); self.pc += 1
+            rs1 = (b1 >> 5) & 0x07
+            val0 = self.get_reg(rs0)
+            val1 = self.get_reg(rs1)
+            diff = val0 - val1
+            cmp_code = 0b01 if val0 < val1 else (0b10 if val0 == val1 else 0b11)
+            # Код сравнения фиксируется в битах [5:4] регистра FREG
+            self.freg = (self.freg & ~(0b11 << 4)) | (cmp_code << 4)
+            self._update_flags(diff)
+
+        # ----------------------------------------------------------------------
+        # 9: JMP target (1..5 байт: безусловный 32-битный переход)
+        # ----------------------------------------------------------------------
+        elif opcode == 0b01001:
+            src_mode = cfg & 0b11
+            target = self._fetch_jump_target(src_mode)
+            self.pc = target & 0xFFFFFFFF
+
+        # ----------------------------------------------------------------------
+        # 10: JCR cond, target32 (5 байт: условный переход по результату CMP)
+        # ----------------------------------------------------------------------
+        elif opcode == 0b01010:
+            inv = (cfg >> 2) & 1
+            expected_cmp = cfg & 0b11
+            target = self.bus.read32(self.pc, little_endian=True) & 0xFFFFFFFF
+            self.pc += 4
+            actual_cmp = (self.freg >> 4) & 0b11
+            take = (actual_cmp == expected_cmp) if inv == 0 else (actual_cmp != expected_cmp)
+            if take:
+                self.pc = target & 0xFFFFFFFF
+
+        # ----------------------------------------------------------------------
+        # 11: JO / JOB (Neg=0) / JNO (Neg=1) (1..5 байт: по флагу OF или CF)
+        # ----------------------------------------------------------------------
+        elif opcode == 0b01011:
+            neg = (cfg >> 2) & 1
+            src_mode = cfg & 0b11
+            target = self._fetch_jump_target(src_mode)
+            has_ovf_or_cf = bool((self.freg & (1 << 2)) or (self.freg & (1 << 1)))
+            take = has_ovf_or_cf if neg == 0 else (not has_ovf_or_cf)
+            if take:
+                self.pc = target & 0xFFFFFFFF
+
+        # ----------------------------------------------------------------------
+        # 12: JZ (Neg=0) / JNZ (Neg=1) (1..5 байт: по флагу ZF)
+        # ----------------------------------------------------------------------
+        elif opcode == 0b01100:
+            neg = (cfg >> 2) & 1
+            src_mode = cfg & 0b11
+            target = self._fetch_jump_target(src_mode)
+            is_zero = bool(self.freg & 0x01)
+            take = is_zero if neg == 0 else (not is_zero)
+            if take:
+                self.pc = target & 0xFFFFFFFF
+
+        # ----------------------------------------------------------------------
+        # 13: AND Rd, Rs0, Rs1 (2 байта)
+        # ----------------------------------------------------------------------
+        elif opcode == 0b01101:
+            rd = cfg & 0x07
+            b1 = self.bus.read8(self.pc); self.pc += 1
+            rs0 = (b1 >> 5) & 0x07
+            rs1 = (b1 >> 2) & 0x07
+            res = self.get_reg(rs0) & self.get_reg(rs1)
+            self.set_reg(rd, res & 0xFFFF)
+            self._update_flags(res)
+
+        # ----------------------------------------------------------------------
+        # 14: OR Rd, Rs0, Rs1 (2 байта)
+        # ----------------------------------------------------------------------
+        elif opcode == 0b01110:
+            rd = cfg & 0x07
+            b1 = self.bus.read8(self.pc); self.pc += 1
+            rs0 = (b1 >> 5) & 0x07
+            rs1 = (b1 >> 2) & 0x07
+            res = self.get_reg(rs0) | self.get_reg(rs1)
+            self.set_reg(rd, res & 0xFFFF)
+            self._update_flags(res)
+
+        # ----------------------------------------------------------------------
+        # 15: NAND Rd, Rs0, Rs1 (2 байта)
+        # ----------------------------------------------------------------------
+        elif opcode == 0b01111:
+            rd = cfg & 0x07
+            b1 = self.bus.read8(self.pc); self.pc += 1
+            rs0 = (b1 >> 5) & 0x07
+            rs1 = (b1 >> 2) & 0x07
+            res = (~(self.get_reg(rs0) & self.get_reg(rs1))) & 0xFFFF
             self.set_reg(rd, res)
             self._update_flags(res)
 
-        # 20: INC Rd (1 байт: Инкремент операнда на единицу, [7-3] опкод 10100, [2-0] Rd)
+        # ----------------------------------------------------------------------
+        # 16: NOR Rd, Rs0, Rs1 (2 байта)
+        # ----------------------------------------------------------------------
+        elif opcode == 0b10000:
+            rd = cfg & 0x07
+            b1 = self.bus.read8(self.pc); self.pc += 1
+            rs0 = (b1 >> 5) & 0x07
+            rs1 = (b1 >> 2) & 0x07
+            res = (~(self.get_reg(rs0) | self.get_reg(rs1))) & 0xFFFF
+            self.set_reg(rd, res)
+            self._update_flags(res)
+
+        # ----------------------------------------------------------------------
+        # 17: NOT Target, Source (2 байта)
+        # ----------------------------------------------------------------------
+        elif opcode == 0b10001:
+            target = cfg & 0x07
+            b1 = self.bus.read8(self.pc); self.pc += 1
+            source = (b1 >> 5) & 0x07
+            res = (~self.get_reg(source)) & 0xFFFF
+            self.set_reg(target, res)
+            self._update_flags(res)
+
+        # ----------------------------------------------------------------------
+        # 18: XOR Rd, Rs0, Rs1 (2 байта)
+        # ----------------------------------------------------------------------
+        elif opcode == 0b10010:
+            rd = cfg & 0x07
+            b1 = self.bus.read8(self.pc); self.pc += 1
+            rs0 = (b1 >> 5) & 0x07
+            rs1 = (b1 >> 2) & 0x07
+            res = (self.get_reg(rs0) ^ self.get_reg(rs1)) & 0xFFFF
+            self.set_reg(rd, res)
+            self._update_flags(res)
+
+        # ----------------------------------------------------------------------
+        # 19: XNOR Rd, Rs0, Rs1 (2 байта)
+        # ----------------------------------------------------------------------
+        elif opcode == 0b10011:
+            rd = cfg & 0x07
+            b1 = self.bus.read8(self.pc); self.pc += 1
+            rs0 = (b1 >> 5) & 0x07
+            rs1 = (b1 >> 2) & 0x07
+            res = (~(self.get_reg(rs0) ^ self.get_reg(rs1))) & 0xFFFF
+            self.set_reg(rd, res)
+            self._update_flags(res)
+
+        # ----------------------------------------------------------------------
+        # 20: INC Rd (1 байт)
+        # ----------------------------------------------------------------------
         elif opcode == 0b10100:
-            rd = cfg
+            rd = cfg & 0x07
             val = self.get_reg(rd)
             res = (val + 1) & 0xFFFF
             self.set_reg(rd, res)
-            self._update_flags(res)
+            zf = 1 if res == 0 else 0
+            of = 1 if val == 0x7FFF else 0
+            self.freg = (self.freg & ~0x05) | (of << 2) | zf
 
-        # 21: DEC Rd (1 байт: Декремент операнда на единицу, [7-3] опкод 10101, [2-0] Rd)
+        # ----------------------------------------------------------------------
+        # 21: DEC Rd (1 байт)
+        # ----------------------------------------------------------------------
         elif opcode == 0b10101:
-            rd = cfg
+            rd = cfg & 0x07
             val = self.get_reg(rd)
             res = (val - 1) & 0xFFFF
             self.set_reg(rd, res)
-            self._update_flags(res)
+            zf = 1 if res == 0 else 0
+            of = 1 if val == 0x8000 else 0
+            self.freg = (self.freg & ~0x05) | (of << 2) | zf
 
-        # 28: INTR / INT / SWI (1..2 байта: [7-3] опкод 11100, [2-0] vec 1..7 или 000 + байт 1: [3-0] vec 0..15)
-        elif opcode == 0b11100:
-            if cfg != 0:
-                vec = cfg
-            else:
-                b1 = self.bus.read8(self.pc)
-                self.pc += 1
-                self.databus = (self.databus << 8) | b1
-                vec = b1 & 0x0F
-            # Сохранение 32-битного PC и 16-битного FREG в стек SREG (аналогично CALL)
-            self.sreg = (self.sreg - 4) & 0xFFFFFFFF
-            self.bus.write32(self.sreg, self.pc & 0xFFFFFFFF)
+        # ----------------------------------------------------------------------
+        # 22: PUSH Rs (1 байт)
+        # ----------------------------------------------------------------------
+        elif opcode == 0b10110:
+            rs = cfg & 0x07
+            val = self.get_reg(rs) & 0xFFFF
             self.sreg = (self.sreg - 2) & 0xFFFFFFFF
-            self.bus.write16(self.sreg, self.freg & 0xFFFF)
-            # Переход по вектору прерывания (режим супервизора программа включает сама при необходимости)
+            self.bus.write16(self.sreg, val, little_endian=True)
+
+        # ----------------------------------------------------------------------
+        # 23: POP Rd (1 байт)
+        # ----------------------------------------------------------------------
+        elif opcode == 0b10111:
+            rd = cfg & 0x07
+            val = self.bus.read16(self.sreg, little_endian=True) & 0xFFFF
+            self.sreg = (self.sreg + 2) & 0xFFFFFFFF
+            self.set_reg(rd, val)
+
+        # ----------------------------------------------------------------------
+        # 24: BSL Rd (1 байт: сдвиг влево на 1 бит)
+        # ----------------------------------------------------------------------
+        elif opcode == 0b11000:
+            rd = cfg & 0x07
+            val = self.get_reg(rd) & 0xFFFF
+            smod = (self.freg >> 14) & 1
+            dbit = (self.freg >> 13) & 1
+            ssrc = (self.freg >> 8) & 1
+            last_displaced = (val >> 15) & 1
+            in_bit = last_displaced if smod == 1 else (dbit if ssrc == 1 else 0)
+            res = ((val << 1) | in_bit) & 0xFFFF
+            self.set_reg(rd, res)
+            # Флаг DBIT (бит 13) и флаг CF (бит 1) фиксируют вытесненный бит:
+            self.freg = (self.freg & ~(1 << 13)) | (last_displaced << 13)
+            self.freg = (self.freg & ~(1 << 1)) | (last_displaced << 1)
+            zf = 1 if res == 0 else 0
+            self.freg = (self.freg & ~0x01) | zf
+
+        # ----------------------------------------------------------------------
+        # 25: BSR Rd (1 байт: сдвиг вправо на 1 бит)
+        # ----------------------------------------------------------------------
+        elif opcode == 0b11001:
+            rd = cfg & 0x07
+            val = self.get_reg(rd) & 0xFFFF
+            smod = (self.freg >> 14) & 1
+            dbit = (self.freg >> 13) & 1
+            ssrc = (self.freg >> 8) & 1
+            last_displaced = val & 1
+            in_bit = last_displaced if smod == 1 else (dbit if ssrc == 1 else 0)
+            res = (val >> 1) | (in_bit << 15)
+            self.set_reg(rd, res)
+            self.freg = (self.freg & ~(1 << 13)) | (last_displaced << 13)
+            self.freg = (self.freg & ~(1 << 1)) | (last_displaced << 1)
+            zf = 1 if res == 0 else 0
+            self.freg = (self.freg & ~0x01) | zf
+
+        # ----------------------------------------------------------------------
+        # 26: MSP (4..6 байт: манипуляция специальными регистрами)
+        # ----------------------------------------------------------------------
+        elif opcode == 0b11010:
+            act = (cfg >> 2) & 1
+            target_sel = cfg & 0b11
+            if target_sel == 0:  # FREG (4 байта)
+                b1 = self.bus.read8(self.pc); self.pc += 1
+                logic_op = (b1 >> 6) & 0x03
+                mask = self.bus.read16(self.pc, little_endian=True) & 0xFFFF
+                self.pc += 2
+                if act == 0:  # Load
+                    new_freg = mask
+                else:  # Edit
+                    if logic_op == 0:      # AND
+                        new_freg = self.freg & mask
+                    elif logic_op == 1:    # OR
+                        new_freg = self.freg | mask
+                    elif logic_op == 2:    # XOR
+                        new_freg = self.freg ^ mask
+                    elif logic_op == 3:    # XNOR
+                        new_freg = (~(self.freg ^ mask)) & 0xFFFF
+                    else:
+                        new_freg = self.freg
+
+                # Контроль прав режима супервизора (PRV = бит 11)
+                cur_prv = (self.freg >> 11) & 1
+                target_prv = (new_freg >> 11) & 1
+                if cur_prv == 0 and target_prv == 1:
+                    if not self.in_privilege_zone():
+                        new_freg &= ~(1 << 11)
+                self.freg = new_freg
+
+            elif target_sel == 1:  # PTREG (5 байт, только Load)
+                val32 = self.bus.read32(self.pc, little_endian=True) & 0xFFFFFFFF
+                self.pc += 4
+                self.ptreg = val32
+
+            elif target_sel == 2:  # SP / SREG (5 байт, только Load)
+                val32 = self.bus.read32(self.pc, little_endian=True) & 0xFFFFFFFF
+                self.pc += 4
+                self.sreg = val32
+
+            elif target_sel == 3:  # VECTORS (6 байт, только Load)
+                b1 = self.bus.read8(self.pc); self.pc += 1
+                idx = b1 & 0x1F
+                val32 = self.bus.read32(self.pc, little_endian=True) & 0xFFFFFFFF
+                self.pc += 4
+                cur_prv = (self.freg >> 11) & 1
+                if idx >= 16 and cur_prv == 0 and not self.in_privilege_zone():
+                    pass  # Блокировка записи в $pv вне зон привилегий
+                else:
+                    self.vectors[idx] = val32
+
+        # ----------------------------------------------------------------------
+        # 27: MOD Rd, Rs0, Rs1 (2 байта: Rd = Rs0 % Rs1)
+        # ----------------------------------------------------------------------
+        elif opcode == 0b11011:
+            rd = cfg & 0x07
+            b1 = self.bus.read8(self.pc); self.pc += 1
+            rs0 = (b1 >> 5) & 0x07
+            rs1 = (b1 >> 2) & 0x07
+            val0 = self.get_reg(rs0)
+            val1 = self.get_reg(rs1)
+            self.acca, self.accb = val0, val1
+            if val1 == 0:
+                self.freg |= (1 << 3) | 1  # EM=1, ZF=1
+                res = 0
+            else:
+                res = val0 % val1
+                self._update_flags(res)
+            self.set_reg(rd, res & 0xFFFF)
+
+        # ----------------------------------------------------------------------
+        # 28: INTR / INT / SWI (2 байта: программное прерывание)
+        # ----------------------------------------------------------------------
+        elif opcode == 0b11100:
+            b1 = self.bus.read8(self.pc); self.pc += 1
+            vec = b1 & 0x0F
+            # Сохранение только 32-битного PC в стек SP (SREG):
+            self.sreg = (self.sreg - 4) & 0xFFFFFFFF
+            self.bus.write32(self.sreg, self.pc & 0xFFFFFFFF, little_endian=True)
+            self.freg |= (1 << 15)  # INTR = 1
             self.pc = self.vectors[vec] & 0xFFFFFFFF
 
-        # 29: CALL target (2..5 байт: вызов подпрограммы, сохранение 32-битного PC и 16-битного FREG в стек SREG)
+        # ----------------------------------------------------------------------
+        # 29: CALL target (1..5 байт: вызов подпрограммы)
+        # ----------------------------------------------------------------------
         elif opcode == 0b11101:
-            if cfg == 1:
-                b1 = self.bus.read8(self.pc)
-                self.pc += 1
-                self.databus = (self.databus << 8) | b1
-                rd = self.parse("[7-5]")
-                target = self.get_reg(rd)
-            elif cfg == 2:
-                b1 = self.bus.read8(self.pc)
-                self.pc += 1
-                self.databus = (self.databus << 8) | b1
-                target = self.ptreg & 0xFFFFFFFF
-            elif cfg == 3:
-                # MOD=3: косвенный переход по 32-битному адресу в памяти [addr32] (Little-Endian)
-                t0 = self.bus.read8(self.pc)
-                t1 = self.bus.read8(self.pc + 1)
-                t2 = self.bus.read8(self.pc + 2)
-                t3 = self.bus.read8(self.pc + 3)
-                self.pc += 4
-                ptr32 = t0 | (t1 << 8) | (t2 << 16) | (t3 << 24)
-                self.databus = (self.databus << 32) | ptr32
-                target = self.bus.read32(ptr32, little_endian=True)
-            else:
-                # MOD=0: непосредственный 32-битный адрес target32 (Little-Endian)
-                t0 = self.bus.read8(self.pc)
-                t1 = self.bus.read8(self.pc + 1)
-                t2 = self.bus.read8(self.pc + 2)
-                t3 = self.bus.read8(self.pc + 3)
-                self.pc += 4
-                target = t0 | (t1 << 8) | (t2 << 16) | (t3 << 24)
-                self.databus = (self.databus << 32) | target
-
-            # Сохранение 32-битного адреса возврата и 16-битного FREG в стек SREG
+            src_mode = cfg & 0b11
+            target = self._fetch_jump_target(src_mode)
             ret_addr = self.pc & 0xFFFFFFFF
             self.sreg = (self.sreg - 4) & 0xFFFFFFFF
-            self.bus.write32(self.sreg, ret_addr)
-            self.sreg = (self.sreg - 2) & 0xFFFFFFFF
-            self.bus.write16(self.sreg, self.freg & 0xFFFF)
+            self.bus.write32(self.sreg, ret_addr, little_endian=True)
             self.pc = target & 0xFFFFFFFF
 
-        # 30: RET (1 байт: универсальный возврат из подпрограммы и прерывания)
-        # Автоматически восстанавливает 16-битный FREG и 32-битный PC из стека SREG
+        # ----------------------------------------------------------------------
+        # 30: RET (1 байт: возврат из подпрограммы)
+        # ----------------------------------------------------------------------
         elif opcode == 0b11110:
-            saved_freg = self.bus.read16(self.sreg) & 0xFFFF
-            self.sreg = (self.sreg + 2) & 0xFFFFFFFF
-
-            ret_addr = self.bus.read32(self.sreg) & 0xFFFFFFFF
+            ret_addr = self.bus.read32(self.sreg, little_endian=True) & 0xFFFFFFFF
             self.sreg = (self.sreg + 4) & 0xFFFFFFFF
-
-            self.freg = saved_freg
             self.pc = ret_addr
+            self.freg &= ~(1 << 15)  # сброс бита INTR в FREG
 
-        # 31: HALT (1 байт) — останов процессора
+        # ----------------------------------------------------------------------
+        # 31: HALT (1 байт: останов)
+        # ----------------------------------------------------------------------
         elif opcode == 0b11111:
             if hasattr(self, "pins"):
                 self.pins.HALT.set(1)
@@ -338,682 +756,12 @@ class LIM2CPU(BaseCPU):
                 self.pins.RD.set(0)
             self.halt()
 
-        # 1: ADD Rd, Rs1, Rs2 (2 байта: Rd = Rs1 + Rs2)
-        elif opcode == 0b00001:
-            self.databus = (self.databus << 8) | self.bus.read8(self.pc)
-            self.pc += 1
-            cfg, rd, rs1, rs2 = self.parse("[10-8] [7-5] [4-2] [1-0]")
-            alu_rd, alu_rs1, alu_rs2 = (cfg, rd, rs1) if (self.databus & 0x03) == 0 else (rd, rs1, rs2)
-            val1 = self.get_reg(alu_rs1)
-            val2 = self.get_reg(alu_rs2)
-            self.acca, self.accb = val1, val2
-            res = val1 + val2
-            self.set_reg(alu_rd, res & 0xFFFF)
-            self._update_flags(res)
-
-        # 2: SUB Rd, Rs1, Rs2 (2 байта: Rd = Rs1 - Rs2)
-        elif opcode == 0b00010:
-            self.databus = (self.databus << 8) | self.bus.read8(self.pc)
-            self.pc += 1
-            cfg, rd, rs1, rs2 = self.parse("[10-8] [7-5] [4-2] [1-0]")
-            alu_rd, alu_rs1, alu_rs2 = (cfg, rd, rs1) if (self.databus & 0x03) == 0 else (rd, rs1, rs2)
-            val1 = self.get_reg(alu_rs1)
-            val2 = self.get_reg(alu_rs2)
-            self.acca, self.accb = val1, val2
-            res = val1 - val2
-            self.set_reg(alu_rd, res & 0xFFFF)
-            self._update_flags(res)
-
-        # 3: MUL Rd, Rs1, Rs2 (2 байта: Rd = Rs1 * Rs2)
-        elif opcode == 0b00011:
-            self.databus = (self.databus << 8) | self.bus.read8(self.pc)
-            self.pc += 1
-            cfg, rd, rs1, rs2 = self.parse("[10-8] [7-5] [4-2] [1-0]")
-            alu_rd, alu_rs1, alu_rs2 = (cfg, rd, rs1) if (self.databus & 0x03) == 0 else (rd, rs1, rs2)
-            val1 = self.get_reg(alu_rs1)
-            val2 = self.get_reg(alu_rs2)
-            self.acca, self.accb = val1, val2
-            res = val1 * val2
-            self.set_reg(alu_rd, res & 0xFFFF)
-            self._update_flags(res)
-
-        # 4: DIV Rd, Rs1, Rs2 (2 байта: Rd = Rs1 / Rs2)
-        elif opcode == 0b00100:
-            self.databus = (self.databus << 8) | self.bus.read8(self.pc)
-            self.pc += 1
-            cfg, rd, rs1, rs2 = self.parse("[10-8] [7-5] [4-2] [1-0]")
-            alu_rd, alu_rs1, alu_rs2 = (cfg, rd, rs1) if (self.databus & 0x03) == 0 else (rd, rs1, rs2)
-            val1 = self.get_reg(alu_rs1)
-            val2 = self.get_reg(alu_rs2)
-            self.acca, self.accb = val1, val2
-            if val2 == 0:
-                self.freg |= (1 << 3)  # EM: Error Math
-                res = 0
-            else:
-                res = val1 // val2
-            self.set_reg(alu_rd, res & 0xFFFF)
-            self._update_flags(res)
-
-        # 5: LMR (2..4 байта в зависимости от режима источника SRC и размера SZ)
-        elif opcode == 0b00101:
-            self.databus = (self.databus << 8) | self.bus.read8(self.pc)
-            self.pc += 1
-            arg0, arg1, arg3 = self.parse("[10][9][8]")
-            src = (arg0 << 1) | arg1
-            sz = int(arg3)
-            rd = self.parse("[7-5]")
-
-            # Выборка данных по режиму SRC
-            if src == 0:  # 0: Непосредственные данные за инструкцией
-                if sz == 0:
-                    data = self.bus.read8(self.pc)
-                    self.pc += 1
-                else:
-                    d_lo = self.bus.read8(self.pc)
-                    self.pc += 1
-                    d_hi = self.bus.read8(self.pc)
-                    self.pc += 1
-                    data = (d_hi << 8) | d_lo
-            elif src == 1:  # 1: Непосредственный 32-битный указатель на данные [addr32] (Little-Endian)
-                p0 = self.bus.read8(self.pc)
-                p1 = self.bus.read8(self.pc + 1)
-                p2 = self.bus.read8(self.pc + 2)
-                p3 = self.bus.read8(self.pc + 3)
-                self.pc += 4
-                ea = p0 | (p1 << 8) | (p2 << 16) | (p3 << 24)
-                if sz == 0:
-                    data = self.bus.read8(ea)
-                else:
-                    data = self.bus.read16(ea, little_endian=True)
-            elif src == 2:  # 2: Косвенно через системный 32-битный регистр PTREG
-                ea = self.ptreg & 0xFFFFFFFF
-                if sz == 0:
-                    data = self.bus.read8(ea)
-                    if self.freg & (1 << 12):  # FREG.AIP автоинкремент
-                        self.ptreg = (self.ptreg + 1) & 0xFFFFFFFF
-                else:
-                    data = self.bus.read16(ea, little_endian=True)
-                    if self.freg & (1 << 12):  # FREG.AIP автоинкремент
-                        self.ptreg = (self.ptreg + 2) & 0xFFFFFFFF
-            elif src == 3:  # 3: Косвенно через пару регистров (32-битный линейный адрес)
-                # Arg1 (rd) содержит старшие биты адреса, Arg2 (rs_lo) — младшие 16 бит.
-                # При этом Arg1 (rd) одновременно является регистром назначения и перезаписывается данными!
-                rs_lo = self.parse("[4-2]")
-                addr32 = ((self.get_reg(rd) & 0xFFFF) << 16) | (self.get_reg(rs_lo) & 0xFFFF)
-                ea = addr32 & 0xFFFFFFFF
-                if sz == 0:
-                    data = self.bus.read8(ea)
-                else:
-                    data = self.bus.read16(ea, little_endian=True)
-
-            # Запись результата в Arg1 (rd): регистр со старшими битами адреса перезаписывается данными!
-            if sz == 0:
-                self.set_reg(rd, data & 0xFF)
-            else:
-                self.set_reg(rd, data & 0xFFFF)
-
-        # 6: LRM (Запись данных из регистра в память / вывод: 4 режима DST, размер SZ)
-        elif opcode == 0b00110:
-            self.databus = (self.databus << 8) | self.bus.read8(self.pc)
-            self.pc += 1
-            arg0, arg1, arg3 = self.parse("[10][9][8]")
-            dst_mode = (arg0 << 1) | arg1
-            sz = int(arg3)
-            rs = self.parse("[7-5]")
-
-            # Данные для записи из регистра Arg1 (rs):
-            val = self.get_reg(rs)
-
-            # Выборка назначения по режиму DST (уничтожение данных — ответственность программиста):
-            if dst_mode == 0:  # 0: Непосредственно в память за кодом инструкции
-                if self.can_write_address(self.pc):
-                    if sz == 0:
-                        self.bus.write8(self.pc, val & 0xFF)
-                    else:
-                        self.bus.write16(self.pc, val & 0xFFFF, little_endian=True)
-                if sz == 0:
-                    self.pc += 1
-                else:
-                    self.pc += 2
-            elif dst_mode == 1:  # 1: Непосредственный 32-битный указатель за инструкцией [addr32] (Little-Endian)
-                p0 = self.bus.read8(self.pc)
-                p1 = self.bus.read8(self.pc + 1)
-                p2 = self.bus.read8(self.pc + 2)
-                p3 = self.bus.read8(self.pc + 3)
-                self.pc += 4
-                ea = p0 | (p1 << 8) | (p2 << 16) | (p3 << 24)
-                if self.can_write_address(ea):
-                    if sz == 0:
-                        self.bus.write8(ea, val & 0xFF)
-                    else:
-                        self.bus.write16(ea, val & 0xFFFF, little_endian=True)
-            elif dst_mode == 2:  # 2: Косвенно через системный 32-битный регистр PTREG
-                ea = self.ptreg & 0xFFFFFFFF
-                if self.can_write_address(ea):
-                    if sz == 0:
-                        self.bus.write8(ea, val & 0xFF)
-                    else:
-                        self.bus.write16(ea, val & 0xFFFF, little_endian=True)
-                if self.freg & (1 << 12):  # FREG.AIP автоинкремент
-                    self.ptreg = (self.ptreg + (1 if sz == 0 else 2)) & 0xFFFFFFFF
-            elif dst_mode == 3:  # 3: Косвенно через пару регистров (32-битный линейный адрес)
-                # Arg1 (rs) содержит старшие биты адреса и одновременно является источником данных.
-                # Arg2 (rs_lo) задает младшие 16 бит адреса.
-                rs_lo = self.parse("[4-2]")
-                addr32 = ((val & 0xFFFF) << 16) | (self.get_reg(rs_lo) & 0xFFFF)
-                ea = addr32 & 0xFFFFFFFF
-                if self.can_write_address(ea):
-                    if sz == 0:
-                        self.bus.write8(ea, val & 0xFF)
-                    else:
-                        self.bus.write16(ea, val & 0xFFFF, little_endian=True)
-
-        # 7: LRR Rd, Rs (2 байта: Пересылка из регистра Rs в Rd: Rd = Rs, точка А = точка Б)
-        elif opcode == 0b00111:
-            self.databus = (self.databus << 8) | self.bus.read8(self.pc)
-            self.pc += 1
-            r0, r1 = self.parse("[7-5] [4-2]")
-            rd, rs = (cfg, r0) if (cfg != 0 and (self.databus & 0x1F) == 0) else (r0, r1)
-            self.set_reg(rd, self.get_reg(rs))
-
-        # 8: CMP Rs1, Rs2 (2 байта: Аппаратное сравнение операндов без изменения данных)
-        elif opcode == 0b01000:
-            self.databus = (self.databus << 8) | self.bus.read8(self.pc)
-            self.pc += 1
-            r0, r1 = self.parse("[7-5] [4-2]")
-            rs1, rs2 = (cfg, r0) if (cfg != 0 and (self.databus & 0x1F) == 0) else (r0, r1)
-            val1 = self.get_reg(rs1)
-            val2 = self.get_reg(rs2)
-            self.acca, self.accb = val1, val2
-            diff = (val1 - val2) & 0xFFFF
-            self.freg &= ~(0b11 << 4)
-            if val1 < val2:
-                cmp_code = 0b01
-            elif val1 == val2:
-                cmp_code = 0b10
-            elif val1 > val2:
-                cmp_code = 0b11
-            else:
-                cmp_code = 0b00
-            # Очищаем биты [7:6] и [5:4] во FREG
-            self.freg &= ~((0b11 << 6) | (0b11 << 4))
-            # Записываем cmp_code в биты [7:6] (официальный стандарт) и [5:4] (совместимость)
-            self.freg |= (cmp_code << 6) | (cmp_code << 4)
-            self._update_flags(diff)
-
-        # 10: JCR (Jump Compare Result, 5 байт: [7-3] опкод 10, [2] INV, [1-0] COND, затем target32 Little-Endian)
-        # Проверяет результат предыдущего сравнения CMP в битах [7:6] FREG:
-        #   COND: 01=<, 10==, 11=>
-        #   INV:  0=прямой переход (cond), 1=инвертированный переход (!cond)
-        #   Комбинации: 001=<, 101=>=, 010===, 110=!=, 011=>, 111=<=
-        elif opcode == 0b01010:
-            b0 = self.bus.read8(self.pc)
-            b1 = self.bus.read8(self.pc + 1)
-            b2 = self.bus.read8(self.pc + 2)
-            b3 = self.bus.read8(self.pc + 3)
-            self.pc += 4
-            target = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
-            self.databus = (self.databus << 32) | target
-
-            inv = (cfg >> 2) & 1
-            cond_expected = cfg & 0b11
-            actual_cmp = (self.freg >> 6) & 0b11
-
-            take_jump = (actual_cmp == cond_expected) if inv == 0 else (actual_cmp != cond_expected)
-            if take_jump:
-                self.pc = target & 0xFFFFFFFF
-
-        # 9, 11, 12: Переходы JMP (9), JNZ (11), JZ (12) (2..5 байт)
-        elif opcode in (0b01001, 0b01011, 0b01100):
-            if cfg == 1:
-                b1 = self.bus.read8(self.pc)
-                self.pc += 1
-                self.databus = (self.databus << 8) | b1
-                rd = self.parse("[7-5]")
-                target = self.get_reg(rd)
-            elif cfg == 2:
-                b1 = self.bus.read8(self.pc)
-                self.pc += 1
-                self.databus = (self.databus << 8) | b1
-                target = self.ptreg & 0xFFFFFFFF
-            elif cfg == 3:
-                # MOD=3: косвенный переход по 32-битному адресу в памяти [addr32] (Little-Endian)
-                t0 = self.bus.read8(self.pc)
-                t1 = self.bus.read8(self.pc + 1)
-                t2 = self.bus.read8(self.pc + 2)
-                t3 = self.bus.read8(self.pc + 3)
-                self.pc += 4
-                ptr32 = t0 | (t1 << 8) | (t2 << 16) | (t3 << 24)
-                self.databus = (self.databus << 32) | ptr32
-                target = self.bus.read32(ptr32, little_endian=True)
-            else:
-                # MOD=0: непосредственный 32-битный адрес target32 (Little-Endian)
-                t0 = self.bus.read8(self.pc)
-                t1 = self.bus.read8(self.pc + 1)
-                t2 = self.bus.read8(self.pc + 2)
-                t3 = self.bus.read8(self.pc + 3)
-                self.pc += 4
-                target = t0 | (t1 << 8) | (t2 << 16) | (t3 << 24)
-                self.databus = (self.databus << 32) | target
-
-            if opcode == 0b01001:    # JMP
-                self.pc = target & 0xFFFFFFFF
-            elif opcode == 0b01011:  # JNZ (ZF == 0)
-                if (self.freg & 0x01) == 0:
-                    self.pc = target & 0xFFFFFFFF
-            elif opcode == 0b01100:  # JZ (ZF == 1)
-                if (self.freg & 0x01) != 0:
-                    self.pc = target & 0xFFFFFFFF
-
-        # 13: AND Rd, Rs (2 байта: Rd = Rd & Rs)
-        elif opcode == 0b01101:
-            self.databus = (self.databus << 8) | self.bus.read8(self.pc)
-            self.pc += 1
-            r0, r1 = self.parse("[7-5] [4-2]")
-            rd, rs = (cfg, r0) if (cfg != 0 and (self.databus & 0x1F) == 0) else (r0, r1)
-            res = self.get_reg(rd) & self.get_reg(rs)
-            self.set_reg(rd, res)
-            self._update_flags(res)
-
-        # 14: OR Rd, Rs (2 байта: Rd = Rd | Rs)
-        elif opcode == 0b01110:
-            self.databus = (self.databus << 8) | self.bus.read8(self.pc)
-            self.pc += 1
-            r0, r1 = self.parse("[7-5] [4-2]")
-            rd, rs = (cfg, r0) if (cfg != 0 and (self.databus & 0x1F) == 0) else (r0, r1)
-            res = self.get_reg(rd) | self.get_reg(rs)
-            self.set_reg(rd, res)
-            self._update_flags(res)
-
-        # 15: NAND Rd, Rs (2 байта: Rd = ~(Rd & Rs))
-        elif opcode == 0b01111:
-            self.databus = (self.databus << 8) | self.bus.read8(self.pc)
-            self.pc += 1
-            r0, r1 = self.parse("[7-5] [4-2]")
-            rd, rs = (cfg, r0) if (cfg != 0 and (self.databus & 0x1F) == 0) else (r0, r1)
-            res = (~(self.get_reg(rd) & self.get_reg(rs))) & 0xFFFF
-            self.set_reg(rd, res)
-            self._update_flags(res)
-
-        # 16: NOR Rd, Rs (2 байта: Rd = ~(Rd | Rs))
-        elif opcode == 0b10000:
-            self.databus = (self.databus << 8) | self.bus.read8(self.pc)
-            self.pc += 1
-            r0, r1 = self.parse("[7-5] [4-2]")
-            rd, rs = (cfg, r0) if (cfg != 0 and (self.databus & 0x1F) == 0) else (r0, r1)
-            res = (~(self.get_reg(rd) | self.get_reg(rs))) & 0xFFFF
-            self.set_reg(rd, res)
-            self._update_flags(res)
-
-        # 18: XOR Rd, Rs (2 байта: Rd = Rd ^ Rs)
-        elif opcode == 0b10010:
-            self.databus = (self.databus << 8) | self.bus.read8(self.pc)
-            self.pc += 1
-            r0, r1 = self.parse("[7-5] [4-2]")
-            rd, rs = (cfg, r0) if (cfg != 0 and (self.databus & 0x1F) == 0) else (r0, r1)
-            res = (self.get_reg(rd) ^ self.get_reg(rs)) & 0xFFFF
-            self.set_reg(rd, res)
-            self._update_flags(res)
-
-        # 19: XNOR Rd, Rs (2 байта: Rd = ~(Rd ^ Rs))
-        elif opcode == 0b10011:
-            self.databus = (self.databus << 8) | self.bus.read8(self.pc)
-            self.pc += 1
-            r0, r1 = self.parse("[7-5] [4-2]")
-            rd, rs = (cfg, r0) if (cfg != 0 and (self.databus & 0x1F) == 0) else (r0, r1)
-            res = (~(self.get_reg(rd) ^ self.get_reg(rs))) & 0xFFFF
-            self.set_reg(rd, res)
-            self._update_flags(res)
-
-        # 24: BSL Rd, shift (Итеративный аппаратный сдвиг влево: [15-11] 11000, [10-8] Rd, [7-0] shift)
-        # В железе: аппаратный цикл сдвигового регистра из 16 D-триггеров (~300 транзисторов вместо ~30 000).
-        # Сдвиг на N бит занимает ровно N тактов (сдвиг на 16 бит занимает на 15 тактов больше сдвига на 1 бит).
-        elif opcode == 0b11000:
-            self.databus = (self.databus << 8) | self.bus.read8(self.pc)
-            self.pc += 1
-            rd = (self.databus >> 8) & 0x07
-            shift = self.databus & 0xFF
-            val = self.get_reg(rd) & 0xFFFF
-            smod = (self.freg >> 14) & 1
-            dbit = (self.freg >> 13) & 1
-            fill_bit = dbit
-            last_displaced = dbit
-
-            # Симуляция физического 16-битного регистра сдвига (цепочка триггеров [b0..b15])
-            reg_bits = [(val >> i) & 1 for i in range(16)]
-
-            # Аппаратный тактовый цикл: каждый шаг сдвигает регистр на 1 бит за 1 такт
-            for _ in range(shift):
-                if hasattr(self, "cycles"):
-                    self.cycles += 1
-
-                # Вытесняемый старший бит (выход 15-го триггера)
-                last_displaced = reg_bits[15]
-
-                # Входной бит в младший триггер:
-                # - При SMOD=1 (кольцевой режим) влетает вытесненный бит 15
-                # - При SMOD=0 (направленный режим) влетает бит из DBIT (0 или 1)
-                in_bit = last_displaced if smod == 1 else fill_bit
-
-                # Физический такт сдвига триггеров влево (b[i] <- b[i-1])
-                for i in range(15, 0, -1):
-                    reg_bits[i] = reg_bits[i - 1]
-                reg_bits[0] = in_bit
-
-            # Сборка 16-битного слова из триггеров регистра
-            val = 0
-            for i in range(16):
-                val |= (reg_bits[i] << i)
-
-            if shift > 0:
-                self.freg = (self.freg & ~(1 << 13)) | (last_displaced << 13)
-
-            self.set_reg(rd, val)
-            self._update_flags(val)
-
-        # 25: BSR Rd, shift (Итеративный аппаратный сдвиг вправо: [15-11] 11001, [10-8] Rd, [7-0] shift)
-        # В железе: аппаратный цикл сдвигового регистра из 16 D-триггеров (~300 транзисторов вместо ~30 000).
-        # Сдвиг на N бит занимает ровно N тактов (сдвиг на 16 бит занимает на 15 тактов больше сдвига на 1 бит).
-        elif opcode == 0b11001:
-            self.databus = (self.databus << 8) | self.bus.read8(self.pc)
-            self.pc += 1
-            rd = (self.databus >> 8) & 0x07
-            shift = self.databus & 0xFF
-            val = self.get_reg(rd) & 0xFFFF
-            smod = (self.freg >> 14) & 1
-            dbit = (self.freg >> 13) & 1
-            fill_bit = dbit
-            last_displaced = dbit
-
-            # Симуляция физического 16-битного регистра сдвига (цепочка триггеров [b0..b15])
-            reg_bits = [(val >> i) & 1 for i in range(16)]
-
-            # Аппаратный тактовый цикл: каждый шаг сдвигает регистр на 1 бит за 1 такт
-            for _ in range(shift):
-                if hasattr(self, "cycles"):
-                    self.cycles += 1
-
-                # Вытесняемый младший бит (выход 0-го триггера)
-                last_displaced = reg_bits[0]
-
-                # Входной бит в старший триггер:
-                # - При SMOD=1 (кольцевой режим) влетает вытесненный бит 0
-                # - При SMOD=0 (направленный режим) влетает бит из DBIT (0 или 1)
-                in_bit = last_displaced if smod == 1 else fill_bit
-
-                # Физический такт сдвига триггеров вправо (b[i] <- b[i+1])
-                for i in range(0, 15):
-                    reg_bits[i] = reg_bits[i + 1]
-                reg_bits[15] = in_bit
-
-            # Сборка 16-битного слова из триггеров регистра
-            val = 0
-            for i in range(16):
-                val |= (reg_bits[i] << i)
-
-            if shift > 0:
-                self.freg = (self.freg & ~(1 << 13)) | (last_displaced << 13)
-
-            self.set_reg(rd, val)
-            self._update_flags(val)
-
-        # 22: PUSH Rs (2 байта: SREG -= 2, MEM[SREG] <- Rs; Октет 0: [7-3]=10110, [2-0]=Rs)
-        elif opcode == 0b10110:
-            self.databus = (self.databus << 8) | self.bus.read8(self.pc)
-            self.pc += 1
-            rs = (self.databus >> 8) & 0x07
-            val = self.get_reg(rs) & 0xFFFF
-            self.sreg = (self.sreg - 2) & 0xFFFFFFFF
-            self.bus.write16(self.sreg, val)
-
-        # 23: POP Rd (2 байта: Rd <- MEM[SREG], SREG += 2; Октет 0: [7-3]=10111, [2-0]=Rd)
-        elif opcode == 0b10111:
-            self.databus = (self.databus << 8) | self.bus.read8(self.pc)
-            self.pc += 1
-            rd = (self.databus >> 8) & 0x07
-            val = self.bus.read16(self.sreg) & 0xFFFF
-            self.sreg = (self.sreg + 2) & 0xFFFFFFFF
-            self.set_reg(rd, val)
-
-        # 26: MSP (Opcode 11010 / 0x1A: Манипуляция специальными регистрами FREG, PTREG, SREG, VECTORS)
-        elif opcode == 0b11010:
-            self.databus = (self.databus << 8) | self.bus.read8(self.pc)
-            self.pc += 1
-            act = (self.databus >> 10) & 0x01
-            sreg_sel = (self.databus >> 8) & 0x03
-            ext_mode = self.databus & 0x03
-            sz24 = ((self.databus >> 2) & 0x01) or ((self.freg >> 11) & 0x01)
-
-            def _fetch_msp_ext(force_32: bool = False) -> int:
-                use_32 = force_32 or bool(sz24)
-                if ext_mode == 1:  # Непосредственное значение за инструкцией (Little-Endian)
-                    if use_32 and (self.databus & 0x04):
-                        b0_imm = self.bus.read8(self.pc)
-                        b1_imm = self.bus.read8(self.pc + 1)
-                        b2 = self.bus.read8(self.pc + 2)
-                        b3 = self.bus.read8(self.pc + 3)
-                        self.pc += 4
-                        return (b3 << 24) | (b2 << 16) | (b1_imm << 8) | b0_imm
-                    b_lo = self.bus.read8(self.pc)
-                    b_hi = self.bus.read8(self.pc + 1)
-                    self.pc += 2
-                    return (b_hi << 8) | b_lo
-                elif ext_mode == 2:  # Разыменование [$ptreg]: MEM[PTREG]
-                    ea = self.ptreg & 0xFFFFFFFF
-                    if use_32:
-                        res = self.bus.read32(ea, little_endian=True)
-                        self.ptreg = (self.ptreg + 4) & 0xFFFFFFFF
-                    else:
-                        res = self.bus.read16(ea, little_endian=True)
-                        self.ptreg = (self.ptreg + 2) & 0xFFFFFFFF
-                    return res
-                elif ext_mode == 3:  # Разыменование [addr32]: MEM[addr32] (Little-Endian)
-                    p0 = self.bus.read8(self.pc)
-                    p1 = self.bus.read8(self.pc + 1)
-                    p2 = self.bus.read8(self.pc + 2)
-                    p3 = self.bus.read8(self.pc + 3)
-                    self.pc += 4
-                    ea = p0 | (p1 << 8) | (p2 << 16) | (p3 << 24)
-                    if use_32:
-                        return self.bus.read32(ea, little_endian=True)
-                    return self.bus.read16(ea, little_endian=True)
-                return 0
-
-            if act == 0:
-                # --- LOAD MODE (Прямая запись / MSP.ld) ---
-                if sreg_sel == 0:  # FREG (16 бит)
-                    if ext_mode == 0:
-                        rs = (self.databus >> 5) & 0x07
-                        new_freg = self.get_reg(rs) & 0xFFFF
-                    elif ext_mode == 1:  # Непосредственное 16-битное значение (Little-Endian)
-                        b0 = self.bus.read8(self.pc)
-                        b1_imm = self.bus.read8(self.pc + 1)
-                        self.pc += 2
-                        new_freg = (b1_imm << 8) | b0
-                    elif ext_mode == 2:  # [$ptreg]
-                        new_freg = self.bus.read16(self.ptreg, little_endian=True)
-                        self.ptreg = (self.ptreg + 2) & 0xFFFFFFFF
-                    elif ext_mode == 3:  # [addr32] (Little-Endian)
-                        p0 = self.bus.read8(self.pc)
-                        p1 = self.bus.read8(self.pc + 1)
-                        p2 = self.bus.read8(self.pc + 2)
-                        p3 = self.bus.read8(self.pc + 3)
-                        self.pc += 4
-                        ea = p0 | (p1 << 8) | (p2 << 16) | (p3 << 24)
-                        new_freg = self.bus.read16(ea, little_endian=True)
-                    else:
-                        new_freg = _fetch_msp_ext(False) & 0xFFFF
-                    # Контроль прав режима супервизора (PRV = бит 11):
-                    # Если процессор в пользовательском режиме (PRV == 0) пытается поднять PRV == 1,
-                    # это допустимо ТОЛЬКО внутри зоны высоких привилегий!
-                    cur_prv = (self.freg >> 11) & 1
-                    target_prv = (new_freg >> 11) & 1
-                    if cur_prv == 0 and target_prv == 1:
-                        if not self.in_privilege_zone():
-                            new_freg &= ~(1 << 11)  # Запрет несанкционированного повышения
-                    self.freg = new_freg
-
-                elif sreg_sel in (1, 2):  # PTREG (1) / SREG (2): ОБЯЗАТЕЛЬНО 4 байта (32 бита Little-Endian)
-                    if ext_mode == 0:
-                        rs_hi = (self.databus >> 5) & 0x07
-                        rs_lo = (self.databus >> 2) & 0x07
-                        val_hi = self.get_reg(rs_hi)
-                        val_lo = self.get_reg(rs_lo)
-                        val32 = ((val_hi << 16) | val_lo) & 0xFFFFFFFF
-                    elif ext_mode == 1:  # 01: imm32 (4 байта Little-Endian!)
-                        b0 = self.bus.read8(self.pc)
-                        b1 = self.bus.read8(self.pc + 1)
-                        b2 = self.bus.read8(self.pc + 2)
-                        b3 = self.bus.read8(self.pc + 3)
-                        self.pc += 4
-                        val32 = (b3 << 24) | (b2 << 16) | (b1 << 8) | b0
-                    elif ext_mode == 2:  # 10: [$ptreg] (разыменование PTREG — 4 байта Little-Endian!)
-                        ea = self.ptreg & 0xFFFFFFFF
-                        val32 = self.bus.read32(ea, little_endian=True)
-                        if sreg_sel != 1:  # если загружаем в SREG, PTREG инкрементируется на 4
-                            self.ptreg = (self.ptreg + 4) & 0xFFFFFFFF
-                    elif ext_mode == 3:  # 11: [addr32] (разыменование адреса — 4 байта Little-Endian!)
-                        p0 = self.bus.read8(self.pc)
-                        p1 = self.bus.read8(self.pc + 1)
-                        p2 = self.bus.read8(self.pc + 2)
-                        p3 = self.bus.read8(self.pc + 3)
-                        self.pc += 4
-                        ea = p0 | (p1 << 8) | (p2 << 16) | (p3 << 24)
-                        val32 = self.bus.read32(ea, little_endian=True)
-                    else:
-                        val32 = _fetch_msp_ext(True) & 0xFFFFFFFF
-
-                    if sreg_sel == 1:
-                        self.ptreg = val32 & 0xFFFFFFFF
-                    else:
-                        self.sreg = val32 & 0xFFFFFFFF
-
-                elif sreg_sel == 3:  # VECTORS (32 регистра: $ir0..$ir15, $pv0..$pv15)
-                    b1_val = self.databus & 0xFF
-                    idx = (b1_val >> 3) & 0x1F
-                    src_mode = (b1_val >> 1) & 0x03
-                    bit0 = b1_val & 0x01
-
-                    if src_mode == 0:  # 00: Пара регистров GPR
-                        b2 = self.bus.read8(self.pc)
-                        self.pc += 1
-                        rd_hi = (b2 >> 5) & 0x07
-                        rs_lo = (b2 >> 2) & 0x07
-                        val = ((self.get_reg(rd_hi) & 0xFFFF) << 16) | (self.get_reg(rs_lo) & 0xFFFF)
-                    elif src_mode == 1:  # 01: imm32 (4 байта Little-Endian!)
-                        b0_imm = self.bus.read8(self.pc)
-                        b1_imm = self.bus.read8(self.pc + 1)
-                        b2 = self.bus.read8(self.pc + 2)
-                        b3 = self.bus.read8(self.pc + 3)
-                        self.pc += 4
-                        val = (b3 << 24) | (b2 << 16) | (b1_imm << 8) | b0_imm
-                    elif src_mode == 2:  # 10: [$ptreg] (разыменование PTREG — 4 байта Little-Endian!)
-                        ea = self.ptreg & 0xFFFFFFFF
-                        val = self.bus.read32(ea, little_endian=True)
-                        self.ptreg = (self.ptreg + 4) & 0xFFFFFFFF
-                    else:  # 11: [$rd:$rs] (bit0==0) или [addr32] (bit0==1)
-                        if bit0 == 0:
-                            b2 = self.bus.read8(self.pc)
-                            self.pc += 1
-                            rd_hi = (b2 >> 5) & 0x07
-                            rs_lo = (b2 >> 2) & 0x07
-                            ea = (((self.get_reg(rd_hi) & 0xFFFF) << 16) | (self.get_reg(rs_lo) & 0xFFFF)) & 0xFFFFFFFF
-                            val = self.bus.read32(ea, little_endian=True)
-                        else:
-                            a0 = self.bus.read8(self.pc)
-                            a1 = self.bus.read8(self.pc + 1)
-                            a2 = self.bus.read8(self.pc + 2)
-                            a3 = self.bus.read8(self.pc + 3)
-                            self.pc += 4
-                            ea = (a0 | (a1 << 8) | (a2 << 16) | (a3 << 24)) & 0xFFFFFFFF
-                            val = self.bus.read32(ea, little_endian=True)
-
-                    # Защита зон привилегий ($pv0..$pv15, idx >= 16):
-                    # Модификация $pv разрешена только в режиме супервизора (PRV == 1)
-                    # ЛИБО если текущий PC исполняется внутри одной из зон привилегий!
-                    cur_prv = (self.freg >> 11) & 1
-                    if idx >= 16 and cur_prv == 0 and not self.in_privilege_zone():
-                        pass  # Блокировка записи в $pv вне зон привилегий
-                    else:
-                        self.vectors[idx] = val & 0xFFFFFFFF
-
-            else:
-                # --- OPERATE MODE (Операции) ---
-                if sreg_sel == 0:  # Логика над FREG: AND, OR, XOR, XNOR
-                    logic_op = (self.databus >> 6) & 0x03
-                    if ext_mode == 0:
-                        rs = (self.databus >> 3) & 0x07
-                        mask = self.get_reg(rs) & 0xFFFF
-                    else:
-                        mask = _fetch_msp_ext(False) & 0xFFFF
-                    if logic_op == 0:    # AND
-                        new_freg = self.freg & mask
-                    elif logic_op == 1:  # OR
-                        new_freg = self.freg | mask
-                    elif logic_op == 2:  # XOR
-                        new_freg = self.freg ^ mask
-                    elif logic_op == 3:  # XNOR
-                        new_freg = ~(self.freg ^ mask) & 0xFFFF
-
-                    # Контроль прав на бит PRV (бит 11):
-                    cur_prv = (self.freg >> 11) & 1
-                    target_prv = (new_freg >> 11) & 1
-                    if cur_prv == 0 and target_prv == 1:
-                        if not self.in_privilege_zone():
-                            new_freg &= ~(1 << 11)
-                    self.freg = new_freg
-
-                elif sreg_sel == 1:  # Арифметика над PTREG: ADD / SUB
-                    arith_op = (self.databus >> 7) & 0x01
-                    if ext_mode == 0:
-                        rs = (self.databus >> 4) & 0x07
-                        offset = self.get_reg(rs) & 0xFFFF
-                    else:
-                        offset = _fetch_msp_ext(False) & 0xFFFFFFFF
-                    if arith_op == 0:    # ADD
-                        new_val = self.ptreg + offset
-                    else:                # SUB
-                        new_val = self.ptreg - offset
-                    cf = 1 if (new_val > 0xFFFFFFFF or new_val < 0) else 0
-                    self.freg = (self.freg & ~0x02) | (cf << 1)
-                    self.ptreg = new_val & 0xFFFFFFFF
-
-                elif sreg_sel == 2:  # Арифметика над SREG: ADD / SUB (формат как PTREG)
-                    arith_op = (self.databus >> 7) & 0x01
-                    if ext_mode == 0:
-                        rs = (self.databus >> 4) & 0x07
-                        offset = self.get_reg(rs) & 0xFFFF
-                    else:
-                        offset = _fetch_msp_ext(False) & 0xFFFFFFFF
-                    if arith_op == 0:    # ADD
-                        new_val = self.sreg + offset
-                    else:                # SUB
-                        new_val = self.sreg - offset
-                    cf = 1 if (new_val > 0xFFFFFFFF or new_val < 0) else 0
-                    self.freg = (self.freg & ~0x02) | (cf << 1)
-                    self.sreg = new_val & 0xFFFFFFFF
-
-        # 27: MOD Rd, Rs1, Rs2 (2 байта: Rd = Rs1 % Rs2)
-        elif opcode == 0b11011:
-            self.databus = (self.databus << 8) | self.bus.read8(self.pc)
-            self.pc += 1
-            rd_mod, rs1_mod, rs2_mod = self.parse("[10-8] [7-5] [4-2]")
-            val1 = self.get_reg(rs1_mod)
-            val2 = self.get_reg(rs2_mod)
-            self.acca, self.accb = val1, val2
-            if val2 == 0:
-                self.freg |= (1 << 3)  # EM: Error Math
-                res = 0
-            else:
-                res = val1 % val2
-            self.set_reg(rd_mod, res & 0xFFFF)
-            self._update_flags(res)
-
-
     def _update_flags(self, result: int):
-        """Обновляет Zero Flag (бит 0) в FREG."""
+        """Обновляет флаги ZF, CF, OF в регистре FREG."""
         zf = 1 if (result & 0xFFFF) == 0 else 0
-        self.freg = (self.freg & ~0x01) | zf
+        cf = 1 if (result > 0xFFFF or result < 0) else 0
+        of = 1 if (result > 32767 or result < -32768) else 0
+        self.freg = (self.freg & ~0x07) | (of << 2) | (cf << 1) | zf
 
 
 def create_lim2_cpu(bus: Optional[MemoryBus] = None) -> LIM2CPU:
@@ -1026,27 +774,17 @@ def create_lim2_cpu(bus: Optional[MemoryBus] = None) -> LIM2CPU:
 def main():
     """
     Главная точка входа для запуска симулятора процессора LIM M2.
-    Вся конфигурация памяти и устройств задается прямо здесь!
-    На шине появляются ТОЛЬКО те устройства, которые вы сами здесь подключите.
     """
     import sys
 
-    # 1. Создаем шину памяти (чистая шина без скрытых устройств)
     bus = MemoryBus()
-
-    # 2. Настройка памяти и устройств (только ваши устройства!):
-    #   NVM1 (ПЗУ / Диск) — 1 МБ: 0x000000 .. 0x0FFFFF (сюда загружается прошивка drive.bin)
     bus.attach(RAMDevice(start=0x000000, end=0x0FFFFF, file="drive.bin", persist=True, name="NVM1"))
-
-    #   RAM1 (ОЗУ) — 1 МБ: 0x100000 .. 0x1FFFFF
     bus.attach(RAMDevice(start=0x100000, end=0x1FFFFF, name="RAM1"))
 
-    # 3. Создаем процессор и запускаем симулятор
     cpu = LIM2CPU(bus=bus)
     interactive = "-i" in sys.argv or "--interactive" in sys.argv
     gui = "-g" in sys.argv or "--gui" in sys.argv
 
-    # 4. Скорость симуляции (в миллисекундах) и опциональный лимит шагов
     speed = 0.0
     max_steps = None
     for idx, arg in enumerate(sys.argv):
@@ -1076,7 +814,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-

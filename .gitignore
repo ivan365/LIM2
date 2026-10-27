@@ -18,6 +18,7 @@ Icon\r\r
 *.blg
 *.fdb_latexmk
 *.fls
+*.fls.bak
 *.idx
 *.ilg
 *.ind
@@ -37,6 +38,20 @@ Icon\r\r
 texput.log
 texput.fls
 build_*.log
+*.listing
+*.bak
+pdflatex.out
+
+# ==========================================
+# User Test Programs, Binaries & Disk Images
+# ==========================================
+test/
+*.lim2
+drive.bin
+ld.bin
+*.dump
+*.dmp
+*.raw
 
 # ==========================================
 # Python Bytecode, Caches & Virtual Envs
@@ -73,6 +88,6 @@ htmlcov/
 !*.svg
 !*.tex
 !*.md
-!*.hex
-!*.bin
 !*.sh
+!compiler/demo.hex
+!compiler/demo.bin

@@ -1,5 +1,0 @@
-.org 0x0000
-
-start:
-    INC     $1
-    JMP     start

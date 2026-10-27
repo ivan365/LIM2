@@ -1,0 +1,69 @@
+{
+  "autoDistributePorts" : true,
+  "isReversed" : false,
+  "position" : [
+    30,
+    30
+  ],
+  "id" : "preview",
+  "style" : {
+    "lineStyle" : "solid",
+    "opacity" : 1,
+    "cornerRadius" : 0,
+    "strokeWidth" : 1.5,
+    "strokeColor" : "#000000",
+    "hatchSpacing" : 8,
+    "hatchPattern" : "none",
+    "fillColor" : "#FFFFFF"
+  },
+  "customPorts" : [
+    {
+      "isClock" : false,
+      "offsetRatio" : 0.1,
+      "pinNumber" : 1,
+      "id" : "s",
+      "isInverted" : false,
+      "direction" : "right",
+      "name" : "SP"
+    },
+    {
+      "isClock" : false,
+      "offsetRatio" : 0.5,
+      "pinNumber" : 2,
+      "id" : "en",
+      "isInverted" : false,
+      "direction" : "right",
+      "name" : "EP"
+    },
+    {
+      "isClock" : false,
+      "offsetRatio" : 0.9,
+      "pinNumber" : 3,
+      "id" : "r",
+      "isInverted" : false,
+      "direction" : "right",
+      "name" : "CP"
+    },
+    {
+      "isClock" : false,
+      "offsetRatio" : 0.5,
+      "pinNumber" : 4,
+      "id" : "qBar",
+      "isInverted" : false,
+      "direction" : "left",
+      "name" : "PA"
+    }
+  ],
+  "kind" : {
+    "block" : {
+      "title" : "PZC"
+    }
+  },
+  "size" : [
+    100,
+    80
+  ],
+  "rotation" : 0,
+  "autoDistributeInputs" : true,
+  "autoDistributeOutputs" : true
+}
