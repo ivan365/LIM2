@@ -91,3 +91,6 @@ htmlcov/
 !*.sh
 !compiler/demo.hex
 !compiler/demo.bin
+!examples/**/*.hex
+!examples/**/*.bin
+!examples/**/*.asm

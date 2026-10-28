@@ -80,45 +80,235 @@ GPR_MAP: Dict[str, int] = {
     "R0": 0, "R1": 1, "R2": 2, "R3": 3, "R4": 4, "R5": 5, "R6": 6, "R7": 7,
 }
 
-SPEC_REG_MAP: Dict[str, Tuple[int, int]] = {
-    "$FREG": (0, 0),
-    "FREG": (0, 0),
-    "$PTREG": (1, 0),
-    "PTREG": (1, 0),
-    "$SREG": (2, 0),
-    "SREG": (2, 0),
-    "$SP": (2, 0),
-    "SP": (2, 0),
+# ------------------------------------------------------------------------------
+# Таблицы квантованных 16-битных ячеек системных регистров (MSP, 8-битный REG_ID 0..255)
+# ------------------------------------------------------------------------------
+
+MSP_CELL_MAP: Dict[str, int] = {
+    # 128: Регистр состояния и флагов FREG
+    "$FREG": 128, "FREG": 128, "$FLAGS": 128, "FLAGS": 128, "$SR": 128, "SR": 128, "$STATUS": 128, "STATUS": 128,
+
+    # 129, 130: 32-битный указатель стека SP / SREG (пара по 16 бит)
+    "$SP_LO": 129, "SP_LO": 129, "$SPL": 129, "SPL": 129, "$SP.L": 129, "SP.L": 129,
+    "$SREG_LO": 129, "SREG_LO": 129, "$SREG.L": 129, "SREG.L": 129, "$SREGL": 129, "SREGL": 129,
+
+    "$SP_HI": 130, "SP_HI": 130, "$SPH": 130, "SPH": 130, "$SP.H": 130, "SP.H": 130,
+    "$SREG_HI": 130, "SREG_HI": 130, "$SREG.H": 130, "SREG.H": 130, "$SREGH": 130, "SREGH": 130,
+
+    # 131, 132: 32-битный базовый указатель памяти PTREG (пара по 16 бит)
+    "$PTREG_LO": 131, "PTREG_LO": 131, "$PTL": 131, "PTL": 131, "$PT.L": 131, "PT.L": 131,
+    "$PT_LO": 131, "PT_LO": 131, "$PTREGL": 131, "PTREGL": 131,
+
+    "$PTREG_HI": 132, "PTREG_HI": 132, "$PTH": 132, "PTH": 132, "$PT.H": 132, "PT.H": 132,
+    "$PT_HI": 132, "PT_HI": 132, "$PTREGH": 132, "PTREGH": 132,
 }
-for _v in range(32):
-    SPEC_REG_MAP[f"$VEC{_v}"] = (3, _v)
-    SPEC_REG_MAP[f"VEC{_v}"] = (3, _v)
+
+# 16 пар векторов прерываний INT_VEC (ячейки 0..31):
 for _i in range(16):
-    SPEC_REG_MAP[f"$IR{_i}"] = (3, _i)
-    SPEC_REG_MAP[f"IR{_i}"] = (3, _i)
-for _p in range(16):
-    SPEC_REG_MAP[f"$PV{_p}"] = (3, 16 + _p)
-    SPEC_REG_MAP[f"PV{_p}"] = (3, 16 + _p)
+    _lo = 2 * _i
+    _hi = 2 * _i + 1
+    for _pfx in (f"$IR{_i}", f"IR{_i}", f"$IV{_i}", f"IV{_i}", f"$INT{_i}", f"INT{_i}", f"$INT_VEC{_i}", f"INT_VEC{_i}", f"$VEC{_i}", f"VEC{_i}"):
+        MSP_CELL_MAP[f"{_pfx}_LO"] = _lo
+        MSP_CELL_MAP[f"{_pfx}.L"] = _lo
+        MSP_CELL_MAP[f"{_pfx}_L"] = _lo
+        MSP_CELL_MAP[f"{_pfx}L"] = _lo
 
-# Алиасы границ оперативной памяти RAM ($pv14 и $pv15, к которой разрешен доступ с любыми правами):
-SPEC_REG_MAP["$RAM_BASE"] = (3, 30)
-SPEC_REG_MAP["RAM_BASE"] = (3, 30)
-SPEC_REG_MAP["$RAM_LIMIT"] = (3, 31)
-SPEC_REG_MAP["RAM_LIMIT"] = (3, 31)
-SPEC_REG_MAP["$RAM_START"] = (3, 30)
-SPEC_REG_MAP["RAM_START"] = (3, 30)
-SPEC_REG_MAP["$RAM_END"] = (3, 31)
-SPEC_REG_MAP["RAM_END"] = (3, 31)
+        MSP_CELL_MAP[f"{_pfx}_HI"] = _hi
+        MSP_CELL_MAP[f"{_pfx}.H"] = _hi
+        MSP_CELL_MAP[f"{_pfx}_H"] = _hi
+        MSP_CELL_MAP[f"{_pfx}H"] = _hi
 
-# Для совместимости: алиасы ROM:
-SPEC_REG_MAP["$ROM_BASE"] = (3, 30)
-SPEC_REG_MAP["ROM_BASE"] = (3, 30)
-SPEC_REG_MAP["$ROM_LIMIT"] = (3, 31)
-SPEC_REG_MAP["ROM_LIMIT"] = (3, 31)
-SPEC_REG_MAP["$ROM_START"] = (3, 30)
-SPEC_REG_MAP["ROM_START"] = (3, 30)
-SPEC_REG_MAP["$ROM_END"] = (3, 31)
-SPEC_REG_MAP["ROM_END"] = (3, 31)
+# 14 пар зон привилегий PVZ_VEC (Зоны 0..6: 28 ячеек 32..59):
+# Каждая зона z (0..6) имеет 2 вектора по 32 бита: START (пара ячеек) и END (пара ячеек)
+for _z in range(7):
+    _s_lo = 32 + 4 * _z
+    _s_hi = 33 + 4 * _z
+    _e_lo = 34 + 4 * _z
+    _e_hi = 35 + 4 * _z
+    
+    # Семантические мнемоники зон: $pz0_start_lo / $pz0_end_lo / $pz0sl / $pz0el
+    for _zpfx in (f"$PZ{_z}", f"PZ{_z}", f"$PVZ{_z}", f"PVZ{_z}", f"$ZONE{_z}", f"ZONE{_z}"):
+        MSP_CELL_MAP[f"{_zpfx}_START_LO"] = _s_lo
+        MSP_CELL_MAP[f"{_zpfx}_S_LO"] = _s_lo
+        MSP_CELL_MAP[f"{_zpfx}.S.L"] = _s_lo
+        MSP_CELL_MAP[f"{_zpfx}SL"] = _s_lo
+
+        MSP_CELL_MAP[f"{_zpfx}_START_HI"] = _s_hi
+        MSP_CELL_MAP[f"{_zpfx}_S_HI"] = _s_hi
+        MSP_CELL_MAP[f"{_zpfx}.S.H"] = _s_hi
+        MSP_CELL_MAP[f"{_zpfx}SH"] = _s_hi
+
+        MSP_CELL_MAP[f"{_zpfx}_END_LO"] = _e_lo
+        MSP_CELL_MAP[f"{_zpfx}_E_LO"] = _e_lo
+        MSP_CELL_MAP[f"{_zpfx}.E.L"] = _e_lo
+        MSP_CELL_MAP[f"{_zpfx}EL"] = _e_lo
+
+        MSP_CELL_MAP[f"{_zpfx}_END_HI"] = _e_hi
+        MSP_CELL_MAP[f"{_zpfx}_E_HI"] = _e_hi
+        MSP_CELL_MAP[f"{_zpfx}.E.H"] = _e_hi
+        MSP_CELL_MAP[f"{_zpfx}EH"] = _e_hi
+
+# Векторные мнемоники $pv0..$pv13 (14 векторов по 32 бита = 28 ячеек 32..59):
+for _p in range(14):
+    _lo = 32 + 2 * _p
+    _hi = 32 + 2 * _p + 1
+    for _pfx in (f"$PV{_p}", f"PV{_p}", f"$PVZ_VEC{_p}", f"PVZ_VEC{_p}", f"$VEC{16+_p}", f"VEC{16+_p}"):
+        MSP_CELL_MAP[f"{_pfx}_LO"] = _lo
+        MSP_CELL_MAP[f"{_pfx}.L"] = _lo
+        MSP_CELL_MAP[f"{_pfx}_L"] = _lo
+        MSP_CELL_MAP[f"{_pfx}L"] = _lo
+
+        MSP_CELL_MAP[f"{_pfx}_HI"] = _hi
+        MSP_CELL_MAP[f"{_pfx}.H"] = _hi
+        MSP_CELL_MAP[f"{_pfx}_H"] = _hi
+        MSP_CELL_MAP[f"{_pfx}H"] = _hi
+
+# Границы RAM (MEM_VEC: ячейки 60..63):
+for _bl_name in ("$RAM_BASE_LO", "RAM_BASE_LO", "$RAM_START_LO", "RAM_START_LO", "$RAM_BL", "RAM_BL", "$RAM_SL", "RAM_SL", "$RAM_B_LO", "$RAM_BASE.L", "$PV14_LO", "$PV14L", "$VEC30_LO"):
+    MSP_CELL_MAP[_bl_name] = 60
+for _bh_name in ("$RAM_BASE_HI", "RAM_BASE_HI", "$RAM_START_HI", "RAM_START_HI", "$RAM_BH", "RAM_BH", "$RAM_SH", "RAM_SH", "$RAM_B_HI", "$RAM_BASE.H", "$PV14_HI", "$PV14H", "$VEC30_HI"):
+    MSP_CELL_MAP[_bh_name] = 61
+for _ll_name in ("$RAM_LIMIT_LO", "RAM_LIMIT_LO", "$RAM_END_LO", "RAM_END_LO", "$RAM_LL", "RAM_LL", "$RAM_EL", "RAM_EL", "$RAM_L_LO", "$RAM_LIMIT.L", "$PV15_LO", "$PV15L", "$VEC31_LO"):
+    MSP_CELL_MAP[_ll_name] = 62
+for _lh_name in ("$RAM_LIMIT_HI", "RAM_LIMIT_HI", "$RAM_END_HI", "RAM_END_HI", "$RAM_LH", "RAM_LH", "$RAM_EH", "RAM_EH", "$RAM_L_HI", "$RAM_LIMIT.H", "$PV15_HI", "$PV15H", "$VEC31_HI"):
+    MSP_CELL_MAP[_lh_name] = 63
+
+# 15 аппаратных регистров таймеров (ячейки 64..78):
+TIMER_CELL_DEFINITIONS = [
+    (64, ["T1_CNT_LO", "T1_CNTL", "T1_CNT.L", "T1_LO", "T1L"]),
+    (65, ["T1_CNT_HI", "T1_CNTH", "T1_CNT.H", "T1_HI", "T1H"]),
+    (66, ["T1_MATCH_LO", "T1_MATCHL", "T1_MATCH.L", "T1_CMP_LO", "T1_CMPL", "T1_CMP.L", "T1_RELOAD_LO"]),
+    (67, ["T1_MATCH_HI", "T1_MATCHH", "T1_MATCH.H", "T1_CMP_HI", "T1_CMPH", "T1_CMP.H", "T1_RELOAD_HI"]),
+    (68, ["T1_TIME_LO", "T1_TIMEL", "T1_TIME.L", "TIME_LO", "TIMEL"]),
+    (69, ["T1_TIME_HI", "T1_TIMEH", "T1_TIME.H", "TIME_HI", "TIMEH"]),
+    (70, ["T2_CNT_LO", "T2_CNTL", "T2_CNT.L", "T2_LO", "T2L"]),
+    (71, ["T2_CNT_HI", "T2_CNTH", "T2_CNT.H", "T2_HI", "T2H"]),
+    (72, ["T2_RELOAD_LO", "T2_RELOADL", "T2_RELOAD.L", "T2_RELL", "T2_MATCH_LO"]),
+    (73, ["T2_RELOAD_HI", "T2_RELOADH", "T2_RELOAD.H", "T2_RELH", "T2_MATCH_HI"]),
+    (74, ["T3_CNT_LO", "T3_CNTL", "T3_CNT.L", "T3_LO", "T3L"]),
+    (75, ["T3_CNT_HI", "T3_CNTH", "T3_CNT.H", "T3_HI", "T3H"]),
+    (76, ["T4_CNT", "T4_CNT_LO", "T4_CNTL", "T4_LO", "T4L", "T4"]),
+    (77, ["T4_RELOAD", "T4_RELOAD_LO", "T4_RELL", "T4_REL", "T4_MATCH"]),
+    (78, ["TSR", "TIMER_CFG", "TIMER_SETTING", "TIMER_SETTINGS", "TIMER_CTRL", "TMR_CTRL"]),
+]
+
+for _cid, _names in TIMER_CELL_DEFINITIONS:
+    for _n in _names:
+        MSP_CELL_MAP[_n] = _cid
+        MSP_CELL_MAP[f"${_n}"] = _cid
+
+# Также сохраняем общие алиасы $sys0..$sys14 для совместимости:
+for _k in range(15):
+    _cid = 64 + _k
+    for _spfx in (f"$SYS{_k}", f"SYS{_k}", f"$SR{_k}", f"SR{_k}", f"$RSV{_k}", f"RSV{_k}", f"$SYS_REG{_k}", f"SYS_REG{_k}", f"$SYSREG{_k}", f"SYSREG{_k}"):
+        MSP_CELL_MAP[_spfx] = _cid
+
+# Составные 32-битные регистры (авторасширение в 2 инструкции при MSP.ld):
+MSP_PAIR_MAP: Dict[str, Tuple[int, int]] = {
+    "$SP": (129, 130), "SP": (129, 130),
+    "$SREG": (129, 130), "SREG": (129, 130),
+    "$PTREG": (131, 132), "PTREG": (131, 132),
+    "$PT": (131, 132), "PT": (131, 132),
+}
+
+# 32-битные составные регистры таймеров:
+TIMER_PAIR_DEFINITIONS = [
+    ("T1_CNT", (64, 65)),
+    ("T1", (64, 65)),
+    ("T1_MATCH", (66, 67)),
+    ("T1_CMP", (66, 67)),
+    ("T1_RELOAD", (66, 67)),
+    ("T1_TIME", (68, 69)),
+    ("TIME", (68, 69)),
+    ("T2_CNT", (70, 71)),
+    ("T2", (70, 71)),
+    ("T2_RELOAD", (72, 73)),
+    ("T2_MATCH", (72, 73)),
+    ("T3_CNT", (74, 75)),
+    ("T3", (74, 75)),
+]
+for _n, _pair in TIMER_PAIR_DEFINITIONS:
+    MSP_PAIR_MAP[_n] = _pair
+    MSP_PAIR_MAP[f"${_n}"] = _pair
+for _i in range(16):
+    _pair = (2 * _i, 2 * _i + 1)
+    for _pfx in (f"$IR{_i}", f"IR{_i}", f"$IV{_i}", f"IV{_i}", f"$INT{_i}", f"INT{_i}", f"$INT_VEC{_i}", f"INT_VEC{_i}", f"$VEC{_i}", f"VEC{_i}"):
+        MSP_PAIR_MAP[_pfx] = _pair
+
+for _z in range(7):
+    _s_pair = (32 + 4 * _z, 33 + 4 * _z)
+    _e_pair = (34 + 4 * _z, 35 + 4 * _z)
+    for _zpfx in (f"$PZ{_z}", f"PZ{_z}", f"$PVZ{_z}", f"PVZ{_z}", f"$ZONE{_z}", f"ZONE{_z}"):
+        MSP_PAIR_MAP[f"{_zpfx}_START"] = _s_pair
+        MSP_PAIR_MAP[f"{_zpfx}S"] = _s_pair
+        MSP_PAIR_MAP[f"{_zpfx}_END"] = _e_pair
+        MSP_PAIR_MAP[f"{_zpfx}E"] = _e_pair
+
+for _p in range(14):
+    _pair = (32 + 2 * _p, 32 + 2 * _p + 1)
+    for _pfx in (f"$PV{_p}", f"PV{_p}", f"$PVZ_VEC{_p}", f"PVZ_VEC{_p}", f"$VEC{16+_p}", f"VEC{16+_p}"):
+        MSP_PAIR_MAP[_pfx] = _pair
+
+MSP_PAIR_MAP["$RAM_BASE"] = (60, 61)
+MSP_PAIR_MAP["RAM_BASE"] = (60, 61)
+MSP_PAIR_MAP["$RAM_START"] = (60, 61)
+MSP_PAIR_MAP["RAM_START"] = (60, 61)
+MSP_PAIR_MAP["$RAM_B"] = (60, 61)
+MSP_PAIR_MAP["$RAM_S"] = (60, 61)
+MSP_PAIR_MAP["$PV14"] = (60, 61)
+MSP_PAIR_MAP["$VEC30"] = (60, 61)
+
+MSP_PAIR_MAP["$RAM_LIMIT"] = (62, 63)
+MSP_PAIR_MAP["RAM_LIMIT"] = (62, 63)
+MSP_PAIR_MAP["$RAM_END"] = (62, 63)
+MSP_PAIR_MAP["RAM_END"] = (62, 63)
+MSP_PAIR_MAP["$RAM_L"] = (62, 63)
+MSP_PAIR_MAP["$RAM_E"] = (62, 63)
+MSP_PAIR_MAP["$PV15"] = (62, 63)
+MSP_PAIR_MAP["$VEC31"] = (62, 63)
+
+# Обратная таблица для дизассемблера (чистые имена без знака $):
+SYS_CELL_NAMES: Dict[int, str] = {
+    # 4 аппаратных таймера (колонки 64..78):
+    64: "t1_cnt_lo",
+    65: "t1_cnt_hi",
+    66: "t1_match_lo",
+    67: "t1_match_hi",
+    68: "t1_time_lo",
+    69: "t1_time_hi",
+    70: "t2_cnt_lo",
+    71: "t2_cnt_hi",
+    72: "t2_reload_lo",
+    73: "t2_reload_hi",
+    74: "t3_cnt_lo",
+    75: "t3_cnt_hi",
+    76: "t4_cnt",
+    77: "t4_reload",
+    78: "tsr",
+    # Системные регистры управления и вказівники:
+    128: "freg",
+    129: "sp_lo",
+    130: "sp_hi",
+    131: "ptreg_lo",
+    132: "ptreg_hi",
+    60: "ram_base_lo",
+    61: "ram_base_hi",
+    62: "ram_limit_lo",
+    63: "ram_limit_hi",
+}
+for _i in range(16):
+    SYS_CELL_NAMES[2 * _i] = f"ir{_i}_lo"
+    SYS_CELL_NAMES[2 * _i + 1] = f"ir{_i}_hi"
+for _p in range(14):
+    SYS_CELL_NAMES[32 + 2 * _p] = f"pv{_p}_lo"
+    SYS_CELL_NAMES[32 + 2 * _p + 1] = f"pv{_p}_hi"
+
+SPEC_REG_MAP: Dict[str, Tuple[int, int]] = {
+    "$FREG": (0, 0), "FREG": (0, 0),
+    "$PTREG": (1, 0), "PTREG": (1, 0),
+    "$SREG": (2, 0), "SREG": (2, 0),
+    "$SP": (2, 0), "SP": (2, 0),
+}
 
 OPCODES: Dict[str, int] = {
     "NOP": 0,
@@ -225,32 +415,52 @@ def parse_gpr(token: str, line_no: Optional[int] = None, line_text: str = "") ->
     return GPR_MAP[key]
 
 
+def resolve_msp_target(token: str) -> Optional[Tuple[str, any]]:
+    """
+    Разрешает имя целевого регистра или номер ячейки MSP:
+      - ('CELL', reg_id) для 16-битных ячеек (0..255)
+      - ('PAIR', (lo_id, hi_id)) для 32-битных составных регистров
+      - None если токен не относится к системным регистрам
+    """
+    raw = token.strip()
+    if raw.startswith("[") and raw.endswith("]"):
+        raw = raw[1:-1].strip()
+    key = raw.upper()
+    if key in MSP_CELL_MAP:
+        return ("CELL", MSP_CELL_MAP[key])
+    if key in MSP_PAIR_MAP:
+        return ("PAIR", MSP_PAIR_MAP[key])
+    try:
+        val = int(raw, 0)
+        if 0 <= val <= 255:
+            return ("CELL", val)
+    except ValueError:
+        pass
+    return None
+
+
 def is_spec_reg(token: str) -> bool:
-    t = token.strip().upper()
-    if t.startswith("[") and t.endswith("]"):
-        t = t[1:-1].strip()
-    return t in SPEC_REG_MAP
+    return resolve_msp_target(token) is not None
 
 
 def parse_spec_reg(token: str, line_no: Optional[int] = None, line_text: str = "") -> Tuple[int, int, bool]:
-    """
-    Возвращает (sreg_sel, vec_idx, was_bracketed).
-    sreg_sel: 0=FREG, 1=PTREG, 2=SREG, 3=VECTORS[vec_idx].
-    """
     raw = token.strip()
     bracketed = False
     if raw.startswith("[") and raw.endswith("]"):
         bracketed = True
         raw = raw[1:-1].strip()
-    key = raw.upper()
-    if key not in SPEC_REG_MAP:
+    info = resolve_msp_target(raw)
+    if info is None:
         raise AssemblerError(
-            f"Ожидался специальный регистр ($freg, $ptreg, $sreg), получено '{token}'",
+            f"Ожидался системный регистр или ячейка MSP, получено '{token}'",
             line_no,
             line_text,
         )
-    sreg_sel, vec_idx = SPEC_REG_MAP[key]
-    return sreg_sel, vec_idx, bracketed
+    kind, val = info
+    if kind == "CELL":
+        return 0, val, bracketed
+    else:
+        return 3, val[0], bracketed
 
 
 class LimAssembler:
@@ -409,8 +619,20 @@ class LimAssembler:
                 size_sfx = "W"
             elif p in ("D", "DWORD", "DOUBLEWORD"):
                 size_sfx = "D"
-            elif base == "MSP" and p in ("LD", "LOAD", "AND", "OR", "XOR", "XNOR", "ADD", "SUB"):
-                sub_op = "LD" if p == "LOAD" else p
+            elif base == "MSP" and p in (
+                "LD", "LOAD", "LDR", "LDR7", "R7LD", "STR", "STR7", "R7ST", "ST", "STOR7",
+                "AND", "OR", "XOR", "XNOR", "ONB", "OFFB", "ADD", "SUB"
+            ):
+                if p in ("LOAD", "LD"):
+                    sub_op = "LD"
+                elif p in ("LDR", "LDR7", "R7LD"):
+                    sub_op = "LDR"
+                elif p in ("STR", "STR7", "R7ST", "ST", "STOR7"):
+                    sub_op = "STR"
+                elif p == "XNOR":
+                    sub_op = "XNOR"
+                else:
+                    sub_op = p
             elif base == "JCR" and p in JCR_COND_MAP:
                 sub_op = p
             else:
@@ -888,7 +1110,7 @@ class LimAssembler:
                     raise AssemblerError(f"Прямая запись константы в память поддержана только через [$ptreg]: LRM imm, [$ptreg]", line_no, line_text)
 
     # --------------------------------------------------------------------------
-    # Кодирование MSP (Манипуляция специальными регистрами FREG, PTREG, SREG)
+    # Кодирование MSP (Квантованная 16-битная манипуляция системными регистрами)
     # --------------------------------------------------------------------------
 
     def _encode_msp(
@@ -903,90 +1125,114 @@ class LimAssembler:
     ) -> bytes:
         """
         Кодирует инструкцию MSP (Opcode 26 / 11010):
-          - FREG (Target = 00, 4 байта): MSP.ld / and / or / xor / xnor $freg, imm16
-          - PTREG (Target = 01, 5 байтов): MSP.ld $ptreg, imm32
-          - SP (Target = 10, 5 байтов): MSP.ld $sp, imm32
-          - VECTORS (Target = 11, 6 байтов): MSP.ld $vec_reg, imm32
+          - op3:
+              000 (ld):   загрузка imm16 в SYS_REG[reg_id] (4 байта)
+              001 (ldr7): загрузка SYS_REG[reg_id] из R7 (2 байта)
+              010 (str7): выгрузка SYS_REG[reg_id] в R7 (2 байта)
+              011 (and):  SYS_REG[reg_id] &= imm16 (4 байта)
+              100 (or):   SYS_REG[reg_id] |= imm16 (4 байта)
+              101 (xor):  SYS_REG[reg_id] ^= imm16 (4 байта)
+              110 (onb):  побитовое включение битов SYS_REG[reg_id] |= imm16 (4 байта)
+              111 (offb): побитовое выключение битов SYS_REG[reg_id] &= ~imm16 (4 байта)
+          - Для 32-битных составных регистров ($sp, $ptreg, $irX, $pvX, $ram_base, $ram_limit)
+            при MSP.ld генерируются 2 последовательные 4-байтные инструкции (младшая, затем старшая).
         """
         if not operands:
             raise AssemblerError("Инструкция MSP требует операнды", line_no, line_text)
 
         op_msp = OPCODES["MSP"]  # 26 (0b11010)
 
+        if sub_op is None:
+            sub_op = "LD"
+
+        sub_op = sub_op.upper()
         first_tok = operands[0].strip()
-        if not is_spec_reg(first_tok):
+        rest = operands[1:]
+
+        # Распознавание альтернативного синтаксиса обмена с R7:
+        # MSP.ld 7, <cell> / MSP.ld $7, <cell> -> str (чтение системной ячейки в R7)
+        if sub_op == "LD" and first_tok.upper() in ("$7", "7", "R7", "$R7") and rest:
+            sub_op = "STR"
+            first_tok = rest[0].strip()
+            rest = rest[1:]
+        # MSP.ld <cell>, 7 / MSP.ld <cell>, $7 -> ldr (запись в системную ячейку из R7)
+        elif sub_op == "LD" and rest and rest[0].strip().upper() in ("$7", "7", "R7", "$R7"):
+            sub_op = "LDR"
+            rest = rest[1:]
+        elif sub_op in ("LDR", "STR", "LDR7", "STR7") and rest:
+            # Очищаем второй аргумент, если передан явный R7 или 7 (например: MSP.ldr freg, R7)
+            if rest[0].strip().upper() in ("$7", "7", "R7", "$R7"):
+                rest = rest[1:]
+            elif first_tok.upper() in ("$7", "7", "R7", "$R7"):
+                first_tok = rest[0].strip()
+                rest = rest[1:]
+
+        target_info = resolve_msp_target(first_tok)
+        if target_info is None:
             raise AssemblerError(
-                f"Первым операндом MSP должен быть специальный регистр ($freg, $ptreg, $sp, $ir0..$ir15, $pv0..$pv15), получено '{first_tok}'",
+                f"Неизвестный системный регистр или ячейка MSP: '{first_tok}'",
                 line_no,
                 line_text,
             )
 
-        sreg_sel, vec_idx, _ = parse_spec_reg(first_tok, line_no, line_text)
-        rest = operands[1:]
+        target_kind, target_val = target_info
 
-        if sub_op is None:
-            if rest and rest[0].strip().upper() in ("LD", "LOAD", "AND", "OR", "XOR", "XNOR"):
-                kw = rest[0].strip().upper()
-                sub_op = "LD" if kw == "LOAD" else kw
-                rest = rest[1:]
-            else:
-                sub_op = "LD"
+        # 2-байтовые инструкции: ldr (001) и str (010) (поддерживаются также ldr7 и str7)
+        if sub_op in ("LDR", "STR", "LDR7", "STR7"):
+            if target_kind == "PAIR":
+                raise AssemblerError(
+                    f"Операция {sub_op.lower()} работает с 16-битными ячейками (регистр R7 — 16 бит). "
+                    f"Укажите _lo или _hi для '{first_tok}'",
+                    line_no,
+                    line_text,
+                )
+            cell_id = target_val
+            op3 = 0b001 if sub_op in ("LDR", "LDR7") else 0b010
+            b0 = ((op_msp << 3) | op3) & 0xFF
+            b1 = cell_id & 0xFF
+            return bytes([b0, b1])
 
+        # Операции с непосредственным значением (imm16 / imm32)
         if not rest:
-            raise AssemblerError(f"Не указан операнд-значение для MSP.{sub_op.lower()}", line_no, line_text)
+            raise AssemblerError(f"Не указано значение операнда для MSP.{sub_op.lower()}", line_no, line_text)
 
         val_str = rest[0].strip()
         if val_str.startswith("[") and val_str.endswith("]"):
             val_str = val_str[1:-1].strip()
 
-        # 1. FREG (Target = 00, 4 байта)
-        if sreg_sel == 0:
-            act = 0 if sub_op == "LD" else 1
-            logic_op = {"AND": 0, "OR": 1, "XOR": 2, "XNOR": 3}.get(sub_op, 0)
-            val16 = self._eval_expr(val_str, current_pc, pass_num, line_no, line_text) & 0xFFFF
-            b0 = ((op_msp << 3) | (act << 2) | 0b00) & 0xFF
-            b1 = (logic_op << 6) & 0xFF
-            return bytes([b0, b1, val16 & 0xFF, (val16 >> 8) & 0xFF])
+        op_map = {
+            "LD": 0b000,
+            "AND": 0b011,
+            "OR": 0b100,
+            "XOR": 0b101,
+            "ONB": 0b110,
+            "OFFB": 0b111,
+        }
+        if sub_op not in op_map:
+            raise AssemblerError(f"Неподдерживаемая операция MSP.{sub_op.lower()}", line_no, line_text)
 
-        # 2. PTREG (Target = 01, 5 байтов, только Load)
-        elif sreg_sel == 1:
+        op3 = op_map[sub_op]
+
+        # Для составного 32-битного регистра (PAIR):
+        if target_kind == "PAIR":
+            if sub_op != "LD":
+                raise AssemblerError(
+                    f"Для логических операций MSP.{sub_op.lower()} укажите конкретную 16-битную ячейку (_lo или _hi)",
+                    line_no,
+                    line_text,
+                )
+            lo_id, hi_id = target_val
             val32 = self._eval_expr(val_str, current_pc, pass_num, line_no, line_text) & 0xFFFFFFFF
-            b0 = ((op_msp << 3) | (0 << 2) | 0b01) & 0xFF
-            return bytes([
-                b0,
-                val32 & 0xFF,
-                (val32 >> 8) & 0xFF,
-                (val32 >> 16) & 0xFF,
-                (val32 >> 24) & 0xFF,
-            ])
+            inst_lo = bytes([((op_msp << 3) | 0b000) & 0xFF, lo_id & 0xFF, val32 & 0xFF, (val32 >> 8) & 0xFF])
+            inst_hi = bytes([((op_msp << 3) | 0b000) & 0xFF, hi_id & 0xFF, (val32 >> 16) & 0xFF, (val32 >> 24) & 0xFF])
+            return inst_lo + inst_hi
 
-        # 3. SP / SREG (Target = 10, 5 байтов, только Load)
-        elif sreg_sel == 2:
-            val32 = self._eval_expr(val_str, current_pc, pass_num, line_no, line_text) & 0xFFFFFFFF
-            b0 = ((op_msp << 3) | (0 << 2) | 0b10) & 0xFF
-            return bytes([
-                b0,
-                val32 & 0xFF,
-                (val32 >> 8) & 0xFF,
-                (val32 >> 16) & 0xFF,
-                (val32 >> 24) & 0xFF,
-            ])
-
-        # 4. VECTORS (Target = 11, 6 байтов, только Load)
-        elif sreg_sel == 3:
-            val32 = self._eval_expr(val_str, current_pc, pass_num, line_no, line_text) & 0xFFFFFFFF
-            b0 = ((op_msp << 3) | (0 << 2) | 0b11) & 0xFF
-            b1 = vec_idx & 0x1F
-            return bytes([
-                b0,
-                b1,
-                val32 & 0xFF,
-                (val32 >> 8) & 0xFF,
-                (val32 >> 16) & 0xFF,
-                (val32 >> 24) & 0xFF,
-            ])
-
-        raise AssemblerError(f"Неизвестный спецрегистр для MSP: {first_tok}", line_no, line_text)
+        # Одиночная 16-битная ячейка (CELL): 4 байта
+        cell_id = target_val
+        val16 = self._eval_expr(val_str, current_pc, pass_num, line_no, line_text) & 0xFFFF
+        b0 = ((op_msp << 3) | op3) & 0xFF
+        b1 = cell_id & 0xFF
+        return bytes([b0, b1, val16 & 0xFF, (val16 >> 8) & 0xFF])
 
     # --------------------------------------------------------------------------
     # Обработка директив данных (.org, db, dw, dd, equ)
@@ -1392,36 +1638,22 @@ def disassemble_one(read8_fn, addr: int) -> Tuple[str, int, List[int]]:
             return f"{name} [0x{target:08X}]", 5, [b0, b1, b2, b3, b4]
         return f"{name} 0x{target:08X}", 5, [b0, b1, b2, b3, b4]
 
-    # 13. MSP (26)
+    # 13. MSP (26: квантованные 16-битные операции со специальными регистрами)
     if op == 26:
-        act = (cfg >> 2) & 0x01
-        target_sel = cfg & 0x03
-        if target_sel == 0:  # FREG (4 байта)
-            logic_op = (b1 >> 6) & 0x03
+        op3 = cfg & 0x07
+        reg_id = b1
+        cell_name = SYS_CELL_NAMES.get(reg_id, f"0x{reg_id:02X}")
+        if op3 == 0b001:
+            return f"MSP.ldr {cell_name}", 2, [b0, b1]
+        elif op3 == 0b010:
+            return f"MSP.str {cell_name}", 2, [b0, b1]
+        else:
             lo = read8_fn(addr + 2) & 0xFF
             hi = read8_fn(addr + 3) & 0xFF
             val16 = (hi << 8) | lo
-            if act == 0:
-                return f"MSP.ld $freg, 0x{val16:04X}", 4, [b0, b1, lo, hi]
-            else:
-                op_names = ["and", "or", "xor", "xnor"]
-                return f"MSP.{op_names[logic_op]} $freg, 0x{val16:04X}", 4, [b0, b1, lo, hi]
-        elif target_sel in (1, 2):  # PTREG (1) / SP (2) (5 байтов)
-            name = "$ptreg" if target_sel == 1 else "$sp"
-            b2 = read8_fn(addr + 2) & 0xFF
-            b3 = read8_fn(addr + 3) & 0xFF
-            b4 = read8_fn(addr + 4) & 0xFF
-            target = b1 | (b2 << 8) | (b3 << 16) | (b4 << 24)
-            return f"MSP.ld {name}, 0x{target:08X}", 5, [b0, b1, b2, b3, b4]
-        elif target_sel == 3:  # VECTORS (6 байтов)
-            vec_idx = b1 & 0x1F
-            v_name = f"$ir{vec_idx}" if vec_idx < 16 else f"$pv{vec_idx - 16}"
-            b2 = read8_fn(addr + 2) & 0xFF
-            b3 = read8_fn(addr + 3) & 0xFF
-            b4 = read8_fn(addr + 4) & 0xFF
-            b5 = read8_fn(addr + 5) & 0xFF
-            v32 = b2 | (b3 << 8) | (b4 << 16) | (b5 << 24)
-            return f"MSP.ld {v_name}, 0x{v32:08X}", 6, [b0, b1, b2, b3, b4, b5]
+            op_names = {0: "ld", 3: "and", 4: "or", 5: "xor", 6: "onb", 7: "offb"}
+            name = op_names.get(op3, f"op{op3}")
+            return f"MSP.{name} {cell_name}, 0x{val16:04X}", 4, [b0, b1, lo, hi]
 
     return f"DB 0x{b0:02X}, 0x{b1:02X}", 2, [b0, b1]
 

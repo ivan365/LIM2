@@ -123,6 +123,18 @@ class LIM2CPU(BaseCPU):
 
         self.vectors = VectorList(self.regs)
         self.ivt = self.vectors
+        self.sys_regs_ext = [0] * 15
+
+        # 4 встроенных аппаратных таймера (кодируются в 15 ячейках 64..78):
+        self.t1_cnt = 0
+        self.t1_match = 0
+        self.t1_time = 0
+        self.t2_cnt = 0
+        self.t2_reload = 0
+        self.t3_cnt = 0
+        self.t4_cnt = 0
+        self.t4_reload = 0
+        self.tsr = 0
 
     def on_start(self):
         """2. Что процессор делает сразу при старте (сброс регистров, установка PC)."""
@@ -133,12 +145,124 @@ class LIM2CPU(BaseCPU):
         self.freg = 0x1800
         self.ptreg = 0
         self.sreg = 0
+        self.sys_regs_ext = [0] * 15
+
+        # Сброс встроенных аппаратных таймеров:
+        self.t1_cnt = 0
+        self.t1_match = 0
+        self.t1_time = 0
+        self.t2_cnt = 0
+        self.t2_reload = 0
+        self.t3_cnt = 0
+        self.t4_cnt = 0
+        self.t4_reload = 0
+        self.tsr = 0
+
         for i in range(32):
             self.vectors[i] = 0
         for i in range(8):
             self.set_reg(i, 0)
         if hasattr(self.bus, "set_mode"):
             self.bus.set_mode("32bit")
+
+    def read_sys_cell(self, reg_id: int) -> int:
+        """Чтение квантованной 16-битной ячейки системного регистра по её номеру REG_ID (0..255)."""
+        if 0 <= reg_id < 64:
+            vec_idx = reg_id // 2
+            val32 = self.vectors[vec_idx]
+            if reg_id % 2 == 0:
+                return val32 & 0xFFFF
+            else:
+                return (val32 >> 16) & 0xFFFF
+        elif 64 <= reg_id <= 78:
+            if reg_id == 64: return self.t1_cnt & 0xFFFF
+            elif reg_id == 65: return (self.t1_cnt >> 16) & 0xFFFF
+            elif reg_id == 66: return self.t1_match & 0xFFFF
+            elif reg_id == 67: return (self.t1_match >> 16) & 0xFFFF
+            elif reg_id == 68: return self.t1_time & 0xFFFF
+            elif reg_id == 69: return (self.t1_time >> 16) & 0xFFFF
+            elif reg_id == 70: return self.t2_cnt & 0xFFFF
+            elif reg_id == 71: return (self.t2_cnt >> 16) & 0xFFFF
+            elif reg_id == 72: return self.t2_reload & 0xFFFF
+            elif reg_id == 73: return (self.t2_reload >> 16) & 0xFFFF
+            elif reg_id == 74: return self.t3_cnt & 0xFFFF
+            elif reg_id == 75: return (self.t3_cnt >> 16) & 0xFFFF
+            elif reg_id == 76: return self.t4_cnt & 0xFFFF
+            elif reg_id == 77: return self.t4_reload & 0xFFFF
+            elif reg_id == 78: return self.tsr & 0xFFFF
+            return self.sys_regs_ext[reg_id - 64] & 0xFFFF
+        elif reg_id == 128:
+            return self.freg & 0xFFFF
+        elif reg_id == 129:
+            return self.sreg & 0xFFFF
+        elif reg_id == 130:
+            return (self.sreg >> 16) & 0xFFFF
+        elif reg_id == 131:
+            return self.ptreg & 0xFFFF
+        elif reg_id == 132:
+            return (self.ptreg >> 16) & 0xFFFF
+        return 0
+
+    def write_sys_cell(self, reg_id: int, val16: int) -> None:
+        """Запись в квантованную 16-битную ячейку системного регистра с контролем привилегий."""
+        val16 &= 0xFFFF
+        if 0 <= reg_id < 64:
+            vec_idx = reg_id // 2
+            cur_prv = (self.freg >> 11) & 1
+            # Защита зон привилегий (PVZ_VEC: векторы 16..29, ячейки 32..59):
+            if 16 <= vec_idx <= 29 and cur_prv == 0 and not self.in_privilege_zone():
+                return
+            old32 = self.vectors[vec_idx]
+            if reg_id % 2 == 0:
+                self.vectors[vec_idx] = (old32 & 0xFFFF0000) | val16
+            else:
+                self.vectors[vec_idx] = (old32 & 0x0000FFFF) | (val16 << 16)
+        elif 64 <= reg_id <= 78:
+            self.sys_regs_ext[reg_id - 64] = val16
+            if reg_id == 64:
+                self.t1_cnt = (self.t1_cnt & 0xFFFF0000) | val16
+            elif reg_id == 65:
+                self.t1_cnt = (self.t1_cnt & 0x0000FFFF) | (val16 << 16)
+            elif reg_id == 66:
+                self.t1_match = (self.t1_match & 0xFFFF0000) | val16
+            elif reg_id == 67:
+                self.t1_match = (self.t1_match & 0x0000FFFF) | (val16 << 16)
+            elif reg_id == 68:
+                self.t1_time = (self.t1_time & 0xFFFF0000) | val16
+            elif reg_id == 69:
+                self.t1_time = (self.t1_time & 0x0000FFFF) | (val16 << 16)
+            elif reg_id == 70:
+                self.t2_cnt = (self.t2_cnt & 0xFFFF0000) | val16
+            elif reg_id == 71:
+                self.t2_cnt = (self.t2_cnt & 0x0000FFFF) | (val16 << 16)
+            elif reg_id == 72:
+                self.t2_reload = (self.t2_reload & 0xFFFF0000) | val16
+            elif reg_id == 73:
+                self.t2_reload = (self.t2_reload & 0x0000FFFF) | (val16 << 16)
+            elif reg_id == 74:
+                self.t3_cnt = (self.t3_cnt & 0xFFFF0000) | val16
+            elif reg_id == 75:
+                self.t3_cnt = (self.t3_cnt & 0x0000FFFF) | (val16 << 16)
+            elif reg_id == 76:
+                self.t4_cnt = val16
+            elif reg_id == 77:
+                self.t4_reload = val16
+            elif reg_id == 78:
+                self.tsr = val16
+        elif reg_id == 128:
+            cur_prv = (self.freg >> 11) & 1
+            target_prv = (val16 >> 11) & 1
+            if cur_prv == 0 and target_prv == 1 and not self.in_privilege_zone():
+                val16 &= ~(1 << 11)
+            self.freg = val16
+        elif reg_id == 129:
+            self.sreg = (self.sreg & 0xFFFF0000) | val16
+        elif reg_id == 130:
+            self.sreg = (self.sreg & 0x0000FFFF) | (val16 << 16)
+        elif reg_id == 131:
+            self.ptreg = (self.ptreg & 0xFFFF0000) | val16
+        elif reg_id == 132:
+            self.ptreg = (self.ptreg & 0x0000FFFF) | (val16 << 16)
 
     def in_privilege_zone(self, pc: Optional[int] = None) -> bool:
         """Проверяет, попадает ли адрес в одну из 7 сконфигурированных зон привилегий ($pv0..$pv13)."""
@@ -642,58 +766,39 @@ class LIM2CPU(BaseCPU):
             self.freg = (self.freg & ~0x01) | zf
 
         # ----------------------------------------------------------------------
-        # 26: MSP (4..6 байт: манипуляция специальными регистрами)
+        # 26: MSP (2 или 4 байта: манипуляция квантованными 16-битными системными регистрами)
         # ----------------------------------------------------------------------
         elif opcode == 0b11010:
-            act = (cfg >> 2) & 1
-            target_sel = cfg & 0b11
-            if target_sel == 0:  # FREG (4 байта)
-                b1 = self.bus.read8(self.pc); self.pc += 1
-                logic_op = (b1 >> 6) & 0x03
-                mask = self.bus.read16(self.pc, little_endian=True) & 0xFFFF
+            op3 = cfg & 0x07
+            reg_id = self.bus.read8(self.pc)
+            self.pc += 1
+
+            if op3 == 0b001:  # 001: ldr7 (2 байта: SYS_REG[reg_id] = R7)
+                val16 = self.get_reg(7) & 0xFFFF
+                self.write_sys_cell(reg_id, val16)
+            elif op3 == 0b010:  # 010: str7 (2 байта: R7 = SYS_REG[reg_id])
+                val16 = self.read_sys_cell(reg_id)
+                self.set_reg(7, val16)
+            else:  # 4-байтовые операции с 16-битным immediate (Little-Endian)
+                imm16 = self.bus.read16(self.pc, little_endian=True) & 0xFFFF
                 self.pc += 2
-                if act == 0:  # Load
-                    new_freg = mask
-                else:  # Edit
-                    if logic_op == 0:      # AND
-                        new_freg = self.freg & mask
-                    elif logic_op == 1:    # OR
-                        new_freg = self.freg | mask
-                    elif logic_op == 2:    # XOR
-                        new_freg = self.freg ^ mask
-                    elif logic_op == 3:    # XNOR
-                        new_freg = (~(self.freg ^ mask)) & 0xFFFF
-                    else:
-                        new_freg = self.freg
-
-                # Контроль прав режима супервизора (PRV = бит 11)
-                cur_prv = (self.freg >> 11) & 1
-                target_prv = (new_freg >> 11) & 1
-                if cur_prv == 0 and target_prv == 1:
-                    if not self.in_privilege_zone():
-                        new_freg &= ~(1 << 11)
-                self.freg = new_freg
-
-            elif target_sel == 1:  # PTREG (5 байт, только Load)
-                val32 = self.bus.read32(self.pc, little_endian=True) & 0xFFFFFFFF
-                self.pc += 4
-                self.ptreg = val32
-
-            elif target_sel == 2:  # SP / SREG (5 байт, только Load)
-                val32 = self.bus.read32(self.pc, little_endian=True) & 0xFFFFFFFF
-                self.pc += 4
-                self.sreg = val32
-
-            elif target_sel == 3:  # VECTORS (6 байт, только Load)
-                b1 = self.bus.read8(self.pc); self.pc += 1
-                idx = b1 & 0x1F
-                val32 = self.bus.read32(self.pc, little_endian=True) & 0xFFFFFFFF
-                self.pc += 4
-                cur_prv = (self.freg >> 11) & 1
-                if idx >= 16 and cur_prv == 0 and not self.in_privilege_zone():
-                    pass  # Блокировка записи в $pv вне зон привилегий
-                else:
-                    self.vectors[idx] = val32
+                if op3 == 0b000:  # 000: ld (SYS_REG[reg_id] = imm16)
+                    self.write_sys_cell(reg_id, imm16)
+                elif op3 == 0b011:  # 011: and (SYS_REG[reg_id] &= imm16)
+                    cur = self.read_sys_cell(reg_id)
+                    self.write_sys_cell(reg_id, cur & imm16)
+                elif op3 == 0b100:  # 100: or (SYS_REG[reg_id] |= imm16)
+                    cur = self.read_sys_cell(reg_id)
+                    self.write_sys_cell(reg_id, cur | imm16)
+                elif op3 == 0b101:  # 101: xor (SYS_REG[reg_id] ^= imm16)
+                    cur = self.read_sys_cell(reg_id)
+                    self.write_sys_cell(reg_id, cur ^ imm16)
+                elif op3 == 0b110:  # 110: onb (SYS_REG[reg_id] |= imm16)
+                    cur = self.read_sys_cell(reg_id)
+                    self.write_sys_cell(reg_id, cur | imm16)
+                elif op3 == 0b111:  # 111: offb (SYS_REG[reg_id] &= ~imm16)
+                    cur = self.read_sys_cell(reg_id)
+                    self.write_sys_cell(reg_id, cur & (~imm16 & 0xFFFF))
 
         # ----------------------------------------------------------------------
         # 27: MOD Rd, Rs0, Rs1 (2 байта: Rd = Rs0 % Rs1)
@@ -755,6 +860,141 @@ class LIM2CPU(BaseCPU):
                 self.pins.MREQ.set(0)
                 self.pins.RD.set(0)
             self.halt()
+
+        # Вычисление аппаратных тактов текущей инструкции и обновление таймеров:
+        cycles = self._calculate_instruction_cycles(opcode, cfg)
+        self._update_timers(cycles=cycles)
+
+    def _calculate_instruction_cycles(self, opcode: int, cfg: int) -> int:
+        """
+        Вычисляет число тактов тактового генератора, затраченных на выполнение завершенной инструкции.
+        Определяется сложностью операции, числом обращений к шине и латентностью АЛУ.
+        """
+        import random
+        # 1. NOP и HALT: базовый 1 такт (гарантирует детерминизм в тестах и задержках)
+        if opcode == 0 or opcode == 31:
+            return 1
+
+        # 2. Быстрые унарные инструкции РОН (1..2 такта):
+        elif opcode in (21, 22):  # INC, DEC
+            return random.randint(1, 2)
+        elif opcode in (23, 24):  # BSL, BSR
+            return random.randint(1, 2)
+        elif opcode in (27, 28):  # PUSH, POP
+            return random.randint(2, 3)
+        elif opcode == 30:  # RET
+            return random.randint(3, 4)
+
+        # 3. Базовая 16-битная арифметика и побитовая логика (2..3 такта):
+        elif opcode in (1, 2, 7, 8, 13, 14, 15, 16, 17, 18, 20):  # ADD, SUB, LRR, CMP, AND, OR, NAND, NOR, XOR, XNOR, NOT
+            return random.randint(2, 3)
+
+        # 4. Многотактовая арифметика:
+        elif opcode == 3:  # MUL (4..6 тактов)
+            return random.randint(4, 6)
+        elif opcode in (4, 19):  # DIV, MOD (6..10 тактов)
+            return random.randint(6, 10)
+
+        # 5. Инструкции обмена с памятью (LMR, LRM):
+        elif opcode in (5, 6):
+            mode = cfg & 0b11
+            if mode == 0:     # Непосредственные данные
+                return random.randint(2, 3)
+            elif mode == 1:   # Прямой 32-битный адрес [ADDR] (шинный цикл + декодирование)
+                return random.randint(4, 6)
+            elif mode == 2:   # Потоковый доступ [PTREG] (с автоинкрементом)
+                return random.randint(2, 4)
+            elif mode == 3:   # Составной указатель [Rh:Rl]
+                return random.randint(3, 5)
+            return random.randint(3, 5)
+
+        # 6. Ветвления и вызовы:
+        elif opcode in (9, 10, 11, 12):  # JMP, JCR, JO, JZ
+            return random.randint(3, 4)
+        elif opcode == 29:  # CALL (сохранение PC и FREG в стек)
+            return random.randint(5, 7)
+        elif opcode == 25:  # INT
+            return random.randint(4, 6)
+
+        # 7. Настройка спецрегистров (MSP):
+        elif opcode == 26:
+            return random.randint(2, 4)
+
+        return random.randint(2, 4)
+
+    def _update_timers(self, cycles: int = 1):
+        """
+        Обновление аппаратных таймеров процессора:
+          - T1: 32-битный тактовый up-counter: добавляет cycles.
+                При t1_cnt >= t1_match:
+                  matches = t1_cnt // t1_match
+                  t1_time += matches
+                  t1_cnt = t1_cnt % t1_match  (излишек тактів переносится в новый отсчет!)
+                  T1_IF = 1, IRQ 12
+          - T2: 32-битный периодический down-counter: вычитает cycles.
+                При t2_cnt <= 0:
+                  излишек (deficit) корректно переносится в перезагруженный счетчик:
+                  excess = cycles - old_t2_cnt
+                  rem = excess % t2_reload
+                  t2_cnt = t2_reload if rem == 0 else (t2_reload - rem)
+                  T2_IF = 1, IRQ 13
+          - T3: 32-битный разовый (one-shot) down-counter: вычитает cycles.
+                При t3_cnt <= cycles:
+                  t3_cnt = 0, сброс T3_EN, T3_IF = 1, IRQ 14
+          - T4: 16-битный квантователь инструкций: ВСЕГДА декрементирует строго на 1 завершенную инструкцию!
+                При t4_cnt == 0:
+                  t4_cnt = t4_reload, T4_IF = 1, IRQ 15
+        """
+        if cycles <= 0:
+            cycles = 1
+
+        # 1. Таймер 1 (T1_EN = bit 15 TSR): Up-counter
+        if self.tsr & (1 << 15):
+            self.t1_cnt = (self.t1_cnt + cycles) & 0xFFFFFFFF
+            if self.t1_match > 0 and self.t1_cnt >= self.t1_match:
+                matches = self.t1_cnt // self.t1_match
+                self.t1_time = (self.t1_time + matches) & 0xFFFFFFFF
+                self.t1_cnt = self.t1_cnt % self.t1_match  # Излишек сохраняется в счетчике
+                self.tsr |= (1 << 7)  # T1_IF
+                if (self.tsr & (1 << 11)) and (self.freg & (1 << 9)) and not (self.freg & (1 << 15)):
+                    self.trigger_irq(12)
+
+        # 2. Таймер 2 (T2_EN = bit 14 TSR): Periodic Down-counter
+        if self.tsr & (1 << 14):
+            if self.t2_reload > 0:
+                if self.t2_cnt > cycles:
+                    self.t2_cnt -= cycles
+                else:
+                    excess = cycles - self.t2_cnt
+                    rem = excess % self.t2_reload
+                    self.t2_cnt = self.t2_reload if rem == 0 else (self.t2_reload - rem)
+                    self.tsr |= (1 << 6)  # T2_IF
+                    if (self.tsr & (1 << 10)) and (self.freg & (1 << 9)) and not (self.freg & (1 << 15)):
+                        self.trigger_irq(13)
+            elif self.t2_cnt > 0:
+                self.t2_cnt = max(0, self.t2_cnt - cycles)
+
+        # 3. Таймер 3 (T3_EN = bit 13 TSR, разовый / one-shot):
+        if self.tsr & (1 << 13):
+            if self.t3_cnt > cycles:
+                self.t3_cnt -= cycles
+            else:
+                self.t3_cnt = 0
+                self.tsr &= ~(1 << 13)  # Автоматическая остановка: сброс T3_EN
+                self.tsr |= (1 << 5)   # T3_IF
+                if (self.tsr & (1 << 9)) and (self.freg & (1 << 9)) and not (self.freg & (1 << 15)):
+                    self.trigger_irq(14)
+
+        # 4. Таймер 4 (T4_EN = bit 12 TSR, квантователь инструкций):
+        # Декрементируется строго на 1 за каждую ЗАВЕРШЕННУЮ инструкцию процессора!
+        if self.tsr & (1 << 12):
+            if self.t4_cnt > 0:
+                self.t4_cnt = (self.t4_cnt - 1) & 0xFFFF
+            if self.t4_cnt == 0:
+                self.t4_cnt = self.t4_reload & 0xFFFF
+                self.tsr |= (1 << 4)  # T4_IF
+                if (self.tsr & (1 << 8)) and (self.freg & (1 << 9)) and not (self.freg & (1 << 15)):
+                    self.trigger_irq(15)
 
     def _update_flags(self, result: int):
         """Обновляет флаги ZF, CF, OF в регистре FREG."""

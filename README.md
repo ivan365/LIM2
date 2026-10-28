@@ -57,22 +57,24 @@ Pre-compiled, ready-to-print comprehensive technical reference datasheet is loca
 
 ## 🗃️ Architectural Register File
 
-| Register | Width | Architectural Role |
-| :--- | :---: | :--- |
-| **`R0` – `R7`** | 16-bit | General Purpose Registers (GPR). Low-latency read via `MUX 1`, gated writeback from `WB_DATA`. |
-| **`SREG`** | **32-bit** | System Stack Register. Linear 32-bit addressing across 4 GB execution stack space. |
-| **`PTREG`** | **32-bit** | Extended Pointer Register. Flat linear addressing across 4 GB with optional hardware auto-increment (`AIP`). |
-| **`FREG`** | 16-bit | Processor Status and Control Register. Unifies condition flags and operational mode controls. |
-| **`IR0`–`IR15`** | **32-bit** | 16 Hardware Interrupt Vector Registers. Base execution addresses for ISR routines. |
-| **`PV0`–`PV15`** | **32-bit** | 16 Privilege Zone Registers (8 Protected Call Gate Ranges: `[pv0:pv1]` .. `[pv14:pv15]`). |
-| **`ACCA` / `ACCB`** | 16-bit | Auxiliary ALU Latches (Dual Accumulator Staging). Pre-stages ALU operands A and B. |
+| Register | Width | Assembler Aliases | Architectural Role |
+| :--- | :---: | :--- | :--- |
+| **`R0` – `R7`** | 16-bit | `$0`..`$7`, `R0`..`R7`, `$r0`..`$r7`, `0`..`7` | General Purpose Registers (GPR). Low-latency read via `MUX 1`, gated writeback from `WB_DATA`. |
+| **`SREG`** | **32-bit** | `$sp`, `sp`, `$sreg`, `sreg` | System Stack Register. Linear 32-bit addressing across 4 GB execution stack space. |
+| **`PTREG`** | **32-bit** | `$ptreg`, `ptreg` | Extended Pointer Register. Flat linear addressing across 4 GB with optional hardware auto-increment (`AIP`). |
+| **`FREG`** | 16-bit | `$freg`, `freg` | Processor Status and Control Register. Unifies condition flags and operational mode controls. |
+| **`IR0`–`IR15`** | **32-bit** | `$ir0`..`$ir15`, `ir0`..`ir15`, `$vec0`..`$vec15` | 16 Hardware Interrupt Vector Registers. Base execution addresses for ISR routines. |
+| **`PV0`–`PV13`** | **32-bit** | `$pv0`..`$pv13`, `pv0`..`pv13`, `$vec16`..`$vec29` | 14 Privilege Zone Registers (7 Protected Call Gate Ranges: `[pv0:pv1]` .. `[pv12:pv13]`). |
+| **`PV14`** | **32-bit** | `$pv14`, `$ram_base`, `$ram_start`, `$rom_base`, `$vec30` | RAM / ROM Lower Memory Boundary Register. |
+| **`PV15`** | **32-bit** | `$pv15`, `$ram_limit`, `$ram_end`, `$rom_limit`, `$vec31` | RAM / ROM Upper Memory Boundary Register. |
+| **`ACCA` / `ACCB`** | 16-bit | *Internal registers* | Auxiliary ALU Latches (Dual Accumulator Staging). Pre-stages ALU operands A and B. |
 
 ### Flag and Control Register (`FREG`) Bit Layout
 
 ```text
  15    14    13    12   11   10    9    8    7    6    5    4    3    2    1    0
 +-----+-----+-----+----+----+----+----+----+----+----+----+----+----+----+----+----+
-|INTR |SMOD |DBIT |AIP |PRV |DWR |MIE |PIE |CLK1|CLK0|CMP1|CMP0| EM | OF | CF | ZF |
+|INTR |SMOD |DBIT |AIP |PRV |DWR |MIE |SSRC|CLK1|CLK0|CMP1|CMP0| EM | OF | CF | ZF |
 +-----+-----+-----+----+----+----+----+----+----+----+----+----+----+----+----+----+
 ```
 
@@ -82,7 +84,7 @@ Pre-compiled, ready-to-print comprehensive technical reference datasheet is loca
 * **`EM` (3):** Error Math (hardware trap on division by zero).
 * **`CMP` (4–5):** 2-bit Hardware Comparator Result `cmp_flags` (`00`: initial reset / no compare / error; `01`: less; `10`: equal; `11`: greater).
 * **`CLK` (6–7):** Core Clock Divider Mode.
-* **`PIE` (8):** Program Interrupt Enable.
+* **`SSRC` (8):** Shift Source Bit selector (`0`: zero-fill, `1`: use DBIT as incoming bit).
 * **`MIE` (9):** Master Interrupt Enable.
 * **`DWR` (10):** Disable Wait for Ready (forced non-blocking bus transfer).
 * **`PRV` (11):** Privilege Mode (`0`: User Mode, `1`: Supervisor Mode). Enabled by default on reset (`PRV = 1`). Hardware-protected by 8 privilege zones in User Mode.
@@ -578,265 +580,80 @@ The LIM M2 protection architecture implements a secure boot and hardware Call Ga
 
 ---
 
-### 4.3. Bit Structure of MSP (Opcode 26 / `0b11010`)
+### 4.3. Bit Structure of Quantized MSP Instruction (Opcode 26 / `0b11010`)
 
-The `MSP` (Manipulate Special Register) instruction has a modular encoding from 2 to 6 bytes:
+The `MSP` (Manipulate Special Register) instruction implements a unified, strictly quantized 16-bit access interface to all internal architectural and privileged processor registers. All system resources are addressed as 16-bit cells with `REG_ID` numbers from 0 to 255.
 
 ```text
-Octet 0 (Base Opcode & Register Selector):
+Byte 0 (Opcode 11010 and Operation):
  7   6   5   4   3   2   1   0
 +---+---+---+---+---+---+---+---+
-| 1   1   0   1   0 |MOD|  REG  |
+| 1   1   0   1   0 | Operation |
 +---+---+---+---+---+---+---+---+
- \_____ 5 bits _____/ \1/ \_ 2b _/
+ \_____ 5 bits ____/ \_ 3 bits _/
   Opcode = 26 (0x1A)
-```
-* **`MOD` (Bit 2):**
-  * `0`: **Load (`MSP.ld`)** — direct write into target special register.
-  * `1`: **Modify / Compute** — bitwise logic for `FREG` (`AND`, `OR`, `XOR`, `XNOR`) or offset arithmetic for `PTREG` / `SREG` (`ADD`, `SUB`).
-* **`REG` (Bits [1:0]):**
-  * `00`: **`FREG`** — 16-bit flag and status register.
-  * `01`: **`PTREG`** — 32-bit pointer register (4 GB).
-  * `10`: **`SREG`** — 32-bit stack pointer.
-  * `11`: **`VEC`** — 32 vector registers of 32 bits (`$ir0..$ir15`, `$pv0..$pv15`).
 
----
-
-#### Unified Source Encoding (Source Bits [2:1]):
-Across all instruction variants, bits `[2:1]` are standardized:
-* `00`: **GPR Registers (Direct)** — operand sourced from register `$rs` or pair `$rd:$rs`.
-* `01`: **Immediate Constant** — `imm16` or `imm32` following instruction bytes.
-* `10`: **Indirect via `PTREG` (`[$ptreg]`)** — native memory dereference.
-* `11`: **Memory Pointer** — either register pair pointer `[$rd:$rs]` or direct address `[addr]`.
-
----
-
-#### 4.3.1. Mode 1: Load into Flag Register FREG (MOD = 0, REG = 00)
-Command: `MSP.ld $freg, <source>`
-
-```text
-Octet 0: [ 11010 | 0 | 00 ] = 0xD0 (26, LD, FREG)
-
-Octet 1 with SRC=00 (from GPR $rs, length 2 bytes):
+Byte 1 (Target Cell Index):
  7   6   5   4   3   2   1   0
 +---+---+---+---+---+---+---+---+
-|    Rs     | 0   0   0 | 0   0 |
+|           REG_ID              |
 +---+---+---+---+---+---+---+---+
- \_ 3 bits _/ \_Reserved/ \SRC=00/
-Example: MSP.ld $freg, $0 -> D0 00
-
-Octets 1..3 with SRC=01 (immediate constant imm16, length 4 bytes):
-Octet 1: [ 0   0   0   0   0   0 | 0   1 ] = 0x01 (SRC=01)
-Octet 2: [        imm16 [15:8]         ] (high byte)
-Octet 3: [        imm16 [7:0]          ] (low byte)
-Example: MSP.ld $freg, 0x0000 -> D0 01 00 00
-
-Octet 1 with SRC=10 (from memory via pointer [$ptreg], length 2 bytes):
-Octet 1: [ 0   0   0   0   0   0 | 1   0 ] = 0x02 (SRC=10)
-Example: MSP.ld $freg, [$ptreg] -> D0 02
-
-Octets 1..3 with SRC=11 (from memory at direct address [addr16], length 4 bytes):
-Octet 1: [ 0   0   0   0   0   0 | 1   1 ] = 0x03 (SRC=11)
-Octet 2..3: [ addr16_hi | addr16_lo ]
-Example: MSP.ld $freg, [0x1000] -> D0 03 10 00
+ \_____ 8 bits (0..255) ________/
 ```
+
+#### Operation Codes in Byte 0 (bits [2:0]):
+* `000` (`ld`): **Direct Load** 16-bit immediate into cell (`SYS_REG[id] = imm16`, length: **4 bytes**).
+* `001` (`ldr7`): **Load from R7** into system cell (`SYS_REG[id] = R7`, length: **2 bytes**).
+* `010` (`str7`): **Store cell into R7** (`R7 = SYS_REG[id]`, length: **2 bytes**).
+* `011` (`and`): **Bitwise AND** with immediate mask (`SYS_REG[id] &= imm16`, length: **4 bytes**).
+* `100` (`or`): **Bitwise OR** with immediate mask (`SYS_REG[id] |= imm16`, length: **4 bytes**).
+* `101` (`xor`): **Bitwise XOR** with immediate mask (`SYS_REG[id] ^= imm16`, length: **4 bytes**).
+* `110` (`onb`): **Turn bits ON** via mask (`SYS_REG[id] |= imm16`, length: **4 bytes**).
+* `111` (`offb`): **Turn bits OFF** via mask (`SYS_REG[id] &= ~imm16`, length: **4 bytes**).
 
 ---
 
-#### 4.3.2. Mode 2: FREG Bitwise Logic (MOD = 1, REG = 00)
-Commands: `MSP.and $freg`, `MSP.or $freg`, `MSP.xor $freg`, `MSP.xnor $freg`
-Operation: `OP [7:6]`: `00`=AND, `01`=OR, `10`=XOR, `11`=XNOR.
+### 4.4. Map of Quantized 16-bit System Register Cells (REG_ID 0..255)
 
-```text
-Octet 0: [ 11010 | 1 | 00 ] = 0xD4 (26, MOD, FREG)
+| REG_ID Range | Mnemonic | Bit-width | Functional Description and Hardware Binding |
+| :---: | :--- | :---: | :--- |
+| **0 – 31** | `INT_VEC[0..31]` (`$ir0_lo`..`$ir15_hi`) | 16 pairs (16-bit) | **16 Interrupt Vectors IR0..IR15:** even `2k` = `_lo`, odd `2k+1` = `_hi`. |
+| **32 – 59** | `PVZ_VEC[0..27]` (`$pv0_lo`..`$pv13_hi`) | 14 pairs (16-bit) | **7 Privilege Protection Zones 0..6:** Start / End pairs (`$pv0`..`$pv13`). |
+| **60, 61** | `MEM_VEC_BASE` (`$ram_base_lo`, `_hi`) | 1 pair (16-bit) | **Physical Base Address of RAM:** 60 = low 16 bits, 61 = high 16 bits. |
+| **62, 63** | `MEM_VEC_LIMIT` (`$ram_limit_lo`, `_hi`)| 1 pair (16-bit) | **Physical Limit Address of RAM:** 62 = low 16 bits, 63 = high 16 bits. |
+| **64 – 78** | `SYS_REG_EXT[0..14]` (15 cells) | 15 cells (16-bit) | **Reserved System Registers:** Allocated for future CPU modules and coprocessors. |
+| **79 – 127** | `RESERVED` | 49 cells | Reserved for architectural extensions. |
+| **128** | `FREG` | 1 cell (16-bit) | **Flags and Status Register:** ZF, CF, OF, EM, CMP, MIE, PRV, AIP, SMOD. |
+| **129** | `SP_LO` (`$sp_lo`) | 1 cell (16-bit) | **Stack Pointer (SREG) Low Word:** bits [15:0] of 32-bit hardware stack pointer. |
+| **130** | `SP_HI` (`$sp_hi`) | 1 cell (16-bit) | **Stack Pointer (SREG) High Word:** bits [31:16] of 32-bit hardware stack pointer. |
+| **131** | `PTREG_LO` (`$ptreg_lo`) | 1 cell (16-bit) | **Base Pointer (PTREG) Low Word:** bits [15:0] of 32-bit memory streaming pointer. |
+| **132** | `PTREG_HI` (`$ptreg_hi`) | 1 cell (16-bit) | **Base Pointer (PTREG) High Word:** bits [31:16] of 32-bit memory streaming pointer. |
+| **133 – 255** | `RESERVED` | 123 cells | Reserved. |
 
-Octet 1 with SRC=00 (mask from GPR $rs, length 2 bytes):
- 7   6   5   4   3   2   1   0
-+---+---+---+---+---+---+---+---+
-|  OP   |    Rs     | 0 | 0   0 |
-+---+---+---+---+---+---+---+---+
- \_ 2b _/ \_ 3 bits _/ \1/ \SRC=00/
-Example: MSP.xor $freg, $2 -> D4 90 (OP=10_2, Rs=2, SRC=00)
+> [!NOTE]
+> **Composite 32-bit Vectors:** Configuring any 32-bit vector or pointer requires exactly **two 16-bit instructions**: first the lower part (`_lo`, smaller ID), then the upper part (`_hi`, larger ID). In assembler code, commands like `MSP.ld $sp, 0x00045678` or `MSP.ld $ir0, isr_timer` automatically expand into two sequential 4-byte `MSP.ld` instructions. Branching instructions `CALL`, `RET`, `INT`, `JMP` continue to operate with 32-bit linear addresses without modification.
 
-Octets 1..3 with SRC=01 (immediate mask imm16, length 4 bytes):
-Octet 1: [  OP  | 0   0   0   0 | 0   1 ] (bits [5:2] reserved, SRC=01)
-Octet 2..3: [ mask [15:8] | mask [7:0] ]
-Example: MSP.or $freg, 0x0200 -> D4 41 02 00 (OP=01_2, enables MIE=1)
-
-Octet 1 with SRC=10 (mask from memory via pointer [$ptreg], length 2 bytes):
-Octet 1: [  OP  | 0   0   0   0 | 1   0 ] (SRC=10)
-Example: MSP.and $freg, [$ptreg] -> D4 02
-
-Octets 1..3 with SRC=11 (mask from memory at direct address [addr16], length 4 bytes):
-Octet 1: [  OP  | 0   0   0   0 | 1   1 ] (SRC=11)
-Octet 2..3: [ addr16_hi | addr16_lo ]
-Example: MSP.and $freg, [0x2000] -> D4 03 20 00
-```
-
----
-
-#### 4.3.3. Mode 3: Load Pointer Registers PTREG / SREG (MOD = 0, REG = 01 / 10)
-Commands: `MSP.ld $ptreg, ...` (`REG=01`, octet 0 = `0xD1`), `MSP.ld $sreg, ...` (`REG=10`, octet 0 = `0xD2`).
-
-```text
-Octet 0: [ 11010 | 0 | REG ] (0xD1 for PTREG, 0xD2 for SREG)
-
-Variant 3.1: Load from GPR pair ($rd, $rs or [$rd:$rs]) (length 2 bytes):
- 7   6   5   4   3   2   1   0
-+---+---+---+---+---+---+---+---+
-|    Rd_hi      |    Rs_lo      | 0   0 |
-+---+---+---+---+---+---+---+---+
- \___ 3 bits ___/ \___ 3 bits ___/ \SRC=00/
-Example: MSP.ld $ptreg, [$0:$1] -> D1 04 (PTREG = ($0 << 16) | $1)
-Example: MSP.ld $sreg, [$0:$1]  -> D2 04 (SREG = ($0 << 16) | $1)
-
-Variant 3.2: Direct load of imm32 / imm16 (length 4–6 bytes):
-Octet 1: [ 0   0   0   0   0 | SZ | 0   1 ] (SZ: 0=16b, 1=24/32b; SRC=01)
-Octets 2..5 (when SZ=1): [ imm32 (31:24) | imm32 (23:16) | imm32 (15:8) | imm32 (7:0) ]
-Example: MSP.ld $ptreg, 0x00010000 -> D1 05 00 01 00 00 (6 bytes)
-Example: MSP.ld $ptreg, 0xA000 -> D1 01 A0 00 (4 bytes)
-
-Variant 3.3: NATIVE 1-CYCLE POINTER DEREFERENCING [$ptreg] (length 2 bytes!):
- 7   6   5   4   3   2   1   0
-+---+---+---+---+---+---+---+---+
-| 0   0   0   0   0 | 0 | 1   0 | = 0x02
-+---+---+---+---+---+---+---+---+
- \_____ 5 zero bits _____/ \1/ \SRC=10/
-Function: Hardware CPU cycle PTREG <- MEM[PTREG] in a single 2-byte instruction!
-Example: MSP.ld $ptreg, [$ptreg] -> D1 02 (2 bytes!)
-Example: MSP.ld $sreg, [$ptreg]  -> D2 02 (2 bytes!)
-
-Variant 3.4: Load pointer from memory by reference [addr] (length 4–6 bytes):
-Octet 1: [ 0   0   0   0   0 | SZ | 1   1 ] (SRC=11)
-Octets 2..3 (or 2..5): [ addr_hi | addr_lo ]
-Example: MSP.ld $ptreg, [0xA000] -> D1 03 A0 00 (4 bytes: reads pointer from MEM[0xA000])
-```
-
----
-
-#### 4.3.4. Mode 4: Pointer Arithmetic for PTREG / SREG (MOD = 1, REG = 01 / 10)
-Commands: `MSP.add $ptreg, ...`, `MSP.sub $ptreg, ...` (`0xD5`), `MSP.add/sub $sreg` (`0xD6`).
-Operation: `OP [7]`: `0` = `ADD` (+offset), `1` = `SUB` (-offset).
-
-```text
-Octet 0: [ 11010 | 1 | REG ] (0xD5 for PTREG, 0xD6 for SREG)
-
-Octet 1 with SRC=00 (offset from GPR $rs, length 2 bytes):
- 7   6   5   4   3   2   1   0
-+---+---+---+---+---+---+---+---+
-|OP |    Rs     | 0   0 | 0   0 |
-+---+---+---+---+---+---+---+---+
- \1/ \_ 3 bits _/ \_rsrv / \SRC=00/
-Example: MSP.add $ptreg, $3 -> D5 30 (OP=0, Rs=3, SRC=00)
-Example: MSP.sub $sreg, $4  -> D6 C0 (OP=1, Rs=4, SRC=00)
-
-Octets 1..3 with SRC=01 (immediate offset imm16, length 4 bytes):
-Octet 1: [ OP | 0   0   0   0   0 | 0   1 ] (SRC=01)
-Octets 2..3: [ offset [15:8] | offset [7:0] ]
-Example: MSP.add $ptreg, 0x0010 -> D5 01 00 10 (4 bytes)
-Example: MSP.sub $sreg, 0x0004  -> D6 81 00 04 (4 bytes)
-
-Octet 1 with SRC=10 (offset from memory via pointer [$ptreg], length 2 bytes):
-Octet 1: [ OP | 0   0   0   0   0 | 1   0 ] (SRC=10)
-Example: MSP.add $ptreg, [$ptreg] -> D5 02
-
-Octets 1..3 with SRC=11 (offset from memory at address [addr16], length 4 bytes):
-Octet 1: [ OP | 0   0   0   0   0 | 1   1 ] (SRC=11)
-Octets 2..3: [ addr16_hi | addr16_lo ]
-Example: MSP.add $ptreg, [0x3000] -> D5 03 30 00
-```
-
----
-
-#### 4.3.5. Mode 5: Load 32-bit Vector Registers (MOD = 0, REG = 11)
-Commands: `MSP.ld $ir0..$ir15, ...` (interrupt vectors, IDs: 0..15), `MSP.ld $pv0..$pv15, ...` (Privilege Zone bounds, IDs: 16..31).
-*Note:* Modification (`MOD=1`) for vector registers is hardware-blocked.
-
-```text
-Octet 0: [ 11010 | 0 | 11 ] = 0xD3 (26, LD, VEC)
-
-Variant 5.1: From compound register pair [$rd:$rs] (length 3 bytes):
-Octet 1: [      Vector_ID [7:3]      | 0   0 | 0 ] (SRC=00, SUB=0)
-Octet 2: [    Rd_hi [7:5]    |    Rs_lo [4:2]    | 0   0 ]
-Example: MSP.ld $ir0, [$0:$1] -> D3 00 04 (3 bytes: ID=0, Rd=0, Rs=1)
-Example: MSP.ld $pv0, [$2:$3] -> D3 80 4C (3 bytes: ID=16, Rd=2, Rs=3)
-
-Variant 5.2: Direct 32-bit address vector imm32 (length 6 bytes):
-Octet 1: [      Vector_ID [7:3]      | 0   1 | 0 ] (SRC=01, SUB=0)
-Octet 2: [          imm32 [31:24]            ]
-Octet 3: [          imm32 [23:16]            ]
-Octet 4: [          imm32 [15:8]             ]
-Octet 5: [          imm32 [7:0]              ]
-Example: MSP.ld $ir0, 0x00010000 -> D3 02 00 01 00 00 (6 bytes)
-Example: MSP.ld $pv0, 0x00008000 -> D3 82 00 00 80 00 (6 bytes)
-
-Variant 5.3: Read vector from memory via pointer [$ptreg] (length 2 bytes!):
-Octet 1: [      Vector_ID [7:3]      | 1   0 | 0 ] (SRC=10, SUB=0)
-Example: MSP.ld $ir1, [$ptreg] -> D3 0C (2 bytes: reads MEM32[PTREG])
-Example: MSP.ld $pv1, [$ptreg] -> D3 8C (2 bytes)
-
-Variant 5.4: Read vector from memory via GPR pair pointer [$rd:$rs] (length 3 bytes):
-Octet 1: [      Vector_ID [7:3]      | 1   1 | 0 ] (SRC=11, SUB=0)
-Octet 2: [    Rd_hi [7:5]    |    Rs_lo [4:2]    | 0   0 ]
-Example: MSP.ld $ir2, [$0:$1] -> D3 16 04 (3 bytes: reads MEM32[(R0<<16)|R1])
-
-Variant 5.5: Read vector from memory at direct 32-bit address [addr32] (length 6 bytes):
-Octet 1: [      Vector_ID [7:3]      | 1   1 | 1 ] (SRC=11, SUB=1)
-Octets 2..5: [ addr32 (31:24) | addr32 (23:16) | addr32 (15:8) | addr32 (7:0) ]
-Example: MSP.ld $ir0, [0x00005000] -> D3 07 00 00 50 00 (6 bytes)
-```
-
----
-
-### 4.4. 25 Concrete MSP Examples with Bit-Level Breakdown
-
-| # | Assembly Instruction | Octet 0 (bits / hex) | Octet 1 (bits / hex) | Octet 2..5 (hex) | Result (Hex Bytes) | Operational Description |
-|---|---|---|---|---|---|---|
-| **1** | `MSP.ld $ir0, 0x00010000` | `11010 0 11` (`0xD3`) | `00000 01 0` (`0x02`) | `00 01 00 00` | `D3 02 00 01 00 00` | Configure IRQ0 interrupt vector to address 0x00010000 |
-| **2** | `MSP.ld $ir1, 0x00025000` | `11010 0 11` (`0xD3`) | `00001 01 0` (`0x0A`) | `00 02 50 00` | `D3 0A 00 02 50 00` | Configure IRQ1 interrupt vector to address 0x00025000 |
-| **3** | `MSP.ld $pv0, 0x00008000` | `11010 0 11` (`0xD3`) | `10000 01 0` (`0x82`) | `00 00 80 00` | `D3 82 00 00 80 00` | Lower boundary of Privilege Zone 0 ($pv0 = 0x8000) |
-| **4** | `MSP.ld $pv1, 0x00008FFF` | `11010 0 11` (`0xD3`) | `10001 01 0` (`0x8A`) | `00 00 8F FF` | `D3 8A 00 00 8F FF` | Upper boundary of Privilege Zone 0 ($pv1 = 0x8FFF) |
-| **5** | `MSP.ld $ir2, [$0:$1]` | `11010 0 11` (`0xD3`) | `00010 00 0` (`0x10`) | `000 001 00` (`0x04`) | `D3 10 04` | Load IRQ2 vector from GPR pair ($0 = high, $1 = low) |
-| **6** | `MSP.ld $pv2, [$2:$3]` | `11010 0 11` (`0xD3`) | `10010 00 0` (`0x90`) | `010 011 00` (`0x4C`) | `D3 90 4C` | Load Zone 1 start ($pv2) from GPR pair $2 and $3 |
-| **7** | `MSP.ld $ir3, [$ptreg]` | `11010 0 11` (`0xD3`) | `00011 10 0` (`0x1C`) | — | `D3 1C` | Indirect load of IRQ3 vector from memory via PTREG (2 bytes) |
-| **8** | `MSP.ld $pv3, [$ptreg]` | `11010 0 11` (`0xD3`) | `10011 10 0` (`0x9C`) | — | `D3 9C` | Indirect load of Zone 1 limit ($pv3) via PTREG (2 bytes) |
-| **9** | `MSP.ld $ir4, [$4:$5]` | `11010 0 11` (`0xD3`) | `00100 11 0` (`0x26`) | `100 101 00` (`0x94`) | `D3 26 94` | Load IRQ4 vector via 32-bit pointer in registers [$4:$5] |
-| **10** | `MSP.ld $pv4, [0x0000A000]` | `11010 0 11` (`0xD3`) | `10100 11 1` (`0xA7`) | `00 00 A0 00` | `D3 A7 00 00 A0 00` | Load $pv4 from memory at direct 32-bit address [0xA000] |
-| **11** | `MSP.ld $freg, 0x0000` | `11010 0 00` (`0xD0`) | `000 00 01 0` (`0x02`) | `00 00` | `D0 02 00 00` | Clear status flags register (FREG = 0) |
-| **12** | `MSP.or $freg, 0x0200` | `11010 1 00` (`0xD4`) | `01 000 01 0` (`0x42`) | `02 00` | `D4 42 02 00` | Enable interrupts (FREG \|= 0x0200, MIE bit) |
-| **13** | `MSP.and $freg, 0x0001` | `11010 1 00` (`0xD4`) | `00 000 01 0` (`0x02`) | `00 01` | `D4 02 00 01` | Mask AND: preserve only Zero Flag (ZF) |
-| **14** | `MSP.xor $freg, $1` | `11010 1 00` (`0xD4`) | `10 001 00 0` (`0x88`) | — | `D4 88` | Toggle FREG bits using mask in register $1 |
-| **15** | `MSP.xnor $freg, 0x00FF` | `11010 1 00` (`0xD4`) | `11 000 01 0` (`0xC2`) | `00 FF` | `D4 C2 00 FF` | Bitwise XNOR of FREG with immediate mask |
-| **16** | `MSP.ld $freg, $2` | `11010 0 00` (`0xD0`) | `010 00 00 0` (`0x40`) | — | `D0 40` | Direct restoration of FREG from register $2 |
-| **17** | `MSP.ld $freg, [$ptreg]` | `11010 0 00` (`0xD0`) | `000 00 10 0` (`0x04`) | — | `D0 04` | Load saved flags word from stack buffer via PTREG |
-| **18** | `MSP.ld $ptreg, 0x00100000` | `11010 0 01` (`0xD1`) | `000 000 01` (`0x01`) | `00 10 00 00` | `D1 01 00 10 00 00` | Direct load of 32-bit address into PTREG (1 Megabyte) |
-| **19** | `MSP.ld $ptreg, [$0:$1]` | `11010 0 01` (`0xD1`) | `000 001 00` (`0x04`) | — | `D1 04` | Assemble 32-bit PTREG from compound pointer [$0:$1] ($0 = high, $1 = low) |
-| **20** | `MSP.ld $ptreg, [$ptreg]` | `11010 0 01` (`0xD1`) | `000 000 10` (`0x02`) | — | `D1 02` | **Single-cycle native pointer dereference** (PTREG <- MEM[PTREG]) |
-| **21** | `MSP.ld $ptreg, [0x5000]` | `11010 0 01` (`0xD1`) | `000 000 11` (`0x03`) | `50 00` | `D1 03 50 00` | Load pointer from fixed address table in memory |
-| **22** | `MSP.add $ptreg, 0x0020` | `11010 1 01` (`0xD5`) | `0 000 01 00` (`0x04`) | `00 20` | `D5 04 00 20` | Hardware advance of PTREG by +32 bytes |
-| **23** | `MSP.sub $ptreg, $3` | `11010 1 01` (`0xD5`) | `1 011 00 00` (`0xB0`) | — | `D5 B0` | Decrement PTREG by dynamic offset in register $3 |
-| **24** | `MSP.ld $sreg, 0x00003F00` | `11010 0 10` (`0xD2`) | `000 000 01` (`0x01`) | `00 00 3F 00` | `D2 01 00 00 3F 00` | Initialize 32-bit stack pointer SREG = 0x00003F00 |
-| **25** | `MSP.add $sreg, 0x0010` | `11010 1 10` (`0xD6`) | `0 000 01 00` (`0x04`) | `00 10` | `D6 04 00 10` | Deallocate stack frame (+16 bytes to SREG) |
-
-### 5. Native Multi-Level Pointer Dereferencing via `PTREG`
-In LIM M2, native multi-level pointer dereferencing (`**ptr`, `***ptr`) is performed through `PTREG` using `MSP.ld $ptreg, [$ptreg]`, which executes `PTREG = MEM16[PTREG]` in a single instruction. Executing `MSP.ld $ptreg, [$ptreg]` $N$ times (sequentially or in a loop) performs $N$ pointer dereferences:
+#### MSP Assembly Examples:
 ```asm
-; Load root pointer address 0xA000 into PTREG:
-MSP.ld $ptreg, 0xA000
-MSP.ld $ptreg, [$ptreg]     ; 1st dereference: PTREG = *0xA000
-MSP.ld $ptreg, [$ptreg]     ; 2nd dereference: PTREG = **0xA000
-MSP.ld $ptreg, [$ptreg]     ; 3rd dereference: PTREG = ***0xA000
-; Read the final target word into $0:
-LMR.w  $0, [$ptreg]
-```
+; 1. Flags Register FREG (cell 128)
+MSP.ld   $freg, 0x1800       ; FREG = 0x1800 (PRV=1, AIP=1)
+MSP.onb  $freg, 0x0200       ; Enable MIE (bit 9)
+MSP.offb $freg, 0x0200       ; Disable MIE (bit 9)
 
-### 6. Compiling to `.bin` and `.hex`
-```bash
-# Compile demo.asm into both demo.bin and demo.hex:
-python3 compiler/compiler.py compiler/demo.asm -l
+; 2. Fast Exchange with R7 (2 bytes):
+MSP.str7 $freg               ; R7 = FREG (save flags into R7)
+PUSH     $7                  ; Push flags onto stack
+MSP.ldr7 $freg               ; Restore FREG from R7
 
-# Or run an .asm source file directly in the interactive simulator:
-python3 sim/sim.py compiler/demo.asm -i
+; 3. Direct 16-bit cell load by numbers (4 bytes):
+MSP.ld   0, 0xA000           ; Low 16 bits of IRQ0
+MSP.ld   1, 0x0001           ; High 16 bits of IRQ0
+MSP.ld   64, 0xABCD          ; Cell 64 from 15 reserved cells
+
+; 4. Composite 32-bit registers (macro-expanded into 2 4-byte instructions):
+MSP.ld   $sp, 0x00007F00     ; Setup stack pointer ($sp_lo=129, $sp_hi=130)
+MSP.ld   $ptreg, 0x00010000  ; Setup memory streaming pointer ($ptreg_lo=131, $ptreg_hi=132)
+MSP.ld   $ir0, isr_timer     ; Setup interrupt vector by label
 ```
 
 ---
@@ -862,6 +679,12 @@ LIM2/
 │   ├── demo.asm             # Reference assembly source program
 │   ├── demo.bin             # Compiled raw binary firmware
 │   └── demo.hex             # Compiled annotated hex image
+├── examples/                # Practical Reference Assembly Projects
+│   ├── README.md            # Examples catalog & guide
+│   ├── 01_bootloader/       # Stage-1 memory bootloader & payload relocation
+│   ├── 02_text_terminal_io/ # TextScreen string streaming & hex formatter
+│   ├── 03_hardware_timer_irq/ # Hardware timer IRQ0 interrupts & ISR routine
+│   └── 04_alu_chaining_and_math/ # 3-operand ALU, bitwise logic & comparator
 └── sim/                     # Python architectural simulator
     ├── sim.py               # Main CLI launcher
     ├── exampcpu.py          # LIM M2 CPU core model

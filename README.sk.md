@@ -57,21 +57,24 @@
 ## 🗃️ Architektonický registrový súbor
 
 | Register | Šírka | Architektonický účel |
-| :--- | :---: | :--- |
-| **`R0` – `R7`** | 16 bitov | Registre všeobecného určenia (GPR). Rýchle čítanie cez `MUX 1`, riadený zápis cez `WB_DATA`. |
-| **`SREG`** | **32 bitov** | Systémový zásobníkový register. Lineárne 32-bitové adresovanie zásobníka až do 4 GB. |
-| **`PTREG`** | **32 bitov** | Rozšírený ukazovateľový register. Lineárne adresovanie pamäte až do 4 GB s autoincrementom (`AIP`). |
-| **`FREG`** | 16 bitov | Stavový a riadiaci register procesora (bit 11: `PRV` — režim User/Supervisor). |
-| **`ACCA` / `ACCB`** | 16 bitov | Pomocné akumulátory ALU. Predradené vstupy pre operandy A a B. |
-| **`$ir0`..`$ir15`** | **32 bitov** | 16 vektorových registrov adries obsluhy prerušení. |
-| **`$pv0`..`$pv15`** | **32 bitov** | 16 vektorových registrov hraníc 8 Zón Privilégií (`[$pv0:$pv1]`..`[$pv14:$pv15]`). |
+| Register | Šírka | Podporované aliasy | Úloha v architektúre LIM M2 |
+| :--- | :---: | :--- | :--- |
+| **`R0` – `R7`** | 16 bitov | `$0`..`$7`, `R0`..`R7`, `$r0`..`$r7`, `0`..`7` | Registre všeobecného určenia (GPR). Rýchle čítanie cez `MUX 1`, riadený zápis cez `WB_DATA`. |
+| **`SREG`** | **32 bitov** | `$sp`, `sp`, `$sreg`, `sreg` | Systémový zásobníkový register. Lineárne 32-bitové adresovanie zásobníka až do 4 GB. |
+| **`PTREG`** | **32 bitov** | `$ptreg`, `ptreg` | Rozšírený ukazovateľový register. Lineárne adresovanie pamäte až do 4 GB s autoincrementom (`AIP`). |
+| **`FREG`** | 16 bitov | `$freg`, `freg` | Stavový a riadiaci register procesora (bit 11: `PRV` — režim User/Supervisor). |
+| **`ACCA` / `ACCB`** | 16 bitov | *Interné registre* | Pomocné akumulátory ALU. Predradené vstupy pre operandy A a B. |
+| **`$ir0`..`$ir15`** | **32 bitov** | `$ir0`..`$ir15`, `ir0`..`ir15`, `$vec0`..`$vec15` | 16 vektorových registrov adries obsluhy prerušení IVT. |
+| **`$pv0`..`$pv13`** | **32 bitov** | `$pv0`..`$pv13`, `pv0`..`pv13`, `$vec16`..`$vec29` | 14 vektorových registrov hraníc 7 párov Zón Privilégií (`[$pv0:$pv1]`..`[$pv12:$pv13]`). |
+| **`$pv14`** | **32 bitov** | `$pv14`, `$ram_base`, `$ram_start`, `$rom_base`, `$vec30` | Dolná hranica adresného rozsahu pamäte RAM / ROM. |
+| **`$pv15`** | **32 bitov** | `$pv15`, `$ram_limit`, `$ram_end`, `$rom_limit`, `$vec31` | Horná hranica adresného rozsahu pamäte RAM / ROM. |
 
 ### Bitová mapa príznakového registra (`FREG`)
 
 ```text
  15    14    13    12   11   10    9    8    7    6    5    4    3    2    1    0
 +-----+-----+-----+----+----+----+----+----+----+----+----+----+----+----+----+----+
-|INTR |SMOD |DBIT |AIP |PRV |DWR |MIE |PIE |CLK1|CLK0|CMP1|CMP0| EM | OF | CF | ZF |
+|INTR |SMOD |DBIT |AIP |PRV |DWR |MIE |SSRC|CLK1|CLK0|CMP1|CMP0| EM | OF | CF | ZF |
 +-----+-----+-----+----+----+----+----+----+----+----+----+----+----+----+----+----+
 ```
 
@@ -81,7 +84,7 @@
 * **`EM` (3):** Hardvérová chyba matematických operácií (Error Math: delenie nulou).
 * **`CMP` (4–5):** Výsledok hardvérového komparátora `cmp_flags` (`00`: počiatočný reset / neporovnané / chyba; `01`: operand-1 < operand-2; `10`: operand-1 == operand-2; `11`: operand-1 > operand-2).
 * **`CLK` (6–7):** Režim deličky hodinovej frekvencie.
-* **`PIE` (8):** Povolenie programových prerušení.
+* **`SSRC` (8):** Zdroj bitu pri posune (0: nuly, 1: vyrovnávacia pamäť `DBIT`).
 * **`MIE` (9):** Povolenie maskovateľných prerušení.
 * **`DWR` (10):** Vynútený prenos bez čakania na zbernicu.
 * **`PRV` (11):** Režim privilégií procesora (`0`: User Mode — bežný režim; `1`: Supervisor Mode — režim správcu/jadra). Zapnutý predvolene pri resete jadra (`PRV = 1`).
@@ -570,266 +573,80 @@ Hardvérová architektúra ochrany LIM M2 je postavená na modeli bezpečného �
 
 ---
 
-### 4.3. Bitová štruktúra inštrukcie MSP (Opcode 26 / `0b11010`)
+### 4.3. Bit Structure of Quantized MSP Instruction (Opcode 26 / `0b11010`)
 
-Inštrukcia `MSP` (Manipulate Special Register) má modulárny formát od 2 do 6 bajtov:
+The `MSP` (Manipulate Special Register) instruction implements a unified, strictly quantized 16-bit access interface to all internal architectural and privileged processor registers. All system resources are addressed as 16-bit cells with `REG_ID` numbers from 0 to 255.
 
 ```text
-Oktet 0 (Základný opkód a selektor registra):
+Byte 0 (Opcode 11010 and Operation):
  7   6   5   4   3   2   1   0
 +---+---+---+---+---+---+---+---+
-| 1   1   0   1   0 |MOD|  REG  |
+| 1   1   0   1   0 | Operation |
 +---+---+---+---+---+---+---+---+
- \_____ 5 bitov ___/ \1/ \_ 2b _/
+ \_____ 5 bits ____/ \_ 3 bits _/
   Opcode = 26 (0x1A)
-```
-* **`MOD` (bit 2):**
-  * `0`: **Načítanie (`MSP.ld`)** — priamy zápis hodnoty do cieľového registra.
-  * `1`: **Modifikácia / Výpočet** — bitová logika pre `FREG` (`AND`, `OR`, `XOR`, `XNOR`) alebo offsetová aritmetika pre `PTREG` / `SREG` (`ADD`, `SUB`).
-* **`REG` (bity [1:0]):**
-  * `00`: **`FREG`** — 16-bitový register príznakov a stavu.
-  * `01`: **`PTREG`** — 32-bitový ukazovateľ adresy (4 GB).
-  * `10`: **`SREG`** — 32-bitový ukazovateľ vrcholu zásobníka.
-  * `11`: **`VEC`** — 32 vektorových registrov po 32 bitov (`$ir0..$ir15`, `$pv0..$pv15`).
 
----
-
-#### Unifikované kódovanie zdrojov (Source Bits [2:1]):
-* `00`: **Registre GPR (priamo)** — operand z registra `$rs` alebo páru `$rd:$rs`.
-* `01`: **Priame číslo** — konštanta `imm16` alebo `imm32` za inštrukciou.
-* `10`: **Nepriamo cez `PTREG` (`[$ptreg]`)** — natívna dereferencia adresy v pamäti.
-* `11`: **Ukazovateľ na dáta (Pamäť)** — pár registrov `[$rd:$rs]` alebo priama adresa `[addr]`.
-
----
-
-#### 4.3.1. Režim 1: Načítanie do príznakového registra FREG (MOD = 0, REG = 00)
-Príkaz: `MSP.ld $freg, <zdroj>`
-
-```text
-Oktet 0: [ 11010 | 0 | 00 ] = 0xD0 (26, LD, FREG)
-
-Oktet 1 pri SRC=00 (z registra GPR $rs, dĺžka 2 bajty):
+Byte 1 (Target Cell Index):
  7   6   5   4   3   2   1   0
 +---+---+---+---+---+---+---+---+
-|    Rs     | 0   0   0 | 0   0 |
+|           REG_ID              |
 +---+---+---+---+---+---+---+---+
- \_ 3 bity _/ \_ Rezerva / \SRC=00/
-Príklad: MSP.ld $freg, $0 -> D0 00
-
-Oktet 1..3 pri SRC=01 (priama konštanta imm16, dĺžka 4 bajty):
-Oktet 1: [ 0   0   0   0   0   0 | 0   1 ] = 0x01 (SRC=01)
-Oktet 2: [        imm16 [15:8]         ] (vyšší bajt konštanty)
-Oktet 3: [        imm16 [7:0]          ] (nižší bajt konštanty)
-Príklad: MSP.ld $freg, 0x0000 -> D0 01 00 00
-
-Oktet 1 pri SRC=10 (z pamäte cez ukazovateľ [$ptreg], dĺžka 2 bajty):
-Oktet 1: [ 0   0   0   0   0   0 | 1   0 ] = 0x02 (SRC=10)
-Príklad: MSP.ld $freg, [$ptreg] -> D0 02
-
-Oktet 1..3 pri SRC=11 (z pamäte na priamej adrese [addr16], dĺžka 4 bajty):
-Oktet 1: [ 0   0   0   0   0   0 | 1   1 ] = 0x03 (SRC=11)
-Oktet 2..3: [ addr16_hi | addr16_lo ]
-Príklad: MSP.ld $freg, [0x1000] -> D0 03 10 00
+ \_____ 8 bits (0..255) ________/
 ```
+
+#### Operation Codes in Byte 0 (bits [2:0]):
+* `000` (`ld`): **Direct Load** 16-bit immediate into cell (`SYS_REG[id] = imm16`, length: **4 bytes**).
+* `001` (`ldr7`): **Load from R7** into system cell (`SYS_REG[id] = R7`, length: **2 bytes**).
+* `010` (`str7`): **Store cell into R7** (`R7 = SYS_REG[id]`, length: **2 bytes**).
+* `011` (`and`): **Bitwise AND** with immediate mask (`SYS_REG[id] &= imm16`, length: **4 bytes**).
+* `100` (`or`): **Bitwise OR** with immediate mask (`SYS_REG[id] |= imm16`, length: **4 bytes**).
+* `101` (`xor`): **Bitwise XOR** with immediate mask (`SYS_REG[id] ^= imm16`, length: **4 bytes**).
+* `110` (`onb`): **Turn bits ON** via mask (`SYS_REG[id] |= imm16`, length: **4 bytes**).
+* `111` (`offb`): **Turn bits OFF** via mask (`SYS_REG[id] &= ~imm16`, length: **4 bytes**).
 
 ---
 
-#### 4.3.2. Režim 2: Bitová logická modifikácia FREG (MOD = 1, REG = 00)
-Príkazy: `MSP.and $freg`, `MSP.or $freg`, `MSP.xor $freg`, `MSP.xnor $freg`
-Operácia: `OP [7:6]`: `00`=AND, `01`=OR, `10`=XOR, `11`=XNOR.
+### 4.4. Map of Quantized 16-bit System Register Cells (REG_ID 0..255)
 
-```text
-Oktet 0: [ 11010 | 1 | 00 ] = 0xD4 (26, MOD, FREG)
+| REG_ID Range | Mnemonic | Bit-width | Functional Description and Hardware Binding |
+| :---: | :--- | :---: | :--- |
+| **0 – 31** | `INT_VEC[0..31]` (`$ir0_lo`..`$ir15_hi`) | 16 pairs (16-bit) | **16 Interrupt Vectors IR0..IR15:** even `2k` = `_lo`, odd `2k+1` = `_hi`. |
+| **32 – 59** | `PVZ_VEC[0..27]` (`$pv0_lo`..`$pv13_hi`) | 14 pairs (16-bit) | **7 Privilege Protection Zones 0..6:** Start / End pairs (`$pv0`..`$pv13`). |
+| **60, 61** | `MEM_VEC_BASE` (`$ram_base_lo`, `_hi`) | 1 pair (16-bit) | **Physical Base Address of RAM:** 60 = low 16 bits, 61 = high 16 bits. |
+| **62, 63** | `MEM_VEC_LIMIT` (`$ram_limit_lo`, `_hi`)| 1 pair (16-bit) | **Physical Limit Address of RAM:** 62 = low 16 bits, 63 = high 16 bits. |
+| **64 – 78** | `SYS_REG_EXT[0..14]` (15 cells) | 15 cells (16-bit) | **Reserved System Registers:** Allocated for future CPU modules and coprocessors. |
+| **79 – 127** | `RESERVED` | 49 cells | Reserved for architectural extensions. |
+| **128** | `FREG` | 1 cell (16-bit) | **Flags and Status Register:** ZF, CF, OF, EM, CMP, MIE, PRV, AIP, SMOD. |
+| **129** | `SP_LO` (`$sp_lo`) | 1 cell (16-bit) | **Stack Pointer (SREG) Low Word:** bits [15:0] of 32-bit hardware stack pointer. |
+| **130** | `SP_HI` (`$sp_hi`) | 1 cell (16-bit) | **Stack Pointer (SREG) High Word:** bits [31:16] of 32-bit hardware stack pointer. |
+| **131** | `PTREG_LO` (`$ptreg_lo`) | 1 cell (16-bit) | **Base Pointer (PTREG) Low Word:** bits [15:0] of 32-bit memory streaming pointer. |
+| **132** | `PTREG_HI` (`$ptreg_hi`) | 1 cell (16-bit) | **Base Pointer (PTREG) High Word:** bits [31:16] of 32-bit memory streaming pointer. |
+| **133 – 255** | `RESERVED` | 123 cells | Reserved. |
 
-Oktet 1 pri SRC=00 (maska z registra GPR $rs, dĺžka 2 bajty):
- 7   6   5   4   3   2   1   0
-+---+---+---+---+---+---+---+---+
-|  OP   |    Rs     | 0 | 0   0 |
-+---+---+---+---+---+---+---+---+
- \_ 2b _/ \_ 3 bity _/ \1/ \SRC=00/
-Príklad: MSP.xor $freg, $2 -> D4 90 (OP=10_2, Rs=2, SRC=00)
+> [!NOTE]
+> **Composite 32-bit Vectors:** Configuring any 32-bit vector or pointer requires exactly **two 16-bit instructions**: first the lower part (`_lo`, smaller ID), then the upper part (`_hi`, larger ID). In assembler code, commands like `MSP.ld $sp, 0x00045678` or `MSP.ld $ir0, isr_timer` automatically expand into two sequential 4-byte `MSP.ld` instructions. Branching instructions `CALL`, `RET`, `INT`, `JMP` continue to operate with 32-bit linear addresses without modification.
 
-Oktet 1..3 pri SRC=01 (priama maska imm16, dĺžka 4 bajty):
-Oktet 1: [  OP  | 0   0   0   0 | 0   1 ] (bity [5:2] rezerva, SRC=01)
-Oktet 2..3: [ mask [15:8] | mask [7:0] ]
-Príklad: MSP.or $freg, 0x0200 -> D4 41 02 00 (OP=01_2, maska MIE=1)
-
-Oktet 1 pri SRC=10 (maska z pamäte cez ukazovateľ [$ptreg], dĺžka 2 bajty):
-Oktet 1: [  OP  | 0   0   0   0 | 1   0 ] (SRC=10)
-Príklad: MSP.and $freg, [$ptreg] -> D4 02
-
-Oktet 1..3 pri SRC=11 (maska z pamäte z adresy [addr16], dĺžka 4 bajty):
-Oktet 1: [  OP  | 0   0   0   0 | 1   1 ] (SRC=11)
-Oktet 2..3: [ addr16_hi | addr16_lo ]
-Príklad: MSP.and $freg, [0x2000] -> D4 03 20 00
-```
-
----
-
-#### 4.3.3. Režim 3: Načítanie ukazovateľov PTREG / SREG (MOD = 0, REG = 01 / 10)
-Príkazy: `MSP.ld $ptreg, ...` (`REG=01`, oktet 0 = `0xD1`), `MSP.ld $sreg, ...` (`REG=10`, oktet 0 = `0xD2`).
-
-```text
-Oktet 0: [ 11010 | 0 | REG ] (0xD1 pre PTREG, 0xD2 pre SREG)
-
-Variant 3.1: Načítanie z páru registrov GPR ($rd, $rs alebo [$rd:$rs]) (dĺžka 2 bajty):
- 7   6   5   4   3   2   1   0
-+---+---+---+---+---+---+---+---+
-|    Rd_hi      |    Rs_lo      | 0   0 |
-+---+---+---+---+---+---+---+---+
- \___ 3 bity ___/ \___ 3 bity ___/ \SRC=00/
-   Vyšších 16 b     Nižších 16 b
-Príklad: MSP.ld $ptreg, [$0:$1] -> D1 04 (PTREG = ($0 << 16) | $1)
-Príklad: MSP.ld $sreg, [$0:$1]  -> D2 04 (SREG = ($0 << 16) | $1)
-
-Variant 3.2: Priame načítanie imm32 / imm16 (dĺžka 4–6 bajtov):
-Oktet 1: [ 0   0   0   0   0 | SZ | 0   1 ] (SZ: 0=16b, 1=24/32b; SRC=01)
-Oktet 2..5 (pri SZ=1): [ imm32 (31:24) | imm32 (23:16) | imm32 (15:8) | imm32 (7:0) ]
-Príklad: MSP.ld $ptreg, 0x00010000 -> D1 05 00 01 00 00 (6 bajtov)
-Príklad: MSP.ld $ptreg, 0xA000 -> D1 01 A0 00 (4 bajty)
-
-Variant 3.3: NATÍVNE 1-TAKTOVÉ DEREFERENCOVANIE UKAZOVATEĽA [$ptreg] (dĺžka 2 bajty!):
- 7   6   5   4   3   2   1   0
-+---+---+---+---+---+---+---+---+
-| 0   0   0   0   0 | 0 | 1   0 | = 0x02
-+---+---+---+---+---+---+---+---+
- \_____ 5 bitov núl _____/ \1/ \SRC=10/
-Význam: Hardvérový procesorový cyklus PTREG <- MEM[PTREG] za jeden 2-bajtový príkaz!
-Príklad: MSP.ld $ptreg, [$ptreg] -> D1 02 (2 bajty!)
-Príklad: MSP.ld $sreg, [$ptreg]  -> D2 02 (2 bajty!)
-
-Variant 3.4: Načítanie ukazovateľa z pamäte podľa odkazu [addr] (dĺžka 4–6 bajtov):
-Oktet 1: [ 0   0   0   0   0 | SZ | 1   1 ] (SRC=11)
-Oktet 2..3 (alebo 2..5): [ addr_hi | addr_lo ]
-Príklad: MSP.ld $ptreg, [0xA000] -> D1 03 A0 00 (4 bajty: čítanie ukazovateľa z MEM[0xA000])
-```
-
----
-
-#### 4.3.4. Režim 4: Aritmetika posunu PTREG / SREG (MOD = 1, REG = 01 / 10)
-Príkazy: `MSP.add $ptreg, ...`, `MSP.sub $ptreg, ...` (`0xD5`), `MSP.add/sub $sreg` (`0xD6`).
-Operácia: `OP [7]`: `0` = `ADD` (+posun), `1` = `SUB` (-posun).
-
-```text
-Oktet 0: [ 11010 | 1 | REG ] (0xD5 pre PTREG, 0xD6 pre SREG)
-
-Oktet 1 pri SRC=00 (posun z GPR $rs, dĺžka 2 bajty):
- 7   6   5   4   3   2   1   0
-+---+---+---+---+---+---+---+---+
-|OP |    Rs     | 0   0 | 0   0 |
-+---+---+---+---+---+---+---+---+
- \1/ \_ 3 bity _/ \_rezerva/ \SRC=00/
-Príklad: MSP.add $ptreg, $3 -> D5 30 (OP=0, Rs=3, SRC=00)
-Príklad: MSP.sub $sreg, $4  -> D6 C0 (OP=1, Rs=4, SRC=00)
-
-Oktet 1..3 pri SRC=01 (priamy posun imm16, dĺžka 4 bajty):
-Oktet 1: [ OP | 0   0   0   0   0 | 0   1 ] (SRC=01)
-Oktet 2..3: [ offset [15:8] | offset [7:0] ]
-Príklad: MSP.add $ptreg, 0x0010 -> D5 01 00 10 (4 bajty)
-Príklad: MSP.sub $sreg, 0x0004  -> D6 81 00 04 (4 bajty)
-
-Oktet 1 pri SRC=10 (posun podľa hodnoty z pamäte [$ptreg], dĺžka 2 bajty):
-Oktet 1: [ OP | 0   0   0   0   0 | 1   0 ] (SRC=10)
-Príklad: MSP.add $ptreg, [$ptreg] -> D5 02
-
-Oktet 1..3 pri SRC=11 (posun podľa hodnoty z pamäte [addr16], dĺžka 4 bajty):
-Oktet 1: [ OP | 0   0   0   0   0 | 1   1 ] (SRC=11)
-Oktet 2..3: [ addr16_hi | addr16_lo ]
-Приклад: MSP.add $ptreg, [0x3000] -> D5 03 30 00
-```
-
----
-
-#### 4.3.5. Režim 5: Načítanie 32-bitových vektorových registrov (MOD = 0, REG = 11)
-Príkazy: `MSP.ld $ir0..$ir15, ...` (vektory prerušení, ID: 0..15), `MSP.ld $pv0..$pv15, ...` (hranice Zón Privilégií, ID: 16..31).
-*Poznámka:* Modifikácia (`MOD=1`) pre vektory je hardvérovo zablokovaná.
-
-```text
-Oktet 0: [ 11010 | 0 | 11 ] = 0xD3 (26, LD, VEC)
-
-Variant 5.1: Zo zloženej dvojice registrov [$rd:$rs] (dĺžka 3 bajty):
-Oktet 1: [      Vector_ID [7:3]      | 0   0 | 0 ] (SRC=00, SUB=0)
-Oktet 2: [    Rd_hi [7:5]    |    Rs_lo [4:2]    | 0   0 ]
-Príklad: MSP.ld $ir0, [$0:$1] -> D3 00 04 (3 bajty: ID=0, Rd=0, Rs=1)
-Príklad: MSP.ld $pv0, [$2:$3] -> D3 80 4C (3 bajty: ID=16, Rd=2, Rs=3)
-
-Variant 5.2: Priamy 32-bitový vektor adresy imm32 (dĺžka 6 bajtov):
-Oktet 1: [      Vector_ID [7:3]      | 0   1 | 0 ] (SRC=01, SUB=0)
-Oktet 2: [          imm32 [31:24]            ]
-Oktet 3: [          imm32 [23:16]            ]
-Oktet 4: [          imm32 [15:8]             ]
-Oktet 5: [          imm32 [7:0]              ]
-Príklad: MSP.ld $ir0, 0x00010000 -> D3 02 00 01 00 00 (6 bajtov)
-Príklad: MSP.ld $pv0, 0x00008000 -> D3 82 00 00 80 00 (6 bajtov)
-
-Variant 5.3: Čítanie vektora z pamäte cez ukazovateľ [$ptreg] (dĺžka 2 bajty!):
-Oktet 1: [      Vector_ID [7:3]      | 1   0 | 0 ] (SRC=10, SUB=0)
-Príklad: MSP.ld $ir1, [$ptreg] -> D3 0C (2 bajty: číta MEM32[PTREG])
-Príklad: MSP.ld $pv1, [$ptreg] -> D3 8C (2 bajty)
-
-Variant 5.4: Čítanie vektora z pamäte podľa odkazu na pár GPR [$rd:$rs] (dĺžka 3 bajty):
-Oktet 1: [      Vector_ID [7:3]      | 1   1 | 0 ] (SRC=11, SUB=0)
-Oktet 2: [    Rd_hi [7:5]    |    Rs_lo [4:2]    | 0   0 ]
-Príklad: MSP.ld $ir2, [$0:$1] -> D3 16 04 (3 bajty: číta MEM32[(R0<<16)|R1])
-
-Variant 5.5: Čítanie vektora z pamäte z priamej 32-bitovej adresy [addr32] (dĺžka 6 bajtov):
-Oktet 1: [      Vector_ID [7:3]      | 1   1 | 1 ] (SRC=11, SUB=1)
-Oktet 2..5: [ addr32 (31:24) | addr32 (23:16) | addr32 (15:8) | addr32 (7:0) ]
-Príklad: MSP.ld $ir0, [0x00005000] -> D3 07 00 00 50 00 (6 bajtov)
-```
-
----
-
-### 4.4. 25 Konkrétnych príkladov inštrukcie MSP s bitovým rozpisom
-
-| # | Inštrukcia v assembleri | Oktet 0 (bity / hex) | Oktet 1 (bity / hex) | Oktet 2..5 (hex) | Výsledok (Hex bajty) | Popis operácie |
-|---|---|---|---|---|---|---|
-| **1** | `MSP.ld $ir0, 0x00010000` | `11010 0 11` (`0xD3`) | `00000 01 0` (`0x02`) | `00 01 00 00` | `D3 02 00 01 00 00` | Nastavenie vektora prerušenia IRQ0 na adresu 0x00010000 |
-| **2** | `MSP.ld $ir1, 0x00025000` | `11010 0 11` (`0xD3`) | `00001 01 0` (`0x0A`) | `00 02 50 00` | `D3 0A 00 02 50 00` | Nastavenie vektora prerušenia IRQ1 na adresu 0x00025000 |
-| **3** | `MSP.ld $pv0, 0x00008000` | `11010 0 11` (`0xD3`) | `10000 01 0` (`0x82`) | `00 00 80 00` | `D3 82 00 00 80 00` | Spodná hranica Zóny Privilégií 0 ($pv0 = 0x8000) |
-| **4** | `MSP.ld $pv1, 0x00008FFF` | `11010 0 11` (`0xD3`) | `10001 01 0` (`0x8A`) | `00 00 8F FF` | `D3 8A 00 00 8F FF` | Horná hranica Zóny Privilégií 0 ($pv1 = 0x8FFF) |
-| **5** | `MSP.ld $ir2, [$0:$1]` | `11010 0 11` (`0xD3`) | `00010 00 0` (`0x10`) | `000 001 00` (`0x04`) | `D3 10 04` | Načítanie vektora IRQ2 zo zloženej dvojice [$0:$1] ($0 = vyššie, $1 = nižšie) |
-| **6** | `MSP.ld $pv2, [$2:$3]` | `11010 0 11` (`0xD3`) | `10010 00 0` (`0x90`) | `010 011 00` (`0x4C`) | `D3 90 4C` | Načítanie začiatku Zóny 1 ($pv2) zo zloženej dvojice [$2:$3] |
-| **7** | `MSP.ld $ir3, [$ptreg]` | `11010 0 11` (`0xD3`) | `00011 10 0` (`0x1C`) | — | `D3 1C` | Nepriame načítanie vektora IRQ3 z pamäte cez PTREG (2 bajty) |
-| **8** | `MSP.ld $pv3, [$ptreg]` | `11010 0 11` (`0xD3`) | `10011 10 0` (`0x9C`) | — | `D3 9C` | Nepriame načítanie hranice Zóny 1 ($pv3) cez PTREG (2 bajty) |
-| **9** | `MSP.ld $ir4, [$4:$5]` | `11010 0 11` (`0xD3`) | `00100 11 0` (`0x26`) | `100 101 00` (`0x94`) | `D3 26 94` | Načítanie vektora IRQ4 cez 32-bitový ukazovateľ v registroch [$4:$5] |
-| **10** | `MSP.ld $pv4, [0x0000A000]` | `11010 0 11` (`0xD3`) | `10100 11 1` (`0xA7`) | `00 00 A0 00` | `D3 A7 00 00 A0 00` | Načítanie $pv4 z pamäte podľa priamej 32-bitovej adresy [0xA000] |
-| **11** | `MSP.ld $freg, 0x0000` | `11010 0 00` (`0xD0`) | `000 00 01 0` (`0x02`) | `00 00` | `D0 02 00 00` | Nulovanie registra príznakov (FREG = 0) |
-| **12** | `MSP.or $freg, 0x0200` | `11010 1 00` (`0xD4`) | `01 000 01 0` (`0x42`) | `02 00` | `D4 42 02 00` | Povolenie prerušení (FREG \|= 0x0200, bit MIE) |
-| **13** | `MSP.and $freg, 0x0001` | `11010 1 00` (`0xD4`) | `00 000 01 0` (`0x02`) | `00 01` | `D4 02 00 01` | Maska AND: zachovanie len príznaku nuly (ZF) |
-| **14** | `MSP.xor $freg, $1` | `11010 1 00` (`0xD4`) | `10 001 00 0` (`0x88`) | — | `D4 88` | Inverzia bitov FREG podľa masky v registri $1 |
-| **15** | `MSP.xnor $freg, 0x00FF` | `11010 1 00` (`0xD4`) | `11 000 01 0` (`0xC2`) | `00 FF` | `D4 C2 00 FF` | Bitová operácia XNOR registra FREG s maskou |
-| **16** | `MSP.ld $freg, $2` | `11010 0 00` (`0xD0`) | `010 00 00 0` (`0x40`) | — | `D0 40` | Priame obnovenie príznakov FREG z registra $2 |
-| **17** | `MSP.ld $freg, [$ptreg]` | `11010 0 00` (`0xD0`) | `000 00 10 0` (`0x04`) | — | `D0 04` | Načítanie uloženého slova príznakov zo zásobníkového buffera cez PTREG |
-| **18** | `MSP.ld $ptreg, 0x00100000` | `11010 0 01` (`0xD1`) | `000 000 01` (`0x01`) | `00 10 00 00` | `D1 01 00 10 00 00` | Priame načítanie 32-bitovej adresy do PTREG (1 Megabajt) |
-| **19** | `MSP.ld $ptreg, [$0:$1]` | `11010 0 01` (`0xD1`) | `000 001 00` (`0x04`) | — | `D1 04` | Zloženie 32-bitového PTREG zo zloženej dvojice [$0:$1] ($0 = vyššie, $1 = nižšie) |
-| **20** | `MSP.ld $ptreg, [$ptreg]` | `11010 0 01` (`0xD1`) | `000 000 10` (`0x02`) | — | `D1 02` | **1-taktová natívna dereferencia ukazovateľa** (PTREG <- MEM[PTREG]) |
-| **21** | `MSP.ld $ptreg, [0x5000]` | `11010 0 01` (`0xD1`) | `000 000 11` (`0x03`) | `50 00` | `D1 03 50 00` | Načítanie ukazovateľa z fixnej bunky tabuľky pamäte |
-| **22** | `MSP.add $ptreg, 0x0020` | `11010 1 01` (`0xD5`) | `0 000 01 00` (`0x04`) | `00 20` | `D5 04 00 20` | Hardvérový posun ukazovateľa PTREG dopredu o +32 bajtov |
-| **23** | `MSP.sub $ptreg, $3` | `11010 1 01` (`0xD5`) | `1 011 00 00` (`0xB0`) | — | `D5 B0` | Zníženie ukazovateľa PTREG o dynamický posun z registra $3 |
-| **24** | `MSP.ld $sreg, 0x00003F00` | `11010 0 10` (`0xD2`) | `000 000 01` (`0x01`) | `00 00 3F 00` | `D2 01 00 00 3F 00` | Inicializácia 32-bitového ukazovateľa vrcholu zásobníka SREG |
-| **25** | `MSP.add $sreg, 0x0010` | `11010 1 10` (`0xD6`) | `0 000 01 00` (`0x04`) | `00 10` | `D6 04 00 10` | Uvoľnenie zásobníkového rámca (+16 bajtov k SREG) |
-
-
-### 5. Viacnásobné dereferencovanie ukazovateľov cez `PTREG`
-Natívne viacnásobné dereferencovanie reťazcov ukazovateľov (`**ptr`, `***ptr`) prebieha cez register `PTREG` pomocou inštrukcie `MSP.ld $ptreg, [$ptreg]`, ktorá vykoná `PTREG = MEM16[PTREG]`. Opakovaním `MSP.ld $ptreg, [$ptreg]` (sekvenčne alebo v cykle) sa ukazovateľ dereferencuje $N$-krát:
+#### MSP Assembly Examples:
 ```asm
-; Načítanie koreňovej adresy ukazovateľa 0xA000 do PTREG:
-MSP.ld $ptreg, 0xA000
-MSP.ld $ptreg, [$ptreg]     ; 1. dereferencovanie: PTREG = *0xA000
-MSP.ld $ptreg, [$ptreg]     ; 2. dereferencovanie: PTREG = **0xA000
-MSP.ld $ptreg, [$ptreg]     ; 3. dereferencovanie: PTREG = ***0xA000
-; Načítanie cieľovej hodnoty do $0:
-LMR.w  $0, [$ptreg]
-```
+; 1. Flags Register FREG (cell 128)
+MSP.ld   $freg, 0x1800       ; FREG = 0x1800 (PRV=1, AIP=1)
+MSP.onb  $freg, 0x0200       ; Enable MIE (bit 9)
+MSP.offb $freg, 0x0200       ; Disable MIE (bit 9)
 
-### 6. Kompilácia do `.bin` a `.hex`
-```bash
-# Kompilácia cez pohodlný vstupný bod compiler.py s výpisom (-l):
-python3 compiler/compiler.py compiler/demo.asm -l
+; 2. Fast Exchange with R7 (2 bytes):
+MSP.str7 $freg               ; R7 = FREG (save flags into R7)
+PUSH     $7                  ; Push flags onto stack
+MSP.ldr7 $freg               ; Restore FREG from R7
 
-# Priame spustenie .asm súboru v interaktívnom simulátore:
-python3 sim/sim.py compiler/demo.asm -i
+; 3. Direct 16-bit cell load by numbers (4 bytes):
+MSP.ld   0, 0xA000           ; Low 16 bits of IRQ0
+MSP.ld   1, 0x0001           ; High 16 bits of IRQ0
+MSP.ld   64, 0xABCD          ; Cell 64 from 15 reserved cells
+
+; 4. Composite 32-bit registers (macro-expanded into 2 4-byte instructions):
+MSP.ld   $sp, 0x00007F00     ; Setup stack pointer ($sp_lo=129, $sp_hi=130)
+MSP.ld   $ptreg, 0x00010000  ; Setup memory streaming pointer ($ptreg_lo=131, $ptreg_hi=132)
+MSP.ld   $ir0, isr_timer     ; Setup interrupt vector by label
 ```
 
 ---

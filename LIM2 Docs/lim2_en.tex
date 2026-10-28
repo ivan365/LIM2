@@ -509,27 +509,142 @@ Instruction execution is strictly sequential: the next instruction is not fetche
 % ==============================================================================
 % SECTION 3: REGISTER MODEL
 % ==============================================================================
-\section{Register Model}
+\section{Register Model and System Cell Architecture}
 
-The processor register structure is partitioned into general-purpose registers, address pointers, and an array of system vectors (see Figure~\ref{fig:lim2_arch}).
+The LIM M2 microarchitecture utilizes a strictly quantized, orthogonal register model partitioned into general-purpose registers, arithmetic accumulators, hardware execution pointers, and an indexed 8-bit space of 256 quantized 16-bit system cells (\texttt{REG\_ID} \(0\)--\(255\)).
 
-\subsection{General-Purpose Registers and Pointers}
-\begin{itemize}
-    \item \textbf{R0 -- R7 (16-bit):} General-purpose registers for arithmetic and logic operations.
-    \item \textbf{PC (32-bit):} Program Counter. Points to the current physical instruction address in the 4~GB linear address space.
-    \item \textbf{SP (32-bit):} Stack Pointer. Points to the top of the hardware system stack (grows downwards).
-    \item \textbf{PT (32-bit):} Pointer Register. Base pointer for indirect memory addressing with hardware auto-increment support.
-\end{itemize}
+\subsection{Architectural Register Summary}
 
-\subsection{System Vectors}
-\begin{itemize}
-    \item \textbf{INT\_VEC0 -- INT\_VEC15 (16 vectors, 32-bit each):} Absolute physical addresses of software and hardware interrupt service routines.
-    \item \textbf{PZV\_VEC0 -- PZV\_VEC13 (7 pairs, 32-bit each):} Privilege Zone Vector pairs:
-    \begin{itemize}
-        \item Even index (\(2n\)): Zone Entry address;
-        \item Odd index (\(2n+1\)): Zone End address.
-    \end{itemize}
-    \item \textbf{MEM\_VEC\_START / MEM\_VEC\_END (2 vectors, 32-bit each):} Physical boundaries of the RAM segment within which unprivileged user-mode execution is permitted.
+\noindent
+\begin{minipage}{\textwidth}
+\centering
+\small
+\begin{tabularx}{\textwidth}{l c c l X}
+\toprule
+\rowcolor{limslate}
+\textcolor{white}{\textbf{Register}} & \textcolor{white}{\textbf{Bits}} & \textcolor{white}{\textbf{Reset}} & \textcolor{white}{\textbf{Type}} & \textcolor{white}{\textbf{Microarchitectural Role}} \\
+\midrule
+\rowcolors{2}{limroweven}{white}
+\textbf{R0 -- R7} & 16 & \texttt{0x0000} & General Purpose & Primary registers for ALU, logic, shift, and memory operands. \\
+\textbf{ACCA} & 16 & \texttt{0x0000} & ALU Latch A & Internal ALU operand A buffer; holds intermediate computation state. \\
+\textbf{ACCB} & 16 & \texttt{0x0000} & ALU Latch B & Internal ALU operand B buffer; feeds second operand to execution units. \\
+\textbf{PC} & 32 & \texttt{0x00000000} & Instruction Ptr & Linear 32-bit physical Program Counter (up to 4~GB address space). \\
+\textbf{SP (SREG)} & 32 & \texttt{0x00000000} & Stack Pointer & Hardware stack pointer for subroutine calls, interrupts, and push/pop. \\
+\textbf{PT (PTREG)} & 32 & \texttt{0x00000000} & Base Pointer & Streaming memory pointer with automatic post-increment (\texttt{AIP}). \\
+\textbf{FREG} & 16 & \texttt{0x1800} & Status \& Control & Condition codes, ALU flags, interrupt enable (\texttt{MIE}), privilege (\texttt{PRV}). \\
+\bottomrule
+\end{tabularx}
+\end{minipage}
+
+\vspace{3mm}
+
+\subsection{Quantized 16-bit System Register Cells (REG\_ID 0--255)}
+
+All privileged and configuration registers are addressed via the \texttt{MSP} instruction as quantized 16-bit cells. A full 8-bit address space (\texttt{REG\_ID} \(0\)--\(255\)) is allocated. Registers wider than 16 bits are structured as consecutive pairs: the lower cell index represents the lower 16 bits (\texttt{\_lo}), while the higher cell index represents the upper 16 bits (\texttt{\_hi}). Both clean identifiers (\texttt{freg}, \texttt{sp}, \texttt{ir0}) and prefixed versions (\texttt{\$freg}, \texttt{\$sp}, \texttt{\$ir0}) are recognized interchangeably by the assembler.
+
+\vspace{1.5mm}
+\noindent\textbf{Table 3.1: Interrupt Vector Table (IVT) Cells (Cells 0--31, IRQ0--IRQ15)}
+\par\vspace{1mm}\noindent
+{\footnotesize
+\renewcommand{\arraystretch}{0.93}
+\begin{tabularx}{\textwidth}{@{} l c c l >{\raggedright\arraybackslash}X @{}}
+\toprule
+\rowcolor{limslate}
+\textcolor{white}{\textbf{Vector}} & \textcolor{white}{\textbf{Dec Cells}} & \textcolor{white}{\textbf{Hex Cells}} & \textcolor{white}{\textbf{Cell Aliases (Lo, Hi)}} & \textcolor{white}{\textbf{Functional Description and Handler Purpose}} \\
+\midrule
+\rowcolors{2}{limroweven}{white}
+\textbf{IRQ 0} (\texttt{ir0}) & 0, 1 & \texttt{0x00, 0x01} & \texttt{ir0\_lo, ir0\_hi} & Core Reset entry and Hardware Timer 0 ISR vector. \\
+\textbf{IRQ 1} (\texttt{ir1}) & 2, 3 & \texttt{0x02, 0x03} & \texttt{ir1\_lo, ir1\_hi} & Arithmetic Error Trap (division by zero / \texttt{EM=1}). \\
+\textbf{IRQ 2} (\texttt{ir2}) & 4, 5 & \texttt{0x04, 0x05} & \texttt{ir2\_lo, ir2\_hi} & System Call Trap (Syscall service entry via \texttt{INT 2}). \\
+\textbf{IRQ 3} (\texttt{ir3}) & 6, 7 & \texttt{0x06, 0x07} & \texttt{ir3\_lo, ir3\_hi} & External Peripheral Interrupt 3 (UART / Terminal console). \\
+\textbf{IRQ 4} (\texttt{ir4}) & 8, 9 & \texttt{0x08, 0x09} & \texttt{ir4\_lo, ir4\_hi} & Hardware Peripheral Interrupt 4 (General I/O controller). \\
+\textbf{IRQ 5} (\texttt{ir5}) & 10, 11 & \texttt{0x0A, 0x0B} & \texttt{ir5\_lo, ir5\_hi} & Hardware Peripheral Interrupt 5 (Storage / Disk controller). \\
+\textbf{IRQ 6} (\texttt{ir6}) & 12, 13 & \texttt{0x0C, 0x0D} & \texttt{ir6\_lo, ir6\_hi} & Hardware Peripheral Interrupt 6 (Network / Expansion bus). \\
+\textbf{IRQ 7} (\texttt{ir7}) & 14, 15 & \texttt{0x0E, 0x0F} & \texttt{ir7\_lo, ir7\_hi} & Hardware Peripheral Interrupt 7 (Real-time clock / periodic tick). \\
+\textbf{IRQ 8--11} & 16--23 & \texttt{0x10--0x17} & \texttt{ir8\_lo}..\texttt{ir11\_hi} & Software and User Interrupt Vectors 8 through 11 (even: \texttt{\_lo}, odd: \texttt{\_hi}). \\
+\textbf{IRQ 12--15} & 24--31 & \texttt{0x18--0x1F} & \texttt{ir12\_lo}..\texttt{ir15\_hi} & Dedicated Core Hardware Timers 1--4 (12: T1, 13: T2, 14: T3, 15: T4). \\
+\bottomrule
+\end{tabularx}
+}
+\par\vspace{1.5mm}\noindent{\scriptsize\textit{Note: Compact aliases \texttt{iv0l}..\texttt{iv15h} are also accepted. Composite 32-bit identifiers \texttt{ir0}..\texttt{ir15} expand into low and high cell pairs.}}\par
+
+\clearpage
+
+\noindent\textbf{Table 3.2: Privilege Protection Zones and Physical RAM Boundaries (Cells 32--63)}
+\par\vspace{1.5mm}\noindent
+{\footnotesize
+\renewcommand{\arraystretch}{0.93}
+\begin{tabularx}{\textwidth}{@{} l c c l >{\raggedright\arraybackslash}X @{}}
+\toprule
+\rowcolor{limslate}
+\textcolor{white}{\textbf{Zone / Vector}} & \textcolor{white}{\textbf{Dec Cells}} & \textcolor{white}{\textbf{Hex Cells}} & \textcolor{white}{\textbf{Boundary Aliases (Start / End)}} & \textcolor{white}{\textbf{Security Rules and Memory Isolation Window}} \\
+\midrule
+\rowcolors{2}{limroweven}{white}
+\textbf{Zone 0} (\texttt{pz0}) & 32--35 & \texttt{0x20--0x23} & \texttt{pz0\_start} / \texttt{pz0\_end} & Privilege Zone 0 window. In User Mode (\(\texttt{PRV}=0\)), writes to cells 32--59 blocked outside this window. \\
+\textbf{Zone 1} (\texttt{pz1}) & 36--39 & \texttt{0x24--0x27} & \texttt{pz1\_start} / \texttt{pz1\_end} & Privilege Zone 1 window. Core kernel and supervisor code/data region. \\
+\textbf{Zone 2} (\texttt{pz2}) & 40--43 & \texttt{0x28--0x2B} & \texttt{pz2\_start} / \texttt{pz2\_end} & Privilege Zone 2 window. Privileged device drivers and memory manager. \\
+\textbf{Zone 3} (\texttt{pz3}) & 44--47 & \texttt{0x2C--0x2F} & \texttt{pz3\_start} / \texttt{pz3\_end} & Privilege Zone 3 window. Operating system shared services and IPC. \\
+\textbf{Zone 4} (\texttt{pz4}) & 48--51 & \texttt{0x30--0x33} & \texttt{pz4\_start} / \texttt{pz4\_end} & Privilege Zone 4 window. Task isolation boundary. \\
+\textbf{Zone 5} (\texttt{pz5}) & 52--55 & \texttt{0x34--0x37} & \texttt{pz5\_start} / \texttt{pz5\_end} & Privilege Zone 5 window. Task isolation boundary. \\
+\textbf{Zone 6} (\texttt{pz6}) & 56--59 & \texttt{0x38--0x3B} & \texttt{pz6\_start} / \texttt{pz6\_end} & Privilege Zone 6 window. Task isolation boundary. \\
+\textbf{RAM Base} & 60, 61 & \texttt{0x3C, 0x3D} & \texttt{ram\_base} & User RAM Physical Base (default: \texttt{0x00000000}). Unrestricted across all modes. \\
+\textbf{RAM Limit} & 62, 63 & \texttt{0x3E, 0x3F} & \texttt{ram\_limit} & User RAM Physical Upper Limit (highest allowable physical RAM byte address). \\
+\bottomrule
+\end{tabularx}
+}
+\par\vspace{1.5mm}\noindent{\scriptsize\textit{Note: Individual 16-bit boundaries are accessible via \texttt{\_lo}/\texttt{\_hi} (e.g. \texttt{pz0\_start\_lo}) or compact aliases \texttt{pz0sl, pz0sh} / \texttt{pz0el, pz0eh}. RAM bounds support \texttt{ram\_bl, ram\_bh} / \texttt{ram\_ll, ram\_lh}.}}\par
+
+\clearpage
+
+\noindent\textbf{Table 3.3: Control Registers, Hardware Timers, and System Extensions (Cells 64--255)}
+\par\vspace{1.5mm}\noindent
+{\footnotesize
+\renewcommand{\arraystretch}{0.90}
+\begin{tabularx}{\textwidth}{@{} l c c l >{\raggedright\arraybackslash}X @{}}
+\toprule
+\rowcolor{limslate}
+\textcolor{white}{\textbf{Register}} & \textcolor{white}{\textbf{Dec Cells}} & \textcolor{white}{\textbf{Hex Cells}} & \textcolor{white}{\textbf{Mnemonics and Aliases}} & \textcolor{white}{\textbf{Functional Description and Microcode Usage}} \\
+\midrule
+\rowcolors{2}{limroweven}{white}
+\textbf{T1\_CNT} & 64, 65 & \texttt{0x40, 0x41} & \texttt{t1\_cnt} (\texttt{t1\_cnt\_lo, hi}) & 32-bit Up-counter for Timer 1. Increments every clock cycle. \\
+\textbf{T1\_MATCH} & 66, 67 & \texttt{0x42, 0x43} & \texttt{t1\_match} (\texttt{t1\_match\_lo, hi}) & 32-bit Comparator match threshold. Triggers IRQ 12 and resets \texttt{t1\_cnt}. \\
+\textbf{T1\_TIME} & 68, 69 & \texttt{0x44, 0x45} & \texttt{t1\_time} (\texttt{t1\_time\_lo, hi}) & 32-bit Elapsed time accumulator (increments upon each T1 match event). \\
+\textbf{T2\_CNT} & 70, 71 & \texttt{0x46, 0x47} & \texttt{t2\_cnt} (\texttt{t2\_cnt\_lo, hi}) & 32-bit Periodic Down-counter for Timer 2. Decrements every cycle. \\
+\textbf{T2\_RELOAD} & 72, 73 & \texttt{0x48, 0x49} & \texttt{t2\_reload} (\texttt{t2\_reload\_lo, hi}) & 32-bit Periodic reload period. Triggers IRQ 13 and reloads at zero. \\
+\textbf{T3\_CNT} & 74, 75 & \texttt{0x4A, 0x4B} & \texttt{t3\_cnt} (\texttt{t3\_cnt\_lo, hi}) & 32-bit One-shot Down-counter. Stops and triggers IRQ 14 upon zero. \\
+\textbf{T4\_CNT} & 76 & \texttt{0x4C} & \texttt{t4\_cnt} & 16-bit Instruction Quantum Down-counter (decrements per instruction). \\
+\textbf{T4\_RELOAD} & 77 & \texttt{0x4D} & \texttt{t4\_reload} & 16-bit Instruction quantum reload period. Triggers IRQ 15 at zero. \\
+\textbf{TSR} & 78 & \texttt{0x4E} & \texttt{tsr} (\texttt{timer\_ctrl}) & 16-bit Timer Setting Register: enables (15:12), IRQ masks (11:8), status (7:4). \\
+\textbf{Reserved} & 79--127 & \texttt{0x4F--0x7F} & --- & 49 Reserved cells for future core extensions and MMU tables. \\
+\textbf{FREG} & 128 & \texttt{0x80} & \texttt{freg} (\texttt{flags}, \texttt{sr}) & 16-bit Status and Control Flags: \texttt{ZF, CF, OF, EM, CMP, CLK, SSRC, MIE, DWR, PRV, AIP, DBIT, SMOD, INTR}. \\
+\textbf{SP (SREG)} & 129, 130 & \texttt{0x81, 0x82} & \texttt{sp} (\texttt{sp\_lo, sp\_hi}, \texttt{spl, sph}) & 32-bit Hardware Stack Pointer. Cell 129: \texttt{SP[15:0]} (\texttt{\_lo}), Cell 130: \texttt{SP[31:16]} (\texttt{\_hi}). \\
+\textbf{PT (PTREG)} & 131, 132 & \texttt{0x83, 0x84} & \texttt{ptreg} (\texttt{ptreg\_lo, ptreg\_hi}, \texttt{ptl, pth}) & 32-bit Streaming Base Pointer. Cell 131: \texttt{PT[15:0]} (\texttt{\_lo}), Cell 132: \texttt{PT[31:16]} (\texttt{\_hi}). Auto-incremented if \texttt{AIP=1}. \\
+\textbf{Reserved} & 133--255 & \texttt{0x85--0xFF} & --- & 123 Reserved cells for hardware peripherals. \\
+\bottomrule
+\end{tabularx}
+}
+
+\vspace{3mm}
+
+\subsection{Composite 32-bit Vector Register Aliases}
+To maximize programmer convenience, the LIM M2 assembler transparently recognizes 32-bit register identifiers (with or without \texttt{\$}) and expands single \texttt{MSP.ld} instructions into sequential 16-bit operations:
+\begin{equation*}
+    \text{\texttt{MSP.ld sp, 0x0007FFFC}} \quad \Longrightarrow \quad
+    \begin{cases}
+        \text{\texttt{MSP.ld sp\_lo, 0xFFFC}} & (\text{Cell } 129, \text{Low 16 bits}) \\
+        \text{\texttt{MSP.ld sp\_hi, 0x0007}} & (\text{Cell } 130, \text{High 16 bits})
+    \end{cases}
+\end{equation*}
+Supported composite identifiers include:
+\begin{itemize}[leftmargin=10pt,itemsep=1pt]
+    \item \textbf{\texttt{sp} / \texttt{sreg}:} 32-bit Hardware Stack Pointer (Cells 129 and 130).
+    \item \textbf{\texttt{ptreg} / \texttt{pt}:} 32-bit Base Pointer (Cells 131 and 132).
+    \item \textbf{\texttt{ir0} -- \texttt{ir15}:} 16 Interrupt Vectors IR0--IR15 (Cells \(2k\) and \(2k+1\)).
+    \item \textbf{\texttt{pz0\_start} -- \texttt{pz6\_end} (\texttt{pv0} -- \texttt{pv13}):} 7 Privilege Zone boundary pairs.
+    \item \textbf{\texttt{ram\_base} / \texttt{ram\_limit}:} Physical RAM boundaries (Cells 60/61 and 62/63).
+    \item \textbf{\texttt{t1\_cnt}, \texttt{t1\_match}, \texttt{t1\_time}:} 32-bit Timer 1 counters and comparator (Cells 64/65, 66/67, 68/69).
+    \item \textbf{\texttt{t2\_cnt}, \texttt{t2\_reload}:} 32-bit Timer 2 counter and periodic reload threshold (Cells 70/71, 72/73).
+    \item \textbf{\texttt{t3\_cnt}:} 32-bit Timer 3 one-shot down-counter (Cells 74/75).
 \end{itemize}
 
 % ==============================================================================
@@ -563,10 +678,9 @@ The \texttt{FREG} register combines arithmetic condition flags, clocking configu
 \end{minipage}
 \vspace{3mm}
 
-\begin{table}[htbp]
-\centering
-\small
-\noindent
+\noindent\textbf{Table 4.1: Bit Definition Map of Flags and Control Register (FREG)}
+\par\vspace{1.5mm}\noindent
+{\small
 \begin{tabularx}{\textwidth}{c c l X}
 \toprule
 \rowcolor{limslate}
@@ -589,11 +703,176 @@ The \texttt{FREG} register combines arithmetic condition flags, clocking configu
 15 & \textbf{\texttt{INTR}} & In Interrupt & Interrupt active flag (prevents nested interrupt corruption). \\
 \bottomrule
 \end{tabularx}
-\caption{Bit definition map of Flags and Control Register (FREG)}
-\end{table}
+}
+
+\clearpage
 
 % ==============================================================================
-% SECTION 5: HARDWARE RESET AND SECURITY MODEL
+% SECTION 5: HARDWARE TIMER SUBSYSTEM (TIMERS 1--4 AND TSR)
+% ==============================================================================
+\section{Hardware Timer Subsystem (Timers 1--4 and TSR)}
+
+The LIM2 architecture incorporates four hardware timers integrated directly into the core microarchitecture and memory-mapped to the 15 system extension cells 64--78 (\texttt{0x40}--\texttt{0x4E}). These timers provide deterministic high-resolution system profiling, real-time second/millisecond accumulation, periodic operating system scheduler ticks, single-shot countdown events, and instruction-quantum based multitasking preemption without cycle jitter.
+
+All timers are centrally controlled and monitored through the 16-bit \textbf{Timer Setting Register} (\texttt{TSR}, Cell 78). Dedicated interrupt lines are assigned to vectors 12 through 15.
+
+\subsection{Timer Setting Register (TSR, 16-bit, Cell 78)}
+
+The \texttt{TSR} register manages hardware enable bits, independent interrupt masks, and status/pending latches for all four timers:
+
+\vspace{2mm}
+\noindent
+\begin{minipage}{\textwidth}
+\centering
+\begin{bytefield}[bitwidth=2.15em, endianness=big]{16}
+    \bitheader{15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0} \\
+    \bitbox{1}{\fontsize{4.2}{5.0}\selectfont\textbf{T1\_EN}} &
+    \bitbox{1}{\fontsize{4.2}{5.0}\selectfont\textbf{T2\_EN}} &
+    \bitbox{1}{\fontsize{4.2}{5.0}\selectfont\textbf{T3\_EN}} &
+    \bitbox{1}{\fontsize{4.2}{5.0}\selectfont\textbf{T4\_EN}} &
+    \bitbox{1}{\fontsize{4.2}{5.0}\selectfont\textbf{T1\_IE}} &
+    \bitbox{1}{\fontsize{4.2}{5.0}\selectfont\textbf{T2\_IE}} &
+    \bitbox{1}{\fontsize{4.2}{5.0}\selectfont\textbf{T3\_IE}} &
+    \bitbox{1}{\fontsize{4.2}{5.0}\selectfont\textbf{T4\_IE}} &
+    \bitbox{1}{\fontsize{4.2}{5.0}\selectfont\textbf{T1\_IF}} &
+    \bitbox{1}{\fontsize{4.2}{5.0}\selectfont\textbf{T2\_IF}} &
+    \bitbox{1}{\fontsize{4.2}{5.0}\selectfont\textbf{T3\_IF}} &
+    \bitbox{1}{\fontsize{4.2}{5.0}\selectfont\textbf{T4\_IF}} &
+    \bitbox{4}{\fontsize{5.5}{6.5}\selectfont\textbf{RESERVED (0)}}
+\end{bytefield}
+\end{minipage}
+\vspace{3mm}
+
+\noindent\textbf{Table 5.1: Bit Definition Map of Timer Setting Register (TSR)}
+\par\vspace{1.5mm}\noindent
+{\small
+\begin{tabularx}{\textwidth}{c c l X}
+\toprule
+\rowcolor{limslate}
+\textcolor{white}{\textbf{Bit}} & \textcolor{white}{\textbf{Flag}} & \textcolor{white}{\textbf{Name}} & \textcolor{white}{\textbf{Functional Description}} \\
+\midrule
+\rowcolors{2}{limroweven}{white}
+15 & \textbf{\texttt{T1\_EN}} & Timer 1 Enable & Enables Timer 1 continuous increment on every core clock cycle. \\
+14 & \textbf{\texttt{T2\_EN}} & Timer 2 Enable & Enables Timer 2 periodic down-counter. \\
+13 & \textbf{\texttt{T3\_EN}} & Timer 3 Enable & Enables Timer 3 one-shot down-counter. Automatically cleared to 0 on timeout. \\
+12 & \textbf{\texttt{T4\_EN}} & Timer 4 Enable & Enables Timer 4 instruction quantum counter (decrements per retired instruction). \\
+11 & \textbf{\texttt{T1\_IE}} & Timer 1 IRQ Enable & Unmasks Timer 1 hardware interrupt request (\texttt{IRQ 12}). \\
+10 & \textbf{\texttt{T2\_IE}} & Timer 2 IRQ Enable & Unmasks Timer 2 hardware interrupt request (\texttt{IRQ 13}). \\
+9  & \textbf{\texttt{T3\_IE}} & Timer 3 IRQ Enable & Unmasks Timer 3 hardware interrupt request (\texttt{IRQ 14}). \\
+8  & \textbf{\texttt{T4\_IE}} & Timer 4 IRQ Enable & Unmasks Timer 4 hardware interrupt request (\texttt{IRQ 15}). \\
+7  & \textbf{\texttt{T1\_IF}} & Timer 1 IRQ Flag & Latched to 1 on comparator match (\texttt{t1\_cnt == t1\_match}). Cleared via \texttt{MSP.offb}. \\
+6  & \textbf{\texttt{T2\_IF}} & Timer 2 IRQ Flag & Latched to 1 when down-counter hits zero (\texttt{t2\_cnt == 0}). Cleared via \texttt{MSP.offb}. \\
+5  & \textbf{\texttt{T3\_IF}} & Timer 3 IRQ Flag & Latched to 1 when one-shot counter reaches zero. Cleared via \texttt{MSP.offb}. \\
+4  & \textbf{\texttt{T4\_IF}} & Timer 4 IRQ Flag & Latched to 1 when quantum counter reaches zero. Cleared via \texttt{MSP.offb}. \\
+3--0 & \textbf{\texttt{RSV}} & Reserved & Read as 0; writes ignored. Reserved for future timer cascades. \\
+\bottomrule
+\end{tabularx}
+}
+
+\subsection{Functional Characteristics of Core Timers}
+
+\begin{archcallout}[title={Timer Subsystem Architectural Specifications}]
+\begin{enumerate}
+    \item \textbf{Timer 1 (32-bit Up-counter \& Real-Time Clock, IRQ 12):}
+    \begin{itemize}
+        \item Consists of 32-bit counter \texttt{t1\_cnt} (Cells 64, 65), 32-bit match threshold \texttt{t1\_match} (Cells 66, 67), and 32-bit elapsed time register \texttt{t1\_time} (Cells 68, 69).
+        \item While \texttt{T1\_EN=1}, \texttt{t1\_cnt} increments on each clock tick.
+        \item When \(\texttt{t1\_cnt} == \texttt{t1\_match}\), hardware resets \(\texttt{t1\_cnt} \leftarrow 0\), increments \(\texttt{t1\_time} \leftarrow \texttt{t1\_time} + 1\), sets status flag \texttt{T1\_IF=1}, and asserts \textbf{\texttt{IRQ 12}} (if \(\texttt{T1\_IE}=1\) and \(\texttt{FREG.MIE}=1\)).
+        \item Setting \(\texttt{t1\_match}\) equal to the processor clock frequency (e.g., \(50\,000\,000\) for 50~MHz) allows \texttt{t1\_time} to accumulate true real-time seconds; loading \(\text{freq} / 1000\) accumulates milliseconds.
+    \end{itemize}
+    \item \textbf{Timer 2 (32-bit Periodic Down-counter, IRQ 13):}
+    \begin{itemize}
+        \item Consists of 32-bit counter \texttt{t2\_cnt} (Cells 70, 71) and 32-bit reload value \texttt{t2\_reload} (Cells 72, 73).
+        \item While \texttt{T2\_EN=1}, \texttt{t2\_cnt} decrements by 1 each clock cycle.
+        \item When \(\texttt{t2\_cnt} == 0\), hardware automatically reloads \(\texttt{t2\_cnt} \leftarrow \texttt{t2\_reload}\), sets \texttt{T2\_IF=1}, and asserts \textbf{\texttt{IRQ 13}}. Provides continuous, jitter-free periodic ticks for periodic event handling.
+    \end{itemize}
+    \item \textbf{Timer 3 (32-bit One-shot Down-counter, IRQ 14):}
+    \begin{itemize}
+        \item Consists of 32-bit counter \texttt{t3\_cnt} (Cells 74, 75). Requires no dedicated reload register.
+        \item The programmer writes the desired delay directly into \texttt{t3\_cnt} and asserts \texttt{T3\_EN=1}.
+        \item Decrements on every cycle while \(\texttt{t3\_cnt} > 0\).
+        \item Upon reaching 0, the hardware automatically halts counting by clearing \(\texttt{T3\_EN} \leftarrow 0\), sets \texttt{T3\_IF=1}, and asserts \textbf{\texttt{IRQ 14}}. The timer remains stopped until software rearms it.
+    \end{itemize}
+    \item \textbf{Timer 4 (16-bit Instruction Quantum Down-counter, IRQ 15):}
+    \begin{itemize}
+        \item Consists of 16-bit counter \texttt{t4\_cnt} (Cell 76) and 16-bit reload value \texttt{t4\_reload} (Cell 77).
+        \item Unlike cycle-based timers, \texttt{t4\_cnt} decrements \textbf{strictly once per instruction retired} by the CPU core, regardless of instruction multi-cycle latencies.
+        \item When \(\texttt{t4\_cnt} == 0\), hardware reloads \(\texttt{t4\_cnt} \leftarrow \texttt{t4\_reload}\), sets \texttt{T4\_IF=1}, and asserts \textbf{\texttt{IRQ 15}}.
+        \item Provides guaranteed, jitter-immune execution time-slicing for preemptive multitasking operating systems.
+    \end{itemize}
+\end{enumerate}
+\end{archcallout}
+
+\subsection{Instruction Cycle Latencies, Atomic Execution, and Carry-Over Semantics}
+
+In real hardware silicon, instructions require a variable number of clock generator cycles depending on instruction complexity, memory bus transfers, ALU latencies, and operand addressing modes:
+\begin{itemize}[leftmargin=10pt,itemsep=1.5pt]
+    \item \textbf{Single-cycle fast operations (1--2 cycles):} \texttt{NOP}, \texttt{HALT}, register increments/decrements (\texttt{INC}, \texttt{DEC}), and bit shifts (\texttt{BSL}, \texttt{BSR}).
+    \item \textbf{ALU register operations (2--3 cycles):} \texttt{ADD}, \texttt{SUB}, \texttt{AND}, \texttt{OR}, \texttt{XOR}, \texttt{NAND}, \texttt{NOR}, \texttt{XNOR}, \texttt{LRR}, \texttt{NOT}, \texttt{CMP}.
+    \item \textbf{Memory loads and stores (\texttt{LMR}, \texttt{LRM}):} 2--3 cycles for immediate literals; 4--6 cycles for 32-bit absolute addresses (\texttt{[ADDR]}); 2--4 cycles for streaming pointer (\texttt{[PTREG]}); 3--5 cycles for register-pair addresses (\texttt{[Rh:Rl]}).
+    \item \textbf{Multi-cycle arithmetic:} 4--6 cycles for multiplication (\texttt{MUL}); 6--10 cycles for hardware division and modulo (\texttt{DIV}, \texttt{MOD}).
+    \item \textbf{Branches and control flow:} 3--4 cycles for jumps (\texttt{JMP}, \texttt{JCR}, \texttt{JO}, \texttt{JZ}); 5--7 cycles for subroutine calls (\texttt{CALL}) and interrupts (\texttt{INT}).
+    \item \textbf{System register management (\texttt{MSP}):} 2--4 cycles.
+\end{itemize}
+
+\begin{archcallout}[title={Non-Preemptible Instruction Execution and Zero-Loss Carry-Over}]
+\begin{enumerate}
+    \item \textbf{Atomic Instruction Retirement:} The processor core \textbf{never interrupts an instruction mid-execution}. An instruction is always executed to 100\% completion (registers written, memory updated, PC advanced) before timer interrupts are evaluated.
+    \item \textbf{Instruction-Invariant Scheduling (Timer 4):} Timer 4 is an instruction-quantum counter: it decrements \textbf{strictly by 1} per completed instruction, completely independent of how many clock cycles that instruction consumed ($\Delta_{\text{cycles}}$).
+    \item \textbf{Timer 1 Up-Counter Excess Carry-Over:} When $\Delta_{\text{cycles}}$ advances \texttt{t1\_cnt} past \texttt{t1\_match}, the surplus cycles are not discarded:
+    \[
+    \begin{aligned}
+    \text{matches} &= \lfloor \texttt{t1\_cnt} / \texttt{t1\_match} \rfloor, \quad \texttt{t1\_time} \leftarrow \texttt{t1\_time} + \text{matches} \\
+    \texttt{t1\_cnt} &\leftarrow \texttt{t1\_cnt} \pmod{\texttt{t1\_match}}
+    \end{aligned}
+    \]
+    The residual $\texttt{t1\_cnt} \pmod{\texttt{t1\_match}}$ remains in the counter, preserving cycle accuracy.
+    \item \textbf{Timer 2 Periodic Down-Counter Deficit Carry-Over:} When $\Delta_{\text{cycles}} > \texttt{t2\_cnt}$, the counter crosses zero, reloads from \texttt{t2\_reload}, and absorbs the deficit:
+    \[
+    \text{excess} = \Delta_{\text{cycles}} - \texttt{t2\_cnt}, \quad \text{rem} = \text{excess} \pmod{\texttt{t2\_reload}}
+    \]
+    \[
+    \texttt{t2\_cnt} \leftarrow \begin{cases} \texttt{t2\_reload} & \text{if } \text{rem} = 0 \\ \texttt{t2\_reload} - \text{rem} & \text{if } \text{rem} > 0 \end{cases}
+    \]
+    Every clock cycle is accounted for with zero cumulative timing drift.
+\end{enumerate}
+\end{archcallout}
+
+\subsection{Timer Programming and Assembly Examples}
+
+Timers are initialized and controlled entirely through the 16-bit quantized \texttt{MSP} instruction subsystem:
+
+\begin{examplebox}[title={Initializing Timer 1 (1 kHz Real-Time Clock) and Timer 4 (OS Quantum Preemption)}]
+\begin{limasm}
+; --- 1. Set Up Timer 1 for 1 kHz Tick on a 50 MHz Core ---
+MSP.ld  t1_match, 50000        ; 50,000 cycles = 1 ms at 50 MHz
+MSP.ld  t1_time, 0             ; Reset elapsed millisecond counter
+MSP.ld  t1_cnt, 0              ; Reset cycle counter
+
+; --- 2. Set Up Timer 4 for 1000-Instruction Preemptive Time Slice ---
+MSP.ld  t4_reload, 1000        ; Quantum length: 1000 instructions
+MSP.ld  t4_cnt, 1000           ; Initialize quantum counter
+
+; --- 3. Enable Timers and Unmask Interrupts in TSR ---
+; Bit 15 (T1_EN) + Bit 11 (T1_IE) = 0x8800
+; Bit 12 (T4_EN) + Bit 8  (T4_IE) = 0x1100
+; Combined TSR word = 0x9900
+MSP.ld  tsr, 0x9900            ; Arm Timer 1 and Timer 4 simultaneously
+\end{limasm}
+\end{examplebox}
+
+\begin{examplebox}[title={One-Shot Countdown with Timer 3}]
+\begin{limasm}
+; Set a one-shot timeout of 2,000,000 cycles
+MSP.ld   t3_cnt, 2000000       ; Write 32-bit delay count (Cells 74, 75)
+MSP.onb  tsr, 0x2200           ; Set T3_EN (bit 13) and T3_IE (bit 9)
+; Core continues execution... when 2,000,000 cycles elapse:
+; Hardware automatically deasserts T3_EN, sets T3_IF, and vectors to IRQ 14.
+\end{limasm}
+\end{examplebox}
+
+% ==============================================================================
+% SECTION 6: HARDWARE RESET AND SECURITY MODEL
 % ==============================================================================
 \section{Hardware Reset (Reset) and Security Model}
 
@@ -2773,192 +3052,160 @@ EndBSR:
 % ------------------------------------------------------------------------------
 % 11010: MSP
 % ------------------------------------------------------------------------------
-\instructionpage{11010}{MSP}{System}{Special register manipulation (FREG, PTREG, SP, system vectors).}
+\instructionpage{11010}{MSP}{System}{Unified 16-bit quantized manipulation of system registers (FREG, SP, PTREG, IVT, PVZ, MEM).}
 
-\vspace{-1mm}\noindent{\footnotesize\bfseries\color{limdark}Base Instruction Format (Byte 0)}\par\vspace{1mm}
+\subsubsection*{Instruction Format Diagram}
 \begin{instructiondiagram}
     \begin{bytefield}[bitwidth=2.4em, endianness=big]{8}
         \bitheader{7,6,5,4,3,2,1,0} \\
-        \bitbox{5}{\textbf{OPCODE} = 11010} & \bitbox{1}{Load/Edit: 0/1} & \bitbox{2}{Target: 0/3}
+        \bitbox{5}{\textbf{OPCODE} = 11010} & \bitbox{3}{\textbf{Operation [2:0]}}
+    \end{bytefield}
+    \begin{bytefield}[bitwidth=2.4em, endianness=big]{8}
+        \bitheader{7,6,5,4,3,2,1,0} \\
+        \bitbox{8}{\textbf{REG\_ID [7:0]} (Cell index 0--255)}
     \end{bytefield}
 \end{instructiondiagram}
 
-\begin{instructiondesc}[title={Base Opcode Byte Field Definitions},top=1.5pt,bottom=1.5pt]
-The first byte of the \texttt{MSP} instruction (opcode \texttt{11010}) designates access mode and target system resource:
-\begin{itemize}[leftmargin=8pt,itemsep=0.4pt,topsep=0.4pt,parsep=0pt]
-    \item \textbf{Bit 2 (Load / Edit):} Write mode: \(\mathbf{0}\) (\textbf{Load}) --- direct loading of immediate operand; \(\mathbf{1}\) (\textbf{Edit}) --- bitwise logical mask modification. Mask modification (\texttt{Edit}) is supported \textbf{exclusively for the flags register} \texttt{FREG} (\(\text{Target} = 00\)). For \texttt{PTREG}, \texttt{SP}, and system vectors, Bit 2 must be strictly \(\mathbf{0}\) (Load mode only).
-    \item \textbf{Bits 1:0 (Target):} System resource selector and total instruction length:
-    \begin{itemize}[leftmargin=8pt,itemsep=0.1pt,topsep=0.1pt,parsep=0pt]
-        \item \(\mathbf{00}\) --- \textbf{\texttt{FREG}}: 16-bit flags and control register (total length 4 bytes).
-        \item \(\mathbf{01}\) --- \textbf{\texttt{PTREG}}: 32-bit page table / base pointer (total length 5 bytes).
-        \item \(\mathbf{10}\) --- \textbf{\texttt{SP}}: 32-bit hardware stack pointer (total length 5 bytes).
-        \item \(\mathbf{11}\) --- \textbf{\texttt{VECTORS}}: 32 system vector registers (total length 6 bytes).
-    \end{itemize}
-\end{itemize}
-\end{instructiondesc}
-
-\vspace{1mm}
-
-\begin{dangerbox}[title={CRITICAL REQUIREMENT: Little-Endian Order and Strict Width Matching},top=2pt,bottom=2pt]
-Execution of the \texttt{MSP} instruction enforces strict hardware constraints:
-\begin{itemize}[leftmargin=8pt,itemsep=0.2pt,topsep=0.2pt,parsep=0pt]
-    \item \textbf{Little-Endian Byte Ordering:} In all \texttt{MSP} operations (both \texttt{Load} and \texttt{Edit}), multi-byte constants are streamed strictly \textbf{Little-Endian} --- least significant byte first (\texttt{Byte lo}), followed by higher bytes (\texttt{Byte hi}).
-    \item \textbf{Exact Data Width Matching Required (No Exceptions):} The size of the immediate data payload must \textbf{exactly match} the physical bit-width of the addressed target register (any mismatch desynchronizes instruction decoding and bus sequencing):
-    \begin{itemize}[leftmargin=8pt,itemsep=0.1pt,topsep=0.1pt,parsep=0pt]
-        \item \textbf{Flags register \texttt{FREG} (16-bit):} Requires exactly \textbf{2 bytes} of immediate data (mask or value).
-        \item \textbf{System pointers \texttt{PTREG} and \texttt{SP} (32-bit):} Require exactly \textbf{4 bytes} of absolute address data.
-        \item \textbf{System vector registers (32-bit):} All 32 registers (\texttt{INT\_VEC}, \texttt{PZV\_VEC} zones, \texttt{MEM\_VEC} bounds) require exactly \textbf{4 bytes} of address data.
-    \end{itemize}
-\end{itemize}
-\end{dangerbox}
-
-\clearpage
-
-\subsubsection*{Case 1: Flags Register FREG (Target = 00, 4 bytes)}
-\begin{instructiondiagram}
-    \begin{bytefield}[bitwidth=2em, endianness=big]{8}
-        \bitheader{7,6,5,4,3,2,1,0} \\
-        \bitbox{5}{\textbf{OPCODE} = 11010} & \bitbox{1}{Load/Edit: 0/1} & \bitbox{2}{Target: 0}
-    \end{bytefield}
-    \begin{bytefield}[bitwidth=2em, endianness=big]{8}
-        \bitheader{7,6,5,4,3,2,1,0} \\
-        \bitbox{2}{Operation} & \bitbox{6}{Ignored}
-    \end{bytefield}
-    \begin{bytefield}[bitwidth=0.6em, endianness=big]{8}
-        \bitheader{7,6,5,4,3,2,1,0} \\
-        \bitbox{8}{Byte lo}
-    \end{bytefield}
-    \begin{bytefield}[bitwidth=0.6em, endianness=big]{8}
-        \bitheader{7,6,5,4,3,2,1,0} \\
-        \bitbox{8}{Byte hi}
-    \end{bytefield}
-\end{instructiondiagram}
-
-\begin{instructiondesc}[title={Semantics for FREG Flags Register Operations},top=2pt,bottom=2pt]
-The \texttt{FREG} variant has a total length of 4 bytes:
+\begin{instructiondesc}[title={Detailed Description and Microcode Semantics},top=2pt,bottom=2pt]
+The \texttt{MSP} (Modify System Parameter) instruction (opcode \texttt{11010}) provides a unified, strictly quantized 16-bit interface for reading, loading, and modifying all internal architectural and privileged registers:
 \begin{itemize}[leftmargin=8pt,itemsep=0.5pt,topsep=0.5pt,parsep=0pt]
-    \item \textbf{Byte 0 (Opcode):} Opcode \texttt{11010}, bit 2 selects mode (\(\text{Load}=0\) or \(\text{Edit}=1\)), bits 1:0 are \(\mathbf{00}\) (\(\text{Target} = 0\)).
-    \item \textbf{Byte 1 (Operation Specifier):} Upper bits \([7:6]\) define the logical modification operation:
-    \begin{itemize}[leftmargin=8pt,itemsep=0.3pt,topsep=0.3pt,parsep=0pt]
-        \item \(\mathbf{00}\) --- \textbf{\texttt{AND}}: Bitwise AND (\(\text{FREG} \leftarrow \text{FREG} \ \& \ \text{Mask}\)). Clears flags by mask.
-        \item \(\mathbf{01}\) --- \textbf{\texttt{OR}}: Bitwise OR (\(\text{FREG} \leftarrow \text{FREG} \ | \ \text{Mask}\)). Sets flags by mask.
-        \item \(\mathbf{10}\) --- \textbf{\texttt{XOR}}: Bitwise XOR (\(\text{FREG} \leftarrow \text{FREG} \ \text{\textasciicircum} \ \text{Mask}\)). Inverts flags by mask.
-        \item \(\mathbf{11}\) --- \textbf{\texttt{XNOR}}: Bitwise XNOR (\(\text{FREG} \leftarrow \sim(\text{FREG} \ \text{\textasciicircum} \ \text{Mask})\)).
-    \end{itemize}
-    Lower bits \([5:0]\) of Byte 1 are hardware-ignored (\texttt{Ignored}, reserved \texttt{000000}).
-    \item \textbf{Bytes 2--3 (Mask / Value):} 16-bit immediate operand (\texttt{Byte lo}, \texttt{Byte hi}, Little-Endian):
-    \begin{itemize}[leftmargin=8pt,itemsep=0.3pt,topsep=0.3pt,parsep=0pt]
-        \item \textbf{Under Load Mode (bit 2 = 0):} Overwrites \texttt{FREG} directly with the new 16-bit word (e.g., initial boot setup: \texttt{PRV=1}, \texttt{MIE=1}, \texttt{AIP=1}).
-        \item \textbf{Under Edit Mode (bit 2 = 1):} Applies the logical operation (\texttt{AND}, \texttt{OR}, \texttt{XOR}, \texttt{XNOR}) between \texttt{FREG} and the immediate mask. Enables atomic toggling of control bits (\texttt{SSRC}, \texttt{SMOD}, \texttt{DBIT}) without disturbing arithmetic flags (\texttt{ZF}, \texttt{CF}, \texttt{OF}, \texttt{EM}, \texttt{CMP}).
-    \end{itemize}
+    \item \textbf{Quantized 16-bit Cell Space:} Every system register is accessed as one or more 16-bit quantized cells indexed by an 8-bit \texttt{REG\_ID} (\(0\) through \(255\)).
+    \item \textbf{Sub-Operation Field (Bits [2:0] of Byte 0):} Encodes 8 specialized hardware sub-operations: direct 16-bit loading (\texttt{ld}), fast general register exchange via \texttt{R7} (\texttt{ldr7}, \texttt{str7}), bitwise masks (\texttt{and}, \texttt{or}, \texttt{xor}), and explicit flag toggling (\texttt{onb}, \texttt{offb}).
+    \item \textbf{Composite Multi-Word Registers:} All registers wider than 16 bits (such as 32-bit stack pointer \texttt{SP}, streaming pointer \texttt{PTREG}, interrupt vectors \texttt{IR0--IR15}, and privilege zones \texttt{PV0--PV13}) are structured as consecutive pairs: the lower cell index represents the lower 16 bits (\texttt{\_lo}), and the higher cell index represents the upper 16 bits (\texttt{\_hi}).
+    \item \textbf{Linear Branching Compatibility:} Flow control instructions (\texttt{CALL}, \texttt{RET}, \texttt{INT}, \texttt{JMP}) continue to operate natively with full 32-bit linear address values without modification.
 \end{itemize}
 \end{instructiondesc}
 
-\vspace{1.5mm}
-
-\subsubsection*{Case 2: Pointers PTREG and SP (Target = 01 / 10, 5 bytes)}
+\subsubsection*{Register R7 Transfer Modes (ldr = 0b001, str = 0b010)}
 \begin{instructiondiagram}
     \begin{bytefield}[bitwidth=2.4em, endianness=big]{8}
         \bitheader{7,6,5,4,3,2,1,0} \\
-        \bitbox{5}{\textbf{OPCODE} = 11010} & \bitbox{1}{Load: 0} & \bitbox{2}{Target: 1/2 (PTREG/SP)}
+        \bitbox{5}{\textbf{OPCODE} = 11010} & \bitbox{3}{\textbf{001 / 010 (ldr / str)}}
     \end{bytefield}
-    \begin{bytefield}[bitwidth=0.6em, endianness=big]{8}
+    \begin{bytefield}[bitwidth=2.4em, endianness=big]{8}
         \bitheader{7,6,5,4,3,2,1,0} \\
-        \bitbox{8}{Byte lo}
-    \end{bytefield}
-    \begin{bytefield}[bitwidth=0.6em, endianness=big]{8}
-        \bitheader{7,6,5,4,3,2,1,0} \\
-        \bitbox{8}{Byte lo-hi}
-    \end{bytefield}
-    \begin{bytefield}[bitwidth=0.6em, endianness=big]{8}
-        \bitheader{7,6,5,4,3,2,1,0} \\
-        \bitbox{8}{Byte hi-lo}
-    \end{bytefield}
-    \begin{bytefield}[bitwidth=0.6em, endianness=big]{8}
-        \bitheader{7,6,5,4,3,2,1,0} \\
-        \bitbox{8}{Byte hi}
+        \bitbox{8}{\textbf{REG\_ID (0--255)}}
     \end{bytefield}
 \end{instructiondiagram}
 
-\begin{instructiondesc}[title={Semantics for PTREG and SP System Pointer Loads},top=2pt,bottom=2pt]
-This instruction variant occupies 5 bytes (1 opcode byte + 4 bytes of 32-bit absolute address in Little-Endian format):
+\begin{instructiondesc}[title={Register R7 Transfer Modes (2 Bytes)}]
+The \texttt{MSP} instruction in \textbf{R7 Exchange Modes} provides compact 2-byte register transfers between user register \texttt{R7} and any internal system cell:
 \begin{itemize}[leftmargin=8pt,itemsep=0.5pt,topsep=0.5pt,parsep=0pt]
-    \item \textbf{Target = 01 (1) --- PTREG:} Direct load of the 32-bit base address pointer for memory tables or streaming buffers into \texttt{PTREG}.
-    \item \textbf{Target = 10 (2) --- SP:} Direct load of the 32-bit top-of-stack hardware pointer into \texttt{SP}.
-    \item \textbf{Load Bit Rule:} Bit 2 must strictly be \(\mathbf{0}\). Bitwise mask modification (\texttt{Edit}) is not supported for pointers and is blocked in hardware.
+    \item \textbf{\texttt{MSP.ldr REG\_ID} (Operation = 0b001, Byte 0 = \texttt{0xD1}):} Transfers the 16-bit value from general-purpose register \texttt{R7} into the designated system cell: \(\text{SYS\_REG}[\text{id}] \leftarrow \text{R7}\).
+    \item \textbf{\texttt{MSP.str REG\_ID} (Operation = 0b010, Byte 0 = \texttt{0xD2}):} Reads the 16-bit value from the designated system cell directly into general-purpose register \texttt{R7}: \(\text{R7} \leftarrow \text{SYS\_REG}[\text{id}]\).
+    \item \textbf{Microarchitectural Role:} General register \texttt{R7} acts as the dedicated CPU hardware bridge to save/restore flags (\texttt{freg}), stack pointers, and vectors to/from memory and stack (\texttt{PUSH R7}, \texttt{POP R7}) during fast context switching.
+    \item \textbf{Instruction Length:} Occupies exactly \textbf{2 bytes} of program memory.
 \end{itemize}
 \end{instructiondesc}
 
-\clearpage
-
-\subsubsection*{Case 3: System Vectors and Zones (Target = 11, 6 bytes)}
+\subsubsection*{Immediate 16-bit Constant Load Mode (ld = 0b000)}
 \begin{instructiondiagram}
-    \begin{bytefield}[bitwidth=1.6em, endianness=big]{8}
+    \begin{bytefield}[bitwidth=2em, endianness=big]{8}
         \bitheader{7,6,5,4,3,2,1,0} \\
-        \bitbox{5}{\textbf{OPCODE} = 11010} & \bitbox{1}{Load: 0} & \bitbox{2}{Target: 3 (VECTORS)}
+        \bitbox{5}{\textbf{OPCODE} = 11010} & \bitbox{3}{\textbf{000} (ld)}
     \end{bytefield}
-    \begin{bytefield}[bitwidth=1.6em, endianness=big]{8}
+    \begin{bytefield}[bitwidth=2em, endianness=big]{8}
         \bitheader{7,6,5,4,3,2,1,0} \\
-        \bitbox{3}{Ignored} & \bitbox{5}{Target: One of 32 Vectors}
+        \bitbox{8}{\textbf{REG\_ID (0--255)}}
     \end{bytefield}
-    \begin{bytefield}[bitwidth=0.4em, endianness=big]{8}
+    \begin{bytefield}[bitwidth=0.6em, endianness=big]{8}
         \bitheader{7,6,5,4,3,2,1,0} \\
-        \bitbox{8}{Byte lo}
+        \bitbox{8}{\textbf{BYTE lo}}
     \end{bytefield}
-    \begin{bytefield}[bitwidth=0.4em, endianness=big]{8}
+    \begin{bytefield}[bitwidth=0.6em, endianness=big]{8}
         \bitheader{7,6,5,4,3,2,1,0} \\
-        \bitbox{8}{Byte lo-hi}
-    \end{bytefield}
-    \begin{bytefield}[bitwidth=0.4em, endianness=big]{8}
-        \bitheader{7,6,5,4,3,2,1,0} \\
-        \bitbox{8}{Byte hi-lo}
-    \end{bytefield}
-    \begin{bytefield}[bitwidth=0.4em, endianness=big]{8}
-        \bitheader{7,6,5,4,3,2,1,0} \\
-        \bitbox{8}{Byte hi}
+        \bitbox{8}{\textbf{BYTE hi}}
     \end{bytefield}
 \end{instructiondiagram}
 
-\begin{instructiondesc}[title={Addressing Semantics for 32 System Vector Registers}]
-This instruction variant occupies 6 bytes and provides direct access to the array of 32 dedicated 32-bit hardware system registers:
-\begin{itemize}
-    \item \textbf{Byte 0 (Opcode):} Bit 2 must be \(\mathbf{0}\) (\texttt{Load}), bits 1:0 are \(\mathbf{11}\) (\(\text{Target} = 3\)).
-    \item \textbf{Byte 1 (Vector Index):} Bits \([7:5]\) are ignored (\texttt{Ignored}, reserved \texttt{000}), while bits \([4:0]\) select the target vector index from \(0\) to \(31\) (\texttt{0x00}--\texttt{0x1F}).
-    \item \textbf{Bytes 2--5 (32-bit Address):} Four bytes of absolute physical address (Little-Endian) written to the selected vector.
+\begin{instructiondesc}[title={Immediate 16-bit Constant Load Mode (4 Bytes)}]
+The \texttt{MSP} instruction when \textbf{Operation = 0b000} (\texttt{.ld}) loads an immediate 16-bit constant directly into a system cell:
+\begin{itemize}[leftmargin=8pt,itemsep=0.5pt,topsep=0.5pt,parsep=0pt]
+    \item \textbf{Data Path:} Writes the 16-bit immediate word directly into the designated cell: \(\text{SYS\_REG}[\text{id}] \leftarrow \text{imm16}\).
+    \item \textbf{Byte Ordering:} Follows standard Little-Endian memory layout (\texttt{BYTE lo} at lower address, followed by \texttt{BYTE hi}).
+    \item \textbf{Composite 32-bit Vector Loading:} When programming 32-bit registers, two sequential \texttt{MSP.ld} instructions are executed (first the lower 16 bits to cell \(2k\), followed by the upper 16 bits to cell \(2k+1\)). The assembler provides macro-expansion aliases (e.g. \texttt{MSP.ld sp, 0x0007FFFC} expands into \texttt{sp\_lo} and \texttt{sp\_hi}).
+    \item \textbf{Instruction Length:} Occupies exactly \textbf{4 bytes} of program memory.
 \end{itemize}
 \end{instructiondesc}
 
-\vspace{3mm}
+\subsubsection*{Bitwise Logic and Mask Modification Modes (and, or, xor, onb, offb)}
+\begin{instructiondiagram}
+    \begin{bytefield}[bitwidth=2em, endianness=big]{8}
+        \bitheader{7,6,5,4,3,2,1,0} \\
+        \bitbox{5}{\textbf{OPCODE} = 11010} & \bitbox{3}{\textbf{011--111}}
+    \end{bytefield}
+    \begin{bytefield}[bitwidth=2em, endianness=big]{8}
+        \bitheader{7,6,5,4,3,2,1,0} \\
+        \bitbox{8}{\textbf{REG\_ID (0--255)}}
+    \end{bytefield}
+    \begin{bytefield}[bitwidth=0.6em, endianness=big]{8}
+        \bitheader{7,6,5,4,3,2,1,0} \\
+        \bitbox{8}{\textbf{MASK lo}}
+    \end{bytefield}
+    \begin{bytefield}[bitwidth=0.6em, endianness=big]{8}
+        \bitheader{7,6,5,4,3,2,1,0} \\
+        \bitbox{8}{\textbf{MASK hi}}
+    \end{bytefield}
+\end{instructiondiagram}
 
-\subsubsection*{Map of the 32 System Vector Registers (Target = 11)}
+\begin{instructiondesc}[title={Bitwise Mask and Bit-Field Modification Modes (4 Bytes)}]
+The \texttt{MSP} instruction provides dedicated bitwise masking and flag toggling operations:
+\begin{itemize}[leftmargin=8pt,itemsep=0.5pt,topsep=0.5pt,parsep=0pt]
+    \item \textbf{\texttt{MSP.and} (0b011, \texttt{0xD3}):} Bitwise AND mask: \(\text{SYS\_REG}[\text{id}] \leftarrow \text{SYS\_REG}[\text{id}] \ \& \ \text{imm16}\).
+    \item \textbf{\texttt{MSP.or} (0b100, \texttt{0xD4}):} Bitwise OR mask: \(\text{SYS\_REG}[\text{id}] \leftarrow \text{SYS\_REG}[\text{id}] \ | \ \text{imm16}\).
+    \item \textbf{\texttt{MSP.xor} (0b101, \texttt{0xD5}):} Bitwise XOR toggle: \(\text{SYS\_REG}[\text{id}] \leftarrow \text{SYS\_REG}[\text{id}] \ \text{\textasciicircum} \ \text{imm16}\). Toggles specific control flags.
+    \item \textbf{\texttt{MSP.onb} (0b110, \texttt{0xD6}):} Turn bits ON: \(\text{SYS\_REG}[\text{id}] \leftarrow \text{SYS\_REG}[\text{id}] \ | \ \text{imm16}\). Enables specific flags (e.g. Master Interrupts \texttt{MIE}, Privilege \texttt{PRV}, Auto-Increment \texttt{AIP}) without disturbing other bits.
+    \item \textbf{\texttt{MSP.offb} (0b111, \texttt{0xD7}):} Turn bits OFF: \(\text{SYS\_REG}[\text{id}] \leftarrow \text{SYS\_REG}[\text{id}] \ \& \ \sim\text{imm16}\). Clears specific flags safely.
+    \item \textbf{Instruction Length:} Occupies exactly \textbf{4 bytes} of program memory.
+\end{itemize}
+\end{instructiondesc}
 
-\noindent
+\subsubsection*{Sub-Operation Code Reference}
+\par\vspace{1mm}\noindent
 \begin{minipage}{\textwidth}
 \centering
 \footnotesize
-\begin{tabularx}{\textwidth}{c c l X}
+\begin{tabularx}{\textwidth}{@{} c c l l c >{\raggedright\arraybackslash}X @{}}
 \toprule
 \rowcolor{limslate}
-\textcolor{white}{\textbf{Index [4:0]}} & \textcolor{white}{\textbf{Mnemonic}} & \textcolor{white}{\textbf{Designation}} & \textcolor{white}{\textbf{Functional Description}} \\
+\textcolor{white}{\textbf{Bits [2:0]}} & \textcolor{white}{\textbf{Byte 0}} & \textcolor{white}{\textbf{Prefix}} & \textcolor{white}{\textbf{Assembly Syntax}} & \textcolor{white}{\textbf{Len}} & \textcolor{white}{\textbf{Microcode Operation and Functional Purpose}} \\
 \midrule
 \rowcolors{2}{limroweven}{white}
-0--15 (\texttt{0x00}--\texttt{0x0F}) & \texttt{INT\_VEC0}--\texttt{INT\_VEC15} & Interrupt Vectors & 16 32-bit base ISR entry addresses IR0--IR15. \\
-16--29 & \texttt{PZV\_VEC}$_{2k}$ / \texttt{PZV\_VEC}$_{2k+1}$ & Privilege Zones & 7 pairs ($0 \le k \le 6$): even $2k$ --- start, odd $2k+1$ --- end. \\
-30, 31 (\texttt{0x1E}, \texttt{0x1F}) & \texttt{MEM\_VEC\_START / END} & RAM Boundaries & 32-bit boundaries for user RAM (30 --- start, 31 --- limit). \\
+\texttt{000} & \texttt{0xD0} & \texttt{.ld} & \texttt{MSP.ld reg, imm16} & 4B & \(\text{SYS\_REG}[\text{id}] \leftarrow \text{imm16}\). Direct 16-bit constant loading. \\
+\texttt{001} & \texttt{0xD1} & \texttt{.ldr} & \texttt{MSP.ldr reg} & 2B & \(\text{SYS\_REG}[\text{id}] \leftarrow \text{R7}\). Fast transfer from general register \texttt{R7} (alias: \texttt{.ldr7}). \\
+\texttt{010} & \texttt{0xD2} & \texttt{.str} & \texttt{MSP.str reg} & 2B & \(\text{R7} \leftarrow \text{SYS\_REG}[\text{id}]\). Fast transfer into general register \texttt{R7} (alias: \texttt{.str7}). \\
+\texttt{011} & \texttt{0xD3} & \texttt{.and} & \texttt{MSP.and reg, imm16} & 4B & \(\text{SYS\_REG}[\text{id}] \leftarrow \text{SYS\_REG}[\text{id}] \ \& \ \text{imm16}\). Bitwise mask AND. \\
+\texttt{100} & \texttt{0xD4} & \texttt{.or} & \texttt{MSP.or reg, imm16} & 4B & \(\text{SYS\_REG}[\text{id}] \leftarrow \text{SYS\_REG}[\text{id}] \ | \ \text{imm16}\). Bitwise mask OR. \\
+\texttt{101} & \texttt{0xD5} & \texttt{.xor} & \texttt{MSP.xor reg, imm16} & 4B & \(\text{SYS\_REG}[\text{id}] \leftarrow \text{SYS\_REG}[\text{id}] \ \text{\textasciicircum} \ \text{imm16}\). Bitwise toggle XOR. \\
+\texttt{110} & \texttt{0xD6} & \texttt{.onb} & \texttt{MSP.onb reg, imm16} & 4B & \(\text{SYS\_REG}[\text{id}] \leftarrow \text{SYS\_REG}[\text{id}] \ | \ \text{imm16}\). Explicit bit turn-ON mask. \\
+\texttt{111} & \texttt{0xD7} & \texttt{.offb} & \texttt{MSP.offb reg, imm16} & 4B & \(\text{SYS\_REG}[\text{id}] \leftarrow \text{SYS\_REG}[\text{id}] \ \& \ \sim\text{imm16}\). Explicit bit turn-OFF mask. \\
 \bottomrule
 \end{tabularx}
 \end{minipage}
 
-\clearpage
-
-\begin{instructiondesc}[title={Architectural Zones, Vectors, and Software Self-Initialization}]
-\begin{itemize}
-    \item \textbf{Interrupt Vectors (0--15):} 32-bit entry points for hardware interrupt lines \texttt{IR0}--\texttt{IR15} and software traps \texttt{INTR}.
-    \item \textbf{Privilege Zones PZV (16--29):} 7 pairs of registers defining supervisor windows. When \texttt{PC} is inside a zone, privilege escalation to supervisor mode (\(\texttt{PRV} = 1\)) is permitted. Outside these zones, setting \(\texttt{PRV}=1\) is blocked by hardware. Even indices \(2k\) define \textbf{start addresses} (\(\texttt{PZV\_START}_k\)), and odd indices \(2k+1\) define \textbf{end addresses} (\(\texttt{PZV\_END}_k\)).
-    \item \textbf{RAM Boundaries (30--31):} Register 30 (\texttt{MEM\_VEC\_START}) and register 31 (\texttt{MEM\_VEC\_END}) delimit the physical span of accessible User RAM.
-    \item \textbf{Reset and Boot Concept:} Upon \texttt{RESET}, all 32 system vectors, as well as \texttt{SP} and \texttt{PT}, clear to zero (\texttt{0x00000000}). There are no hardwired address maps. The primary bootloader, beginning at reset in supervisor mode, populates memory boundaries, stack, security zones, and interrupt vectors manually using \texttt{MSP} instructions.
-\end{itemize}
-\end{instructiondesc}
+\subsubsection*{Map of Quantized 16-bit System Register Cells (REG\_ID 0--255)}
+\par\vspace{1mm}\noindent
+\begin{minipage}{\textwidth}
+\centering
+\footnotesize
+\begin{tabularx}{\textwidth}{@{} l c c l >{\raggedright\arraybackslash}X @{}}
+\toprule
+\rowcolor{limslate}
+\textcolor{white}{\textbf{Group}} & \textcolor{white}{\textbf{Dec Cells}} & \textcolor{white}{\textbf{Hex Cells}} & \textcolor{white}{\textbf{Canonical Mnemonics}} & \textcolor{white}{\textbf{Functional Description and Mapping}} \\
+\midrule
+\rowcolors{2}{limroweven}{white}
+\textbf{IVT} & 0--31 & \texttt{0x00--0x1F} & \texttt{ir0\_lo}..\texttt{ir15\_hi} & 16 Interrupt Vectors IR0--IR15 (even: \texttt{\_lo}, odd: \texttt{\_hi}). \\
+\textbf{PVZ} & 32--59 & \texttt{0x20--0x3B} & \texttt{pv0\_lo}..\texttt{pv13\_hi} & 7 Privilege Protection Zones 0--6 (Start/End pairs). \\
+\textbf{MEM} & 60--63 & \texttt{0x3C--0x3F} & \texttt{ram\_base}, \texttt{ram\_limit} & User RAM Physical Base (60, 61) and Limit (62, 63). \\
+\textbf{SYS\_EXT} & 64--78 & \texttt{0x40--0x4E} & \texttt{sys0}..\texttt{sys14} & 15 Reserved system registers for coprocessors and timers. \\
+\textbf{Reserved} & 79--127 & \texttt{0x4F--0x7F} & --- & 49 Reserved cells for core extensions. \\
+\textbf{FREG} & 128 & \texttt{0x80} & \texttt{freg} (\texttt{flags}) & Status and Control Flags Register (ZF, CF, OF, EM, CMP, MIE, PRV). \\
+\textbf{SP} & 129, 130 & \texttt{0x81, 0x82} & \texttt{sp\_lo}, \texttt{sp\_hi} (\texttt{sp}) & Hardware Stack Pointer (129: \texttt{SP[15:0]}, 130: \texttt{SP[31:16]}). \\
+\textbf{PTREG} & 131, 132 & \texttt{0x83, 0x84} & \texttt{ptreg\_lo}, \texttt{ptreg\_hi} & Streaming Base Pointer (131: \texttt{PT[15:0]}, 132: \texttt{PT[31:16]}). \\
+\textbf{Reserved} & 133--255 & \texttt{0x85--0xFF} & --- & 123 Reserved cells for hardware expansions. \\
+\bottomrule
+\end{tabularx}
+\end{minipage}
 
 \begin{tcolorbox}[
     enhanced,
@@ -2971,31 +3218,35 @@ This instruction variant occupies 6 bytes and provides direct access to the arra
     \footnotesize
     \noindent
     \begin{tabularx}{\textwidth}{@{}l l l X@{}}
-        \textbf{Length:} 4, 5, or 6 bytes &
-        \textbf{Operands:} 1 / 2 &
+        \textbf{Length:} 2 or 4 bytes &
+        \textbf{Operands:} 1 or 2 &
         \textbf{Mode:} Supervisor / User &
-        \textbf{Flags affected:} Modifies \texttt{FREG} when Target=0; otherwise preserved
+        \textbf{Flags affected:} Modifies \texttt{FREG} when Cell=128; otherwise preserved
     \end{tabularx}
 \end{tcolorbox}
 
 \begin{examplebox}[title={Usage Example (LIM2 Assembly)}]
 \begin{limasm}
-; Target=0: FREG (direct load and mask modification)
-MSP.ld      \regFREG, 0x1800                ; Supervisor mode (PRV=1), AIP=1 (direct load)
-MSP.or      \regFREG, 0x0100                ; Enable SSRC (bit 8) via OR mask
-MSP.and     \regFREG, 0xFEFF                ; Disable SSRC (bit 8) via AND mask
-; Target=1/2: Stack pointer SP and Memory pointer PT
-MSP.ld      \regSP, 0x0007FFFC              ; Top of stack at top of RAM
-MSP.ld      \regPTREG, 0x00010000           ; Base pointer PT for streaming transfers
-; Target=3: Interrupt vectors, privilege zones, and RAM limits
-MSP.ld      \regPZV_VEC0_S, 0x00000000      ; Start of PZV Zone 0 (2k)
-MSP.ld      \regPZV_VEC0_E, 0x00000FFF      ; End of PZV Zone 0 (2k+1)
-MSP.ld      \regMEM_VEC_S, 0x00000000       ; User RAM start boundary
-MSP.ld      \regMEM_VEC_E, 0x0007FFFF       ; User RAM end boundary (512 KB)
+; 1. Flags Register FREG (Cell 128) - without $ and without 7
+MSP.ld      freg, 0x1800                    ; Supervisor mode (PRV=1), AIP=1
+MSP.onb     freg, 0x0200                    ; Turn ON Master Interrupts (MIE = bit 9)
+MSP.offb    freg, 0x0200                    ; Turn OFF Master Interrupts (MIE = bit 9)
+
+; 2. Stack pointer (sp) and Streaming Pointer register (ptreg)
+MSP.ld      sp, 0x0007FFFC                  ; Automatically expands into sp_lo=129 and sp_hi=130
+MSP.ld      ptreg, 0x0001A000               ; Automatically expands into ptreg_lo=131 and ptreg_hi=132
+
+; 3. Interrupt Vector IR0
+MSP.ld      ir0, 0x00005000                 ; Expands into ir0_lo (cell 0) and ir0_hi (cell 1)
+
+; 4. Fast exchange with General-Purpose Register R7 (2 bytes each: MSP.str and MSP.ldr)
+MSP.str     freg                            ; R7 = FREG (save flags state)
+PUSH        R7                              ; Push saved flags onto stack
+MSP.ldr     freg                            ; Restore FREG from R7
 \end{limasm}
 \vspace{1.5mm}
 \footnotesize\color{limmuted}
-\textbf{Operational Notes:} The \texttt{MSP} instruction configures low-level architectural state (BIOS/HAL). Mask editing (\texttt{EDIT}) is available exclusively for \texttt{FREG}; all other system registers are populated using direct load mode (\texttt{LOAD}).
+\textbf{Operational Notes:} The unified \texttt{MSP} architecture provides clean mnemonic syntax without requiring special prefixes. Register \texttt{R7} serves as the hardware gateway for 2-byte transfers via \texttt{MSP.ldr} and \texttt{MSP.str}.
 \end{examplebox}
 
 % ------------------------------------------------------------------------------
@@ -3356,19 +3607,20 @@ At power-on, all 16 vectors are initialized to zero (\texttt{0x00000000}). The o
 9 & \texttt{0x09} & \textbf{\texttt{SW\_INT9}} & OS Service & Software interrupt: Process scheduler and thread context switch. \\
 10 & \texttt{0x0A} & \textbf{\texttt{SW\_INT10}} & OS Service & Software interrupt: File subsystem and block storage I/O. \\
 11 & \texttt{0x0B} & \textbf{\texttt{SW\_INT11}} & OS Service & Software interrupt: Inter-process communication (IPC) messaging. \\
-12 & \texttt{0x0C} & \textbf{\texttt{SW\_INT12}} & OS Service & Software interrupt: Network stack and socket abstraction. \\
-13 & \texttt{0x0D} & \textbf{\texttt{SW\_INT13}} & OS Service & Software interrupt: Windowing manager and display graphics. \\
-14 & \texttt{0x0E} & \textbf{\texttt{SW\_INT14}} & OS Service & Software interrupt: Interactive debugger, tracing, and breakpoint hooks. \\
-15 & \texttt{0x0F} & \textbf{\texttt{SYSCALL}} & Software Trap & Universal kernel system call trap (\texttt{INT 15}) invoked from User Mode. \\
+12 & \texttt{0x0C} & \textbf{\texttt{TIMER1}} & Hardware Timer & Timer 1 match interrupt (frequency generator / real-time clock tick). \\
+13 & \texttt{0x0D} & \textbf{\texttt{TIMER2}} & Hardware Timer & Timer 2 periodic reload timeout interrupt. \\
+14 & \texttt{0x0E} & \textbf{\texttt{TIMER3}} & Hardware Timer & Timer 3 one-shot delay expiration interrupt. \\
+15 & \texttt{0x0F} & \textbf{\texttt{TIMER4}} & Hardware Timer & Timer 4 instruction quantum preemptive scheduler interrupt. \\
 \bottomrule
 \end{tabularx}
 \end{minipage}
 \vspace{1.5mm}
 
-\subsection{Partitioning of Core Faults and Software Interrupts}
+\subsection{Partitioning of Core Faults, Software Interrupts, and Hardware Timers}
 \begin{itemize}[leftmargin=10pt,itemsep=1.5pt,topsep=1pt,parsep=0pt]
-    \item \textbf{Vectors 0--7 (Internal Core Events):} Reserved by hardware for critical processor events, math faults, memory protection, and core timer. They are triggered unconditionally by hardware, irrespective of the master mask flag \texttt{MIE}.
-    \item \textbf{Vectors 8--15 (Operating System Software Interrupts):} Freely defined by the OS architect to implement system call APIs, device drivers, and user services. Invoked programmatically via the \texttt{INT n} instruction.
+    \item \textbf{Vectors 0--7 (Internal Core Events and Faults):} Reserved by hardware for critical processor events, arithmetic faults, memory protection, and bus timeout. They are triggered unconditionally by hardware, irrespective of the master mask flag \texttt{MIE}.
+    \item \textbf{Vectors 8--11 (Operating System Software Services):} Freely defined by the OS architect to implement system call APIs, device drivers, and user services. Invoked programmatically via the \texttt{INT n} instruction.
+    \item \textbf{Vectors 12--15 (Dedicated Core Hardware Timers):} Static vector assignments for the four hardware timers: IRQ 12 (Timer 1 match / real-time tick), IRQ 13 (Timer 2 periodic reload), IRQ 14 (Timer 3 one-shot expiration), and IRQ 15 (Timer 4 instruction quantum scheduler preemption).
 \end{itemize}
 
 % ==============================================================================
