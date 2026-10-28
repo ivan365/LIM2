@@ -501,7 +501,7 @@ In assembly and the compiler toolchain, general-purpose registers are designated
 
 ## 🛠️ LIM M2 Assembly Language & Compiler (`limasm.py`)
 
-The SDK includes the official two-pass assembler compiler **`limasm.py`**, which compiles `.asm` source files into both raw binary firmware images (`.bin`) and annotated hexadecimal dumps (`.hex`), and integrates directly with the interactive simulator (`python3 sim/sim.py program.asm -i`).
+The SDK includes the official two-pass assembler compiler **`limasm.py`**, which compiles `.asm` source files into both raw binary firmware images (`.bin`) and annotated hexadecimal dumps (`.hex`), ready to be flashed into memory devices via `programmer.py` or direct bus mapping.
 
 ### 1. Register Naming & Size Suffixes (`.b`, `.w`, `.d`)
 * **General-Purpose Registers (GPRs):** prefixed with `$` and numbered `$0`–`$7` (classic aliases `R0`–`R7` and `$r0`–`$r7` are also accepted).
@@ -685,13 +685,14 @@ LIM2/
 │   ├── 02_text_terminal_io/ # TextScreen string streaming & hex formatter
 │   ├── 03_hardware_timer_irq/ # Hardware timer IRQ0 interrupts & ISR routine
 │   └── 04_alu_chaining_and_math/ # 3-operand ALU, bitwise logic & comparator
-└── sim/                     # Python architectural simulator
-    ├── sim.py               # Main CLI launcher
+├── cpu.py                   # Main CLI launcher & CPU core entry point
+└── sim/                     # Python architectural simulator subsystem
+    ├── runner.py            # Execution and trace engine
     ├── exampcpu.py          # LIM M2 CPU core model
     ├── core.py              # Base CPU abstraction
     ├── bus.py               # Memory bus and memory-mapped IO
     ├── devices.py           # RAM, Text Screen, UART, Timer peripherals
-    ├── runner.py            # Execution and trace engine
+    ├── gui.py               # Tkinter GUI dashboard
     └── ui.py                # Terminal / GUI monitor interface
 ```
 
@@ -699,18 +700,30 @@ LIM2/
 
 ## 🚀 Quickstart & Simulation
 
-### 1. Running the Simulator
+### 1. Running the Simulator via Code (`cpu.py`)
 
-The LIM M2 simulation environment offers both a modern Tkinter **GUI** and a full-featured terminal **TUI**:
+The LIM M2 simulation environment behaves like real physical hardware: the system bus, peripherals, memory layout, and firmware files are configured directly in Python code ([`cpu.py`](cpu.py)). Programs are compiled to binary bytecode (`.bin`) and attached to memory devices:
+
+```python
+# Hardware configuration in cpu.py:
+bus = MemoryBus()
+bus.attach(RAMDevice(start=0x000000, end=0x0FFFFF, file="drive.bin", persist=True, name="NVM1"))
+bus.attach(RAMDevice(start=0x100000, end=0x1FFFFF, name="RAM1"))
+
+cpu = LIM2CPU(bus=bus)
+```
+
+Launch commands:
 
 ```bash
-# Launch modern desktop GUI (embedded displays, inline memory editor, zero-leak rendering):
-python3 sim/sim.py compiler/demo.asm
-python3 sim/sim.py compiler/demo.hex
+# Launch interactive terminal simulation (TUI):
+python3 cpu.py -i
 
-# Launch interactive terminal simulation (TUI with multi-column layout):
-python3 sim/sim.py compiler/demo.asm -i
-python3 sim/sim.py compiler/demo.hex -i
+# Launch modern desktop GUI (Tkinter):
+python3 cpu.py -g
+
+# Launch for a specific cycle count:
+python3 cpu.py -n 1000
 ```
 
 ### 2. Desktop GUI Highlights

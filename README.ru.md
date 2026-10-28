@@ -675,18 +675,30 @@ python3 compiler/limasm.py compiler/demo.asm
 python3 compiler/compiler.py program.asm -o program.bin -x program.hex
 ```
 
-### 2. Запуск симулятора (напрямую с `.asm`, `.bin` или `.hex`)
+### 2. Запуск симулятора через код процессора (`cpu.py`)
 
-Симулятор LIM2 поддерживает два режима работы — современный графический интерфейс (**GUI** на Tkinter) и полнофункциональный интерактивный терминальный интерфейс (**TUI**):
+Симулятор LIM2 работает как реальное аппаратное устройство: память, шина и прошивка конфигурируются непосредственно в коде Python ([`cpu.py`](cpu.py)). Программа на ассемблере сначала компилируется в бинарный образ прошивки (`.bin`) через компилятор/программатор, после чего подключается к устройству памяти (`RAMDevice` / ROM):
+
+```python
+# Конфигурация платформы в cpu.py:
+bus = MemoryBus()
+bus.attach(RAMDevice(start=0x000000, end=0x0FFFFF, file="drive.bin", persist=True, name="NVM1"))
+bus.attach(RAMDevice(start=0x100000, end=0x1FFFFF, name="RAM1"))
+
+cpu = LIM2CPU(bus=bus)
+```
+
+Запуск симулятора:
 
 ```bash
-# 1. Запуск полноценного графического интерфейса (GUI):
-python3 sim/sim.py sim/demo.asm
-python3 sim/sim.py sim/demo.hex
+# 1. Запуск интерактивного терминального отладчика (TUI):
+python3 cpu.py -i
 
-# 2. Запуск интерактивного терминального отладчика (TUI):
-python3 sim/sim.py sim/demo.asm -i
-python3 sim/sim.py sim/demo.hex -i
+# 2. Запуск полноценного графического интерфейса (GUI):
+python3 cpu.py -g
+
+# 3. Запуск с ограничением по количеству тактов (например, 1000 шагов):
+python3 cpu.py -n 1000
 ```
 
 ### 3. Возможности графического симулятора (GUI)

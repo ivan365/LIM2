@@ -498,7 +498,7 @@ V assembleri a v budúcom kompilátore sú univerzálne registre označené ako 
 
 ## 🛠️ Jazyk symbolických inštrukcií (Assembler) a kompilátor LIM M2 (`limasm.py`)
 
-Súčasťou SDK je oficiálny dvojprechodový kompilátor assemblera **`limasm.py`**, ktorý kompiluje zdrojové súbory `.asm` súčasne do binárneho obrazu (`.bin`) a anotovaného hexadecimálneho výpisu (`.hex`), a je priamo integrovaný do simulátora (`python3 sim/sim.py program.asm -i`).
+Súčasťou SDK je oficiálny dvojprechodový kompilátor assemblera **`limasm.py`**, ktorý kompiluje zdrojové súbory `.asm` súčasne do binárneho obrazu (`.bin`) a anotovaného hexadecimálneho výpisu (`.hex`), pripraveného na nahratie do pamäťových zariadení cez `programmer.py` alebo priamu konfiguráciu zbernice.
 
 ### 1. Označovanie registrov a prípony veľkosti (`.b`, `.w`, `.d`)
 * **Všeobecné registre (GPR):** zapisujú sa s prefixom `$` a číslom `$0`–`$7` (podporované sú aj klasické aliasy `R0`–`R7` a `$r0`–`$r7`).
@@ -653,11 +653,27 @@ MSP.ld   $ir0, isr_timer     ; Setup interrupt vector by label
 
 ## 🚀 Rýchly štart a simulácia
 
-### 1. Spustenie simulátora
+### 1. Spustenie simulátora cez kód procesora (`cpu.py`)
+
+Simulátor LIM M2 funguje ako skutočný fyzický hardvér: zbernica, pamäť a firmvér sú konfigurované priamo v kóde Python ([`cpu.py`](cpu.py)). Program v assembleri sa najprv skompiluje do binárneho obrazu (`.bin`) a pripojí k zariadeniu:
+
+```python
+# Konfigurácia platformy v cpu.py:
+bus = MemoryBus()
+bus.attach(RAMDevice(start=0x000000, end=0x0FFFFF, file="drive.bin", persist=True, name="NVM1"))
+bus.attach(RAMDevice(start=0x100000, end=0x1FFFFF, name="RAM1"))
+
+cpu = LIM2CPU(bus=bus)
+```
+
+Príkazy na spustenie:
 
 ```bash
-# Interaktívny terminálový monitor (podporuje .asm, .bin aj .hex)
-python3 sim/sim.py sim/demo.asm -i
+# Interaktívna emulácia v termináli (TUI)
+python3 cpu.py -i
+
+# Grafické rozhranie (GUI)
+python3 cpu.py -g
 ```
 
 ### 2. Kompilácia PDF špecifikácií
