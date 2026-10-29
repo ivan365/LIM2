@@ -9,10 +9,12 @@ if str(CURRENT_DIR) not in sys.path:
 
 try:
     from sim.bus import MemoryBus, RAMDevice, TextScreenDevice, UARTDevice, TimerDevice, PinBank, Pin
+    from sim.devices import KeyboardDevice, IRQKeyboardDevice, Display24bppDevice, Display8bppDevice
     from sim.core import BaseCPU
     from sim.ui import run_sim, render_full_simulator_screen
 except (ImportError, ValueError):
     from bus import MemoryBus, RAMDevice, TextScreenDevice, UARTDevice, TimerDevice, PinBank, Pin
+    from devices import KeyboardDevice, IRQKeyboardDevice, Display24bppDevice, Display8bppDevice
     from core import BaseCPU
     from ui import run_sim, render_full_simulator_screen
 
@@ -360,7 +362,18 @@ class LIM2CPU(BaseCPU):
 
         # 0. Проверка аппаратного запроса прерывания на ножке IRQ:
         if hasattr(self, "pins") and self.pins.IRQ.get() == 1:
-            if self.trigger_irq(0, force=False):
+            if (self.freg & (1 << 9)) and not (self.freg & (1 << 15)):
+                # Аппаратное рукопожатие: строб IA=1 (Interrupt Acknowledge)
+                self.pins.IA.set(1)
+                # Устройства реагируют на строб IA (клавиатура выдает вектор на шину данных):
+                if hasattr(self.bus, "_devices_list"):
+                    for dev in self.bus._devices_list:
+                        if hasattr(dev, "on_step"):
+                            dev.on_step()
+                vec = self.bus.databus & 0x0F if hasattr(self.bus, "databus") else 0
+                if self.trigger_irq(vec, force=False):
+                    return
+            elif self.trigger_irq(0, force=False):
                 return
 
         # 1. Выборка октета 0:
@@ -1014,12 +1027,70 @@ def create_lim2_cpu(bus: Optional[MemoryBus] = None) -> LIM2CPU:
 def main():
     """
     Главная точка входа для запуска симулятора процессора LIM M2.
+    Конфигурация 32-битной системной шины (4 ГБ), памяти и устройств ввода-вывода.
     """
     import sys
 
     bus = MemoryBus()
-    bus.attach(RAMDevice(start=0x000000, end=0x0FFFFF, file="drive.bin", persist=True, name="NVM1"))
-    bus.attach(RAMDevice(start=0x100000, end=0x1FFFFF, name="RAM1"))
+
+    # ==============================================================================
+    # КАРТА АДРЕСНОГО ПРОСТРАНСТВА LIM M2 (0x00000000 .. 0xFFFFFFFF, 4 ГБ):
+    # ==============================================================================
+    # 1. СИСТЕМНАЯ ПАМЯТЬ:
+    # 0x00000000 .. 0x9FFFFFFF (2.5 ГБ)   : NVM1 — Постоянная память (ROM/NVM) / образ drive.bin
+    # 0xA0000000 .. 0xDFFFFFFF (1.0 ГБ)   : RAM1 — Системное ОЗУ (поддерживает latency и ножку RF)
+    #
+    # 2. ПРОСТРАНСТВО УСТРОЙСТВ И МОНИТОРОВ (0.5 ГБ: 0xE0000000 .. 0xFFFFFFFF):
+    #   0xE0000000 .. 0xE000000F (16 Б)   : KBD_POLL — Опросная MMIO клавиатура (DATA, STATUS, COUNT)
+    #   0xE0000010 .. 0xE000001F (16 Б)   : KBD_IRQ  — Клавиатура с прерываниями (IRQ1) и рукопожатием IA
+    #   0xE0000020 .. 0xE000002F (16 Б)   : UART0    — Последовательный порт
+    #   0xE0000030 .. 0xE000003F (16 Б)   : TIMER0   — Внешний аппаратный таймер (IRQ0)
+    #   0xE0010000 .. 0xE0011FFF (8 КБ)   : TERM0    — CRT текстовый терминал (80x25 символов)
+    #   0xE0100000 .. 0xE01AFFFF (720 КБ) : DISP_24BPP — 600x400 TrueColor монитор (16.7M цветов, 24bpp)
+    #   0xE0200000 .. 0xE02E0FFF (922 КБ) : DISP_8BPP  — 1280x720 256-цветный монитор (8bpp, 1 байт/пиксель)
+    #
+    # 3. БОЛЬШИЕ FULL HD МОНИТОРЫ 1920x1080 (раскомментируйте при необходимости):
+    #   0xE1000000 .. 0xE11FA3FF (~2.07 МБ): DISP_FHD_8BPP  — 1920x1080 8bpp (256 цветов)
+    #   0xE2000000 .. 0xE25EEC00 (~6.22 МБ): DISP_FHD_24BPP — 1920x1080 24bpp TrueColor (16M цветов)
+    # ==============================================================================
+
+    # 1. Системная память:
+    # 2.5 ГБ постоянной памяти (NVM1 / drive.bin)
+    bus.attach(RAMDevice(start=0x00000000, end=0x9FFFFFFF, file="drive.bin", persist=True, name="NVM1"))
+    # 1.0 ГБ системного ОЗУ (RAM1).
+    # Для эмуляции аппаратной задержки отклика памяти задайте latency=N (тактов) и ready_pin="RF":
+    bus.attach(RAMDevice(start=0xA0000000, end=0xDFFFFFFF, latency=0, ready_pin="RF", name="RAM1"))
+
+    # 2. Устройства ввода (Клавиатуры):
+    # Версия 1: Обычная опросная MMIO клавиатура:
+    bus.attach(KeyboardDevice(start=0xE0000000, name="KBD_POLL"))
+    # Версия 2: Клавиатура с аппаратными прерываниями (вектор 1 для IRQ1) и рукопожатием IA:
+    bus.attach(IRQKeyboardDevice(start=0xE0000010, vector=1, name="KBD_IRQ"))
+
+    # 3. Базовая периферия (UART и таймер):
+    bus.attach(UARTDevice(start=0xE0000020, name="UART0"))
+    bus.attach(TimerDevice(start=0xE0000030, name="TIMER0"))
+
+    # 4. Текстовый CRT терминал (80x25 символов = 2000 байт VRAM):
+    bus.attach(TextScreenDevice(start=0xE0010000, width=80, height=25, name="TERM0"))
+
+    # 5. Графические мониторы в конце адресного пространства:
+    # 600x400 TrueColor 24bpp (16.7 млн цветов, 3 байта на пиксель, 720 000 байт VRAM):
+    if Display24bppDevice is not None:
+        bus.attach(Display24bppDevice(start=0xE0100000, width=600, height=400, scale=1, gui=False, name="DISP_24BPP"))
+
+    # 1280x720 8bpp (256 цветов, 1 байт на пиксель, 921 600 байт VRAM):
+    if Display8bppDevice is not None:
+        bus.attach(Display8bppDevice(start=0xE0200000, width=1280, height=720, scale=1, format="3-2-3", gui=False, name="DISP_8BPP"))
+
+    # --------------------------------------------------------------------------
+    # 6. БОЛЬШИЕ FULL HD МОНИТОРЫ (1920x1080) — раскомментируйте для подключения:
+    # --------------------------------------------------------------------------
+    # 1920x1080 8bpp (256 цветов, 1 байт/пиксель, VRAM ~2.07 МБ):
+    # bus.attach(Display8bppDevice(start=0xE1000000, width=1920, height=1080, scale=1, format="3-2-3", gui=False, name="DISP_FHD_8BPP"))
+    #
+    # 1920x1080 24bpp TrueColor (16.7M цветов, 3 байта/пиксель, VRAM ~6.22 МБ):
+    # bus.attach(Display24bppDevice(start=0xE2000000, width=1920, height=1080, scale=1, gui=False, name="DISP_FHD_24BPP"))
 
     cpu = LIM2CPU(bus=bus)
     interactive = "-i" in sys.argv or "--interactive" in sys.argv

@@ -41,12 +41,12 @@ reset_entry:
     LRM.b   0x20, [$ptreg]      ; ' '
 
     ; 6. Configure Hardware Timer Device at 0x00030010
-    ;    Offset +0: Reload Value = 25 cycles
-    ;    Offset +2: Control / Enable Register = 1
-    LMR.w   $1, 25
-    LRM.w   $1, [0x00030010]
-    LMR.w   $2, 1
-    LRM.w   $2, [0x00030012]
+    ;    Offset +2: Reload Value = 25 cycles
+    ;    Offset +3: Control Register = 3 (Bit 0: ENABLE, Bit 1: IRQ_ENABLE)
+    LMR.b   $1, 25
+    LRM.b   $1, [0x00030012]
+    LMR.b   $2, 3
+    LRM.b   $2, [0x00030013]
 
     ; 7. Enable Master Interrupts (MIE, bit 9 of FREG)
     ;    0x0200 = (1 << 9)
@@ -82,9 +82,9 @@ timer_isr:
     ; Append a visual tick mark '*' to the screen
     LRM.b   0x2A, [$ptreg]      ; '*' (auto-increments PTREG)
 
-    ; Clear Timer interrupt acknowledge flag at 0x00030012
-    LMR.w   $5, 1
-    LRM.w   $5, [0x00030012]
+    ; Re-arm Timer interrupt at 0x00030013 (ENABLE | IRQ_ENABLE)
+    LMR.b   $5, 3
+    LRM.b   $5, [0x00030013]
 
     ; Return from interrupt:
     ; Hardware pops FREG and PC, automatically restoring CPU state and clearing INTR!

@@ -37,26 +37,21 @@ _start:
     LRM.b   0x4B, [$ptreg]      ; 'K'
 
     ; 4. Relocate Kernel Payload from ROM (0x00000100) to RAM (0x00008000)
-    ;    Transfer 24 bytes of payload data
-    MSP.ld  $ptreg, 0x00008000  ; Destination in RAM (auto-increments on write)
+    ;    Source address in $1:$2 (0x00000100)
+    LMR.w   $1, 0x0000
+    LMR.w   $2, 0x0100
+    ;    Destination in PTREG (0x00008000, auto-increments on write)
+    MSP.ld  $ptreg, 0x00008000
+    ;    Count of words to copy in $4 (24 words = 48 bytes of full payload)
+    LMR.w   $4, 24
 
-    ; Read words from ROM and stream into RAM
-    LMR.w   $0, [0x00000100]
-    LRM.w   $0, [$ptreg]
-    LMR.w   $0, [0x00000102]
-    LRM.w   $0, [$ptreg]
-    LMR.w   $0, [0x00000104]
-    LRM.w   $0, [$ptreg]
-    LMR.w   $0, [0x00000106]
-    LRM.w   $0, [$ptreg]
-    LMR.w   $0, [0x00000108]
-    LRM.w   $0, [$ptreg]
-    LMR.w   $0, [0x0000010A]
-    LRM.w   $0, [$ptreg]
-    LMR.w   $0, [0x0000010C]
-    LRM.w   $0, [$ptreg]
-    LMR.w   $0, [0x0000010E]
-    LRM.w   $0, [$ptreg]
+copy_loop:
+    LMR.w   $0, [$1:$2]         ; Read word from ROM
+    LRM.w   $0, [$ptreg]        ; Stream word into RAM (PTREG += 2)
+    LMR.w   $5, 2
+    ADD     $2, $2, $5          ; Source address += 2
+    DEC     $4                  ; Count-- (sets ZF when 0)
+    JNZ     copy_loop           ; Loop until all payload words are relocated
 
     ; 5. Validate Payload Magic Word at RAM 0x00008000
     ;    Expected magic: 0x4C49 (ASCII "LI")

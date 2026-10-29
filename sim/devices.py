@@ -71,7 +71,13 @@ class BaseDevice:
         self._pending_op: Optional[Tuple] = None
 
         self.bus: Any = None
-        self._raw = bytearray(self.size)
+        self.sparse = bool(self.size > 64 * 1024 * 1024)
+        if self.sparse:
+            self._raw = None
+            self._pages: Dict[int, bytearray] = {}
+        else:
+            self._raw = bytearray(self.size)
+            self._pages = None
         self._vram_version: int = 0
         self._last_accessed_offset: int = 0
         self._last_modified_step: Dict[int, int] = {}
@@ -103,6 +109,9 @@ class BaseDevice:
         Чтение одного байта по относительному смещению (0 <= offset < size).
         """
         if 0 <= offset < self.size:
+            if self.sparse:
+                page = self._pages.get(offset >> 16)
+                return page[offset & 0xFFFF] if page is not None else 0
             return self._raw[offset]
         return 0
 
@@ -114,7 +123,15 @@ class BaseDevice:
             return
         if 0 <= offset < self.size:
             val8 = value & 0xFF
-            self._raw[offset] = val8
+            if self.sparse:
+                pidx = offset >> 16
+                page = self._pages.get(pidx)
+                if page is None:
+                    page = bytearray(65536)
+                    self._pages[pidx] = page
+                page[offset & 0xFFFF] = val8
+            else:
+                self._raw[offset] = val8
             self._vram_version = getattr(self, "_vram_version", 0) + 1
             cur_st = getattr(self.bus, "current_step", 0) if self.bus else 0
             self._last_modified_step[offset] = cur_st
@@ -320,14 +337,33 @@ class BaseDevice:
                         self.flash([ord(c) for c in data], offset=offset)
 
     def flash(self, data: Union[List[int], bytes, bytearray], offset: int = 0):
-        """Записывает массив байтов в память устройства напрямую."""
+        """Записывает массив байтов в память устройства напрямую (в обход readonly)."""
         for i, val in enumerate(data):
             target = offset + i
             if target < self.size:
-                self._raw[target] = val & 0xFF
+                val8 = val & 0xFF
+                if getattr(self, "sparse", False):
+                    pidx = target >> 16
+                    page = self._pages.get(pidx)
+                    if page is None:
+                        page = bytearray(65536)
+                        self._pages[pidx] = page
+                    page[target & 0xFFFF] = val8
+                else:
+                    self._raw[target] = val8
         self._vram_version = getattr(self, "_vram_version", 0) + 1
 
     def dump(self) -> bytes:
+        if getattr(self, "sparse", False):
+            if not getattr(self, "_pages", None):
+                return b""
+            max_offset = max(self._pages.keys()) * 65536 + 65536
+            res = bytearray(min(self.size, max_offset))
+            for pidx, page in self._pages.items():
+                sp = pidx * 65536
+                ep = min(len(res), sp + 65536)
+                res[sp:ep] = page[:ep - sp]
+            return bytes(res)
         return bytes(self._raw)
 
     def save(self, path: Optional[str] = None) -> Optional[str]:
@@ -344,7 +380,7 @@ class BaseDevice:
             if dirname and not os.path.exists(dirname):
                 os.makedirs(dirname, exist_ok=True)
             with open(target, "wb") as f:
-                f.write(bytes(self._raw))
+                f.write(self.dump())
             return target
         except Exception as e:
             print(f"[DEVICE:{self.name}] Ошибка сохранения образа в '{target}': {e}")
@@ -389,7 +425,7 @@ class BaseDevice:
             for col in range(self.width):
                 offset = row * self.width + col
                 if offset < self.size:
-                    b = self._raw[offset]
+                    b = self.read(offset)
                     chars.append(chr(b) if 32 <= b <= 126 else (" " if b == 0 else "·"))
                 else:
                     chars.append(" ")
@@ -441,7 +477,7 @@ class BaseDevice:
             for i in range(16):
                 off = row_start + i
                 if off < self.size:
-                    val = self._raw[off]
+                    val = self.read(off)
                     is_pc_byte = (pc_addr is not None and self.start + off == pc_addr)
                     if is_pc_byte:
                         c_pre, c_suf = "\033[7;1m", "\033[0m"
@@ -698,6 +734,154 @@ class TimerDevice(BaseDevice):
         return self._raw[offset]
 
 
+class KeyboardDevice(BaseDevice):
+    """
+    Клавиатура с прямым опросом регистров (MMIO Polling Keyboard).
+    
+    Регистры (по базовому адресу):
+      + 0x00: DATA (ASCII код или скан-код нажатой клавиши). Чтение извлекает символ из FIFO-буфера.
+      + 0x01: STATUS (Бит 0: HAS_KEY - 1 если в буфере есть клавиша, Бит 1: OVERRUN).
+      + 0x02: COUNT (Количество клавиш в FIFO-буфере, 0..255).
+      + 0x03: CONTROL (Запись 1 очищает буфер).
+    """
+    def __init__(self, start: int, name: str = "KBD_POLL", buffer_size: int = 64):
+        super().__init__(start=start, size=16, name=name)
+        self.buffer_size = buffer_size
+        self._fifo: List[int] = []
+        self._overrun: bool = False
+
+    def press_key(self, key: Union[int, str]):
+        """Эмулирует нажатие клавиши пользователем (добавляет символ в буфер)."""
+        code = ord(key) if isinstance(key, str) else int(key) & 0xFF
+        if len(self._fifo) < self.buffer_size:
+            self._fifo.append(code)
+            self._overrun = False
+        else:
+            self._overrun = True
+
+    def type_string(self, text: str):
+        """Вводит строку текста в буфер клавиатуры."""
+        for ch in text:
+            self.press_key(ch)
+
+    def read(self, offset: int) -> int:
+        if offset == 0:  # DATA
+            if self._fifo:
+                return self._fifo.pop(0)
+            return 0
+        elif offset == 1:  # STATUS
+            has_key = 1 if len(self._fifo) > 0 else 0
+            overrun = 1 if self._overrun else 0
+            return (overrun << 1) | has_key
+        elif offset == 2:  # COUNT
+            return min(255, len(self._fifo))
+        return self._raw[offset] if self._raw else 0
+
+    def write(self, offset: int, value: int):
+        val8 = value & 0xFF
+        if self._raw:
+            self._raw[offset] = val8
+        if offset == 3 and (val8 & 1):  # CONTROL: CLEAR
+            self._fifo.clear()
+            self._overrun = False
+
+
+class IRQKeyboardDevice(BaseDevice):
+    """
+    Клавиатура с аппаратными прерываниями (Vectored IRQ Keyboard с рукопожатием IA):
+      1. При нажатии клавиши сохраняет её в буфер и поднимает ножку IRQ шины (IRQ=1).
+      2. Процессор, завершив текущую инструкцию и будучи готовым принять прерывание,
+         выставляет сигнал подтверждения IA=1 (Interrupt Acknowledge).
+      3. Клавиатура видит IA=1, выставляет на шину данных databus сконфигурированный номер
+         вектора прерывания (по умолчанию вектор 1 для IRQ1), и сбрасывает сигнал IRQ=0.
+      4. Векторный обработчик прерывания считывает нажатый символ из регистра DATA (+0x00).
+
+    Регистры (по базовому адресу):
+      + 0x00: DATA (Чтение извлекает код клавиши).
+      + 0x01: STATUS (Бит 0: HAS_KEY, Бит 1: IRQ_ACTIVE).
+      + 0x02: VECTOR (Номер вектора прерывания, 0..15, по умолчанию 1).
+      + 0x03: CONTROL (Бит 0: ENABLE_IRQ, Бит 1: CLEAR_BUFFER).
+    """
+    def __init__(
+        self,
+        start: int,
+        vector: int = 1,
+        name: str = "KBD_IRQ",
+        irq_pin: str = "IRQ",
+        ia_pin: str = "IA",
+        buffer_size: int = 64
+    ):
+        super().__init__(start=start, size=16, name=name)
+        self.vector = vector & 0x0F
+        self.irq_pin = irq_pin
+        self.ia_pin = ia_pin
+        self.buffer_size = buffer_size
+        self._fifo: List[int] = []
+        self.irq_enabled: bool = True
+        self.irq_active: bool = False
+
+    def press_key(self, key: Union[int, str]):
+        """Эмулирует нажатие клавиши пользователем и генерирует запрос IRQ."""
+        code = ord(key) if isinstance(key, str) else int(key) & 0xFF
+        if len(self._fifo) < self.buffer_size:
+            self._fifo.append(code)
+        if self.irq_enabled and self.bus is not None:
+            self.irq_active = True
+            getattr(self.bus.pins, self.irq_pin).set(1)
+
+    def type_string(self, text: str):
+        """Вводит строку текста в буфер клавиатуры."""
+        for ch in text:
+            self.press_key(ch)
+
+    def on_step(self):
+        """Аппаратное рукопожатие: следим за сигналом IA (Interrupt Acknowledge) от процессора."""
+        if self.bus is not None and self.irq_active:
+            ia_pin = getattr(self.bus.pins, self.ia_pin, None)
+            if ia_pin is not None and ia_pin.get() == 1:
+                # Процессор подтвердил готовность принять прерывание (IA=1)!
+                # Выдаем номер вектора на шину данных и сбрасываем IRQ:
+                self.bus.databus = self.vector
+                getattr(self.bus.pins, self.irq_pin).set(0)
+                self.irq_active = False
+
+    def on_tick(self):
+        self.on_step()
+
+    def read(self, offset: int) -> int:
+        if offset == 0:  # DATA
+            val = self._fifo.pop(0) if self._fifo else 0
+            if self._fifo and self.irq_enabled and self.bus is not None:
+                self.irq_active = True
+                getattr(self.bus.pins, self.irq_pin).set(1)
+            else:
+                self.irq_active = False
+            return val
+        elif offset == 1:  # STATUS
+            has_key = 1 if len(self._fifo) > 0 else 0
+            irq_act = 1 if self.irq_active else 0
+            return (irq_act << 1) | has_key
+        elif offset == 2:  # VECTOR
+            return self.vector
+        elif offset == 3:  # CONTROL
+            return 1 if self.irq_enabled else 0
+        return self._raw[offset] if self._raw else 0
+
+    def write(self, offset: int, value: int):
+        val8 = value & 0xFF
+        if self._raw:
+            self._raw[offset] = val8
+        if offset == 2:  # VECTOR
+            self.vector = val8 & 0x0F
+        elif offset == 3:  # CONTROL
+            self.irq_enabled = bool(val8 & 0x01)
+            if val8 & 0x02:
+                self._fifo.clear()
+                self.irq_active = False
+                if self.bus is not None:
+                    getattr(self.bus.pins, self.irq_pin).set(0)
+
+
 class CustomDevice(BaseDevice):
     """
     Шаблон для создания собственного устройства.
@@ -755,4 +939,8 @@ Display24bpp = Display24bppDevice
 PixelScreen = PixelMonitorDevice
 PixelMonitor = PixelMonitorDevice
 UART = UARTDevice
+Keyboard = KeyboardDevice
+PollingKeyboard = KeyboardDevice
+IRQKeyboard = IRQKeyboardDevice
+InterruptKeyboard = IRQKeyboardDevice
 
